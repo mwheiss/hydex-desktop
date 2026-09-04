@@ -1045,10 +1045,10 @@ stage_enabled_native_feature_artifacts() {
                     "$feature_id helper"
                 ;;
             pet-overlay)
-                stage_update_builder_native_artifact \
-                    "$APP_DIR/resources/native/codex-pet-kwin" \
-                    "$update_builder_root/linux-features/pet-overlay/kwin-helper/target/release/codex-pet-kwin" \
-                    "$feature_id helper"
+                stage_update_builder_native_artifact                     "$APP_DIR/resources/native/codex-pet-kwin"                     "$update_builder_root/linux-features/pet-overlay/kwin-helper/target/release/codex-pet-kwin"                     "$feature_id helper"
+                ;;
+            hydex-offload)
+                stage_update_builder_native_artifact                     "$APP_DIR/.codex-linux/features/hydex-offload/codex"                     "$update_builder_root/linux-features/hydex-offload/runtime/codex"                     "$feature_id CLI"
                 ;;
             mcp-helper-reaper)
                 stage_update_builder_native_artifact \
