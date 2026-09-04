@@ -294,6 +294,7 @@ requirements, known limitations, configuration, and tests.
 | `global-dictation` | X11 and XDG portal global dictation hotkeys | [Docs](linux-features/global-dictation/README.md) |
 | `wayland-global-shortcuts` | Native Wayland support for the app's Popout, Mini/Pet and other global shortcuts; independent of dictation | [Docs](linux-features/wayland-global-shortcuts/README.md) |
 | `global-dictation-gnome` | Optional GNOME Shell paste companion without RemoteDesktop sessions; requires `global-dictation` and explicit extension activation | [Docs](linux-features/global-dictation-gnome/README.md) |
+| `hydex-offload` | Auto/On/Off local model offload control for Hydex-backed Codex and Work tasks | [Docs](linux-features/hydex-offload/README.md) |
 | `linux-performance-workarounds` | Measured renderer workarounds for affected systems | [Docs](linux-features/linux-performance-workarounds/README.md) |
 | `mcp-helper-reaper` | Reap orphaned MCP helpers without touching live sessions | [Docs](linux-features/mcp-helper-reaper/README.md) |
 | `model-picker-default-presets` | Configure ordered model/effort pairs behind ChatGPT Default | [Docs](linux-features/model-picker-default-presets/README.md) |
