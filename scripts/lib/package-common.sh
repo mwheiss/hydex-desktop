@@ -1004,6 +1004,12 @@ stage_enabled_native_feature_artifacts() {
                     "$update_builder_root/global-dictation-linux/target/release/codex-global-dictation-linux" \
                     "$feature_id helper"
                 ;;
+            hydex-offload)
+                stage_update_builder_native_artifact \
+                    "$APP_DIR/.codex-linux/features/hydex-offload/codex" \
+                    "$update_builder_root/linux-features/hydex-offload/runtime/codex" \
+                    "$feature_id CLI"
+                ;;
             mcp-helper-reaper)
                 stage_update_builder_native_artifact \
                     "$APP_DIR/.codex-linux/mcp-helper-reaper/codex-mcp-helper-reaper" \
