@@ -157,6 +157,27 @@ test("Chronicle-only packaging retains the shared backend for updater rebuilds",
   assert.equal(fs.statSync(retainedBackend).mode & 0o777, 0o755);
 });
 
+test("Hydex packaging retains the injected CLI for updater rebuilds", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-update-builder-hydex-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const config = path.join(root, "features.json");
+  const appDir = path.join(root, "app");
+  const hydex = path.join(appDir, ".codex-linux/features/hydex-offload/codex");
+  const builder = path.join(root, "builder");
+  fs.writeFileSync(config, `${JSON.stringify({ enabled: ["hydex-offload"] })}\n`);
+  fs.mkdirSync(path.dirname(hydex), { recursive: true });
+  fs.writeFileSync(hydex, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+
+  runPackageCommon(
+    `CODEX_LINUX_FEATURES_CONFIG=${JSON.stringify(config)} stage_enabled_native_feature_artifacts ${JSON.stringify(builder)}`,
+    appDir,
+  );
+
+  const retainedCli = path.join(builder, "linux-features/hydex-offload/runtime/codex");
+  assert.equal(fs.readFileSync(retainedCli, "utf8"), "#!/bin/sh\nexit 0\n");
+  assert.equal(fs.statSync(retainedCli).mode & 0o777, 0o755);
+});
+
 test("Chronicle-only native helper setup builds the shared backend", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-native-helper-chronicle-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
