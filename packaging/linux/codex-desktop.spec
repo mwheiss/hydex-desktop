@@ -6,6 +6,12 @@ License:        Proprietary
 ExclusiveArch:  __ARCH__
 %global __requires_exclude_from ^/opt/__PACKAGE_NAME__/.*$
 %global __provides_exclude_from ^/opt/__PACKAGE_NAME__/.*$
+# The official Electron payload and version-matched bundled tools are
+# prebuilt, validated inputs.  RPM's brp strip passes would rewrite those
+# binaries after staging and invalidate their recorded hashes.
+%global __brp_strip %{nil}
+%global __brp_strip_static_archive %{nil}
+%global __brp_strip_comment_note %{nil}
 %global codex_elf_suffix %{nil}
 %ifarch x86_64 aarch64
 %global codex_elf_suffix ()(64bit)
