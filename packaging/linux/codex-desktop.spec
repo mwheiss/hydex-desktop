@@ -9,6 +9,7 @@ ExclusiveArch:  __ARCH__
 # The official Electron payload and version-matched bundled tools are
 # prebuilt, validated inputs.  RPM's brp strip passes would rewrite those
 # binaries after staging and invalidate their recorded hashes.
+%global __os_install_post %{nil}
 %global __brp_strip %{nil}
 %global __brp_strip_static_archive %{nil}
 %global __brp_strip_comment_note %{nil}
