@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- A disabled-by-default `hydex-offload` Linux feature adds an Auto/On/Off
+  local-model offload selector to local Codex and ChatGPT Work composers. It
+  sends Hydex's nullable `modelOffloadOverride` on first-turn and thread-setting
+  app-server requests, injects a version-matched static Hydex CLI at the
+  official bundled CLI path, and leaves Chat and cloud Work surfaces unchanged.
 - The launcher sends at most one anonymous `/app-launch` count per UTC day to
   the public GoatCounter dashboard so maintainers can gauge whether the
   distribution is useful. The background request uses one fixed,
