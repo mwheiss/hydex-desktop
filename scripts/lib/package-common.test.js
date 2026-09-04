@@ -107,6 +107,14 @@ test("RPM updater selects the distro-specific GnuPG package", () => {
   );
 });
 
+test("RPM packaging preserves validated prebuilt payload binaries", () => {
+  const rpm = fs.readFileSync(path.join(repoRoot, "packaging/linux/codex-desktop.spec"), "utf8");
+
+  for (const macro of ["__brp_strip", "__brp_strip_static_archive", "__brp_strip_comment_note"]) {
+    assert.match(rpm, new RegExp(`^%global ${macro} %\\{nil\\}$`, "m"));
+  }
+});
+
 test("update-builder copies staged native feature artifacts without Cargo workspaces", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-update-builder-artifact-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
