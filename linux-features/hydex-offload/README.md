@@ -70,6 +70,11 @@ The desktop-wide selector is authoritative for subsequent local app-server
 requests. It does not attempt to infer or display which provider handled a
 previous turn.
 
+The selector opens an app-rendered popover using the same elevated surface,
+selection-row, hover, and selected-state tokens as the model picker. Do not
+replace it with a native HTML `select`: Chromium's native X11 popup can ignore
+the webview's dark theme and render unreadable light-background options.
+
 ## Failure behavior
 
 Hydex rejects `force_on` when no valid local offload provider is configured.
