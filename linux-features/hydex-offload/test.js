@@ -368,17 +368,14 @@ test("composer patch adds an authoritative local control and next-turn update", 
 
   assert.match(patched, new RegExp(CONTROL_MARKER));
   assert.match(patched, /hydex\.offloadOverride/);
-  assert.match(patched, /children:`Hydex auto`/);
-  assert.match(patched, /children:`Hydex on`/);
-  assert.match(patched, /children:`Hydex off`/);
+  assert.match(patched, /popover:`auto`/);
+  assert.match(patched, /role:`menuitemradio`/);
   assert.match(
     patched,
-    /style:\{colorScheme:getComputedStyle\(document\.documentElement\)\.colorScheme===`dark`\?`dark`:`light`\}/,
+    /rounded-xl bg-surface-elevated-secondary p-1 text-default shadow-lg ring-1 ring-border/,
   );
-  assert.equal(
-    [...patched.matchAll(/className:`bg-primary text-default`/g)].length,
-    3,
-  );
+  assert.equal([...patched.matchAll(/"data-value":/g)].length, 3);
+  assert.equal(patched.includes(")(`select`,{"), false);
   assert.match(
     patched,
     new RegExp(
@@ -390,20 +387,29 @@ test("composer patch adds an authoritative local control and next-turn update", 
     patched,
     /onApply:conversation==null\?void 0:e=>modelSelection\.setModelAndReasoningEffortForNextTurn\(settings\.model,settings\.reasoningEffort,\{threadSettings:\{modelOffloadOverride:e\}\}\)/,
   );
-  assert.match(patched, /i===`auto`\?null:i/);
+  assert.match(patched, /let u=l===`auto`\?null:l/);
   assert.match(patched, /inline-flex min-w-0 items-center gap-1/);
   assert.doesNotThrow(() => new vm.Script(patched));
 });
 
-test("composer control persists On and clears Auto to a null override", () => {
+test("composer control renders an app-styled popover and persists choices", () => {
   const patched = applyHydexComposerControlPatch(localComposerFixture());
   const helperStart = patched.indexOf(`/*${CONTROL_MARKER}*/`);
   const helperEnd = patched.indexOf("function localModelPicker", helperStart);
   const helperSource = patched.slice(helperStart, helperEnd);
-  const stateUpdates = [];
+  const stateUpdates = [[], []];
+  const refs = [];
+  let stateSlot = 0;
   const React = {
     useState(initializer) {
-      return [initializer(), (value) => stateUpdates.push(value)];
+      const slot = stateSlot++;
+      const value = typeof initializer === "function" ? initializer() : initializer;
+      return [value, (nextValue) => stateUpdates[slot].push(nextValue)];
+    },
+    useRef(initialValue) {
+      const ref = { current: initialValue };
+      refs.push(ref);
+      return ref;
     },
   };
   const jsx = {
@@ -415,44 +421,108 @@ test("composer control persists On and clears Auto to a null override", () => {
     },
   };
   const storage = makeMutableStorage();
+  const documentState = { activeElement: null };
   const control = Function(
     "React",
     "jsx",
     "localStorage",
-    "getComputedStyle",
+    "window",
     "document",
+    "requestAnimationFrame",
     `${helperSource};return ${CONTROL_MARKER};`,
   )(
     React,
     jsx,
     storage,
-    () => ({ colorScheme: "dark" }),
-    { documentElement: {} },
+    { innerHeight: 800, innerWidth: 1000 },
+    documentState,
+    (callback) => callback(),
   );
   const applied = [];
   const rendered = control({ onApply: (value) => applied.push(value) });
 
-  assert.equal(rendered.type, "select");
-  assert.equal(rendered.props.value, "auto");
-  assert.deepEqual(rendered.props.style, { colorScheme: "dark" });
+  assert.equal(rendered.type, "span");
+  assert.equal(rendered.props.className, "relative inline-flex");
+  const [trigger, menu] = rendered.props.children;
+  assert.equal(trigger.type, "button");
+  assert.equal(trigger.props["aria-haspopup"], "menu");
+  assert.equal(trigger.props["aria-expanded"], false);
+  assert.equal(trigger.props.children[0].props.children, "Hydex auto");
+  assert.equal(menu.type, "div");
+  assert.equal(menu.props.popover, "auto");
+  assert.equal(menu.props.role, "menu");
+  assert.deepEqual(menu.props.style, {
+    inset: "auto",
+    margin: 0,
+    position: "fixed",
+  });
+  const options = menu.props.children;
   assert.deepEqual(
-    rendered.props.children.map(({ type, props }) => [
+    options.map(({ type, props }) => [
       type,
-      props.value,
-      props.className,
-      props.children,
+      props.role,
+      props["aria-checked"],
+      props["data-value"],
+      props.children[0],
     ]),
     [
-      ["option", "auto", "bg-primary text-default", "Hydex auto"],
-      ["option", "force_on", "bg-primary text-default", "Hydex on"],
-      ["option", "force_off", "bg-primary text-default", "Hydex off"],
+      ["button", "menuitemradio", true, "auto", "Hydex auto"],
+      ["button", "menuitemradio", false, "force_on", "Hydex on"],
+      ["button", "menuitemradio", false, "force_off", "Hydex off"],
     ],
   );
-  rendered.props.onChange({ currentTarget: { value: "force_on" } });
-  rendered.props.onChange({ currentTarget: { value: "auto" } });
-  assert.deepEqual(stateUpdates, ["force_on", "auto"]);
+
+  const rowFocus = [];
+  const rows = options.map((_, index) => ({
+    focus: () => rowFocus.push(index),
+  }));
+  documentState.activeElement = rows[0];
+  let arrowPrevented = false;
+  menu.props.onKeyDown({
+    currentTarget: { querySelectorAll: () => rows },
+    key: "ArrowDown",
+    preventDefault: () => {
+      arrowPrevented = true;
+    },
+  });
+  assert.equal(arrowPrevented, true);
+  assert.deepEqual(rowFocus, [1]);
+
+  const focusLog = [];
+  const popover = {
+    open: false,
+    style: {},
+    hidePopover() {
+      this.open = false;
+    },
+    matches(selector) {
+      assert.equal(selector, ":popover-open");
+      return this.open;
+    },
+    querySelector(selector) {
+      assert.equal(selector, '[aria-checked="true"]');
+      return { focus: () => focusLog.push("selected") };
+    },
+    showPopover() {
+      this.open = true;
+    },
+  };
+  refs[0].current = {
+    focus: () => focusLog.push("trigger"),
+    getBoundingClientRect: () => ({ left: 40, top: 500 }),
+  };
+  refs[1].current = popover;
+  trigger.props.onClick();
+  assert.equal(popover.open, true);
+  assert.deepEqual(popover.style, { bottom: "308px", left: "40px" });
+  menu.props.onToggle({ currentTarget: popover });
+
+  options[1].props.onClick({ currentTarget: { dataset: { value: "force_on" } } });
+  options[0].props.onClick({ currentTarget: { dataset: { value: "auto" } } });
+  assert.deepEqual(stateUpdates, [["force_on", "auto"], [true]]);
   assert.deepEqual(applied, ["force_on", null]);
   assert.equal(storage.value(), null);
+  assert.deepEqual(focusLog, ["selected", "trigger", "trigger"]);
 });
 
 test("Chat model picker is outside the Hydex composer contract", () => {
