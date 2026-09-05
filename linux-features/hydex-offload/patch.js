@@ -190,17 +190,44 @@ function applyHydexComposerControlPatch(source) {
     `function codexLinuxHydexOffloadRead(){try{let e=localStorage.getItem(\`hydex.offloadOverride\`);` +
     `return e===\`force_on\`||e===\`force_off\`?e:\`auto\`}catch{return\`auto\`}}` +
     `function ${CONTROL_MARKER}({onApply:e}){let[t,n]=(0,${reactAlias}.useState)(codexLinuxHydexOffloadRead),` +
-    `r=r=>{let i=r.currentTarget.value;n(i);try{i===\`auto\`?localStorage.removeItem(\`hydex.offloadOverride\`):` +
-    `localStorage.setItem(\`hydex.offloadOverride\`,i)}catch{}let a=i===\`auto\`?null:i;` +
-    `try{Promise.resolve(e?.(a)).catch(()=>{})}catch{}};` +
-    `return(0,${jsxAlias}.jsxs)(\`select\`,{value:t,onChange:r,\"aria-label\":\`Hydex offload\`,` +
-    `title:\`Hydex offload\`,className:\`h-token-button-composer max-w-[108px] shrink-0 cursor-interaction ` +
-    `rounded-lg border border-default bg-primary px-2 text-sm text-default outline-none ` +
-    `focus-visible:ring-2 focus-visible:ring-ring\`,style:{colorScheme:` +
-    `getComputedStyle(document.documentElement).colorScheme===\`dark\`?\`dark\`:\`light\`},children:[` +
-    `(0,${jsxAlias}.jsx)(\`option\`,{value:\`auto\`,className:\`bg-primary text-default\`,children:\`Hydex auto\`}),` +
-    `(0,${jsxAlias}.jsx)(\`option\`,{value:\`force_on\`,className:\`bg-primary text-default\`,children:\`Hydex on\`}),` +
-    `(0,${jsxAlias}.jsx)(\`option\`,{value:\`force_off\`,className:\`bg-primary text-default\`,children:\`Hydex off\`})]})}`;
+    `[r,i]=(0,${reactAlias}.useState)(!1),a=(0,${reactAlias}.useRef)(null),` +
+    `o=(0,${reactAlias}.useRef)(null),s=t===\`force_on\`?\`Hydex on\`:t===\`force_off\`?\`Hydex off\`:\`Hydex auto\`,` +
+    `c=c=>{let l=c.currentTarget.dataset.value;if(l!==\`auto\`&&l!==\`force_on\`&&l!==\`force_off\`)return;` +
+    `n(l);try{l===\`auto\`?localStorage.removeItem(\`hydex.offloadOverride\`):` +
+    `localStorage.setItem(\`hydex.offloadOverride\`,l)}catch{}let u=l===\`auto\`?null:l;` +
+    `try{Promise.resolve(e?.(u)).catch(()=>{})}catch{}o.current?.hidePopover(),a.current?.focus()},` +
+    `l=()=>{let e=a.current,t=o.current;if(e==null||t==null)return;` +
+    `if(t.matches(\`:popover-open\`)){t.hidePopover();return}let n=e.getBoundingClientRect();` +
+    `t.style.left=Math.max(8,Math.min(n.left,window.innerWidth-168))+\`px\`,` +
+    `t.style.bottom=Math.max(8,window.innerHeight-n.top+8)+\`px\`,t.showPopover(),` +
+    `requestAnimationFrame(()=>t.querySelector(\`[aria-checked=\"true\"]\`)?.focus())},` +
+    `u=e=>{if(e.key!==\`ArrowDown\`&&e.key!==\`ArrowUp\`)return;` +
+    `let t=[...e.currentTarget.querySelectorAll(\`[role=\"menuitemradio\"]\`)];if(t.length===0)return;` +
+    `let n=t.indexOf(document.activeElement),r=e.key===\`ArrowUp\`?-1:1,i=n<0?r>0?-1:0:n;` +
+    `e.preventDefault(),t[(i+r+t.length)%t.length]?.focus()},` +
+    `d=e=>i(e.currentTarget.matches(\`:popover-open\`)),f=\`flex w-full cursor-interaction items-center ` +
+    `justify-between rounded-lg px-3 py-2 text-left text-sm text-default outline-none ` +
+    `hover:bg-primary-ghost-hover focus-visible:bg-primary-ghost-hover\`;` +
+    `return(0,${jsxAlias}.jsxs)(\`span\`,{className:\`relative inline-flex\`,children:[` +
+    `(0,${jsxAlias}.jsxs)(\`button\`,{ref:a,type:\`button\`,\"aria-haspopup\":\`menu\`,\"aria-expanded\":r,` +
+    `\"aria-label\":\`Hydex offload\`,title:\`Hydex offload\`,onClick:l,` +
+    `className:\`h-token-button-composer flex max-w-[108px] shrink-0 cursor-interaction items-center ` +
+    `justify-between gap-1 rounded-lg border border-default bg-primary px-2 text-sm text-default ` +
+    `outline-none hover:bg-primary-ghost-hover focus-visible:ring-2 focus-visible:ring-ring\`,` +
+    `children:[(0,${jsxAlias}.jsx)(\`span\`,{className:\`truncate\`,children:s}),` +
+    `(0,${jsxAlias}.jsx)(\`span\`,{\"aria-hidden\":!0,className:\`text-tertiary\`,children:\`⌄\`})]}),` +
+    `(0,${jsxAlias}.jsxs)(\`div\`,{ref:o,popover:\`auto\`,role:\`menu\`,\"aria-label\":\`Hydex offload\`,` +
+    `onKeyDown:u,onToggle:d,className:\`min-w-40 rounded-xl bg-surface-elevated-secondary p-1 ` +
+    `text-default shadow-lg ring-1 ring-border\`,style:{position:\`fixed\`,inset:\`auto\`,margin:0},children:[` +
+    `(0,${jsxAlias}.jsxs)(\`button\`,{type:\`button\`,role:\`menuitemradio\`,\"aria-checked\":t===\`auto\`,` +
+    `\"data-value\":\`auto\`,onClick:c,className:f+(t===\`auto\`?\` bg-primary-ghost-hover\`:\`\`),` +
+    `children:[\`Hydex auto\`,t===\`auto\`?(0,${jsxAlias}.jsx)(\`span\`,{\"aria-hidden\":!0,children:\`✓\`}):null]}),` +
+    `(0,${jsxAlias}.jsxs)(\`button\`,{type:\`button\`,role:\`menuitemradio\`,\"aria-checked\":t===\`force_on\`,` +
+    `\"data-value\":\`force_on\`,onClick:c,className:f+(t===\`force_on\`?\` bg-primary-ghost-hover\`:\`\`),` +
+    `children:[\`Hydex on\`,t===\`force_on\`?(0,${jsxAlias}.jsx)(\`span\`,{\"aria-hidden\":!0,children:\`✓\`}):null]}),` +
+    `(0,${jsxAlias}.jsxs)(\`button\`,{type:\`button\`,role:\`menuitemradio\`,\"aria-checked\":t===\`force_off\`,` +
+    `\"data-value\":\`force_off\`,onClick:c,className:f+(t===\`force_off\`?\` bg-primary-ghost-hover\`:\`\`),` +
+    `children:[\`Hydex off\`,t===\`force_off\`?(0,${jsxAlias}.jsx)(\`span\`,{\"aria-hidden\":!0,children:\`✓\`}):null]})]})]})}`;
   const onApply =
     `${conversationVar}==null?void 0:e=>${modelSelectionVar}.setModelAndReasoningEffortForNextTurn(` +
     `${modelSettingsVar}.model,${modelSettingsVar}.reasoningEffort,` +
