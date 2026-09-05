@@ -373,6 +373,14 @@ test("composer patch adds an authoritative local control and next-turn update", 
   assert.match(patched, /children:`Hydex off`/);
   assert.match(
     patched,
+    /style:\{colorScheme:getComputedStyle\(document\.documentElement\)\.colorScheme===`dark`\?`dark`:`light`\}/,
+  );
+  assert.equal(
+    [...patched.matchAll(/className:`bg-primary text-default`/g)].length,
+    3,
+  );
+  assert.match(
+    patched,
     new RegExp(
       `selectComposerModelAndReasoningEffort:selectModel,\\/\\*${NEXT_TURN_MARKER}\\*\\/` +
       "setModelAndReasoningEffortForNextTurn:setBaseNext",
@@ -411,13 +419,35 @@ test("composer control persists On and clears Auto to a null override", () => {
     "React",
     "jsx",
     "localStorage",
+    "getComputedStyle",
+    "document",
     `${helperSource};return ${CONTROL_MARKER};`,
-  )(React, jsx, storage);
+  )(
+    React,
+    jsx,
+    storage,
+    () => ({ colorScheme: "dark" }),
+    { documentElement: {} },
+  );
   const applied = [];
   const rendered = control({ onApply: (value) => applied.push(value) });
 
   assert.equal(rendered.type, "select");
   assert.equal(rendered.props.value, "auto");
+  assert.deepEqual(rendered.props.style, { colorScheme: "dark" });
+  assert.deepEqual(
+    rendered.props.children.map(({ type, props }) => [
+      type,
+      props.value,
+      props.className,
+      props.children,
+    ]),
+    [
+      ["option", "auto", "bg-primary text-default", "Hydex auto"],
+      ["option", "force_on", "bg-primary text-default", "Hydex on"],
+      ["option", "force_off", "bg-primary text-default", "Hydex off"],
+    ],
+  );
   rendered.props.onChange({ currentTarget: { value: "force_on" } });
   rendered.props.onChange({ currentTarget: { value: "auto" } });
   assert.deepEqual(stateUpdates, ["force_on", "auto"]);
