@@ -196,10 +196,11 @@ function applyHydexComposerControlPatch(source) {
     `return(0,${jsxAlias}.jsxs)(\`select\`,{value:t,onChange:r,\"aria-label\":\`Hydex offload\`,` +
     `title:\`Hydex offload\`,className:\`h-token-button-composer max-w-[108px] shrink-0 cursor-interaction ` +
     `rounded-lg border border-default bg-primary px-2 text-sm text-default outline-none ` +
-    `focus-visible:ring-2 focus-visible:ring-ring\`,children:[` +
-    `(0,${jsxAlias}.jsx)(\`option\`,{value:\`auto\`,children:\`Hydex auto\`}),` +
-    `(0,${jsxAlias}.jsx)(\`option\`,{value:\`force_on\`,children:\`Hydex on\`}),` +
-    `(0,${jsxAlias}.jsx)(\`option\`,{value:\`force_off\`,children:\`Hydex off\`})]})}`;
+    `focus-visible:ring-2 focus-visible:ring-ring\`,style:{colorScheme:` +
+    `getComputedStyle(document.documentElement).colorScheme===\`dark\`?\`dark\`:\`light\`},children:[` +
+    `(0,${jsxAlias}.jsx)(\`option\`,{value:\`auto\`,className:\`bg-primary text-default\`,children:\`Hydex auto\`}),` +
+    `(0,${jsxAlias}.jsx)(\`option\`,{value:\`force_on\`,className:\`bg-primary text-default\`,children:\`Hydex on\`}),` +
+    `(0,${jsxAlias}.jsx)(\`option\`,{value:\`force_off\`,className:\`bg-primary text-default\`,children:\`Hydex off\`})]})}`;
   const onApply =
     `${conversationVar}==null?void 0:e=>${modelSelectionVar}.setModelAndReasoningEffortForNextTurn(` +
     `${modelSettingsVar}.model,${modelSettingsVar}.reasoningEffort,` +
