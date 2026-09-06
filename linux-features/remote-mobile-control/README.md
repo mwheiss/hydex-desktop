@@ -1,6 +1,7 @@
 # Experimental Remote Mobile Control
 
-This feature is disabled by default. OpenAI currently documents Remote hosts on
+This feature is enabled by default for fresh native builds and can be disabled
+through an explicit local `linux-features/features.json`. OpenAI currently documents Remote hosts on
 macOS and Windows, with control from ChatGPT on iOS or Android and, when the
 rollout is available, from another Mac or Windows device. This feature adapts
 the upstream host and outbound-control flows for experimental Linux use; it
@@ -9,8 +10,8 @@ does not make Linux an officially supported Remote host.
 See the [official Remote documentation](https://learn.chatgpt.com/docs/remote-connections)
 for account, workspace, mobile app, and rollout requirements.
 
-Enable it by adding the feature id to `linux-features/features.json` before
-building:
+To take explicit control, create `linux-features/features.json` and list every
+feature that should remain enabled before building:
 
 ```json
 {
