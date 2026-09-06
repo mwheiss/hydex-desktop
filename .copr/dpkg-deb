@@ -1,0 +1,92 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+usage() {
+    echo 'usage: dpkg-deb -f PACKAGE [FIELD ...] | dpkg-deb -x PACKAGE DIRECTORY' >&2
+    exit 2
+}
+
+member_for() {
+    local package="$1"
+    local prefix="$2"
+    ar t "$package" | awk -v prefix="$prefix" \
+        '$0 ~ ("^" prefix "\\.tar\\.(xz|gz)$") { print; exit }'
+}
+
+extract_member() {
+    local package="$1"
+    local member="$2"
+    local destination="$3"
+    case "$member" in
+        *.tar.xz)
+            ar p "$package" "$member" | xz -dc | tar -xf - -C "$destination"
+            ;;
+        *.tar.gz)
+            ar p "$package" "$member" | gzip -dc | tar -xf - -C "$destination"
+            ;;
+        *)
+            echo "dpkg-deb: unsupported or missing archive member: $member" >&2
+            exit 2
+            ;;
+    esac
+}
+
+field_value() {
+    local control="$1"
+    local field="$2"
+    awk -v field="$field" '
+BEGIN { IGNORECASE = 1; found = 0 }
+$0 ~ ("^" field ":[[:space:]]*") {
+    sub("^[^:]+:[[:space:]]*", "")
+    print
+    found = 1
+    next
+}
+found && /^[[:space:]]/ {
+    sub("^[[:space:]]", "")
+    print
+    next
+}
+found { exit }
+' "$control"
+}
+
+[ "$#" -ge 2 ] || usage
+mode="$1"
+package="$2"
+[ -f "$package" ] || {
+    echo "dpkg-deb: package not found: $package" >&2
+    exit 2
+}
+
+case "$mode" in
+    -f|--field)
+        shift 2
+        temporary="$(mktemp -d)"
+        trap 'rm -rf -- "$temporary"' EXIT
+        member="$(member_for "$package" control)"
+        extract_member "$package" "$member" "$temporary"
+        control="$temporary/control"
+        [ -f "$control" ] || {
+            echo 'dpkg-deb: control archive contains no control file' >&2
+            exit 2
+        }
+        if [ "$#" -eq 0 ]; then
+            cat "$control"
+        else
+            for field in "$@"; do
+                field_value "$control" "$field"
+            done
+        fi
+        ;;
+    -x|--extract)
+        [ "$#" -eq 3 ] || usage
+        destination="$3"
+        mkdir -p "$destination"
+        member="$(member_for "$package" data)"
+        extract_member "$package" "$member" "$destination"
+        ;;
+    *)
+        usage
+        ;;
+esac
