@@ -5,8 +5,10 @@ Repository features live in `linux-features/<id>/`; private local features live
 in the gitignored `linux-features/local/<id>/`. Every feature requires adjacent
 `feature.json` and `README.md` files.
 
-Features are always disabled by default. Enable them only in the gitignored
-configuration:
+Repository manifests may opt a feature into fresh builds with
+`defaultEnabled: true`. Defaults apply only while no gitignored local
+`features.json` exists and no explicit configuration path is supplied. A local
+configuration is the complete machine selection:
 
 ```json
 {
@@ -23,8 +25,8 @@ remains enabled for updater rebuilds because its validated snapshot is included
 in the custom package's minimal update-builder.
 
 Known retired IDs are discarded during config loading. Other unknown IDs,
-duplicate IDs, malformed settings, default-enabled manifests, unmet
-requirements, and conflicts are errors.
+duplicate IDs, malformed settings, non-boolean defaults, unmet requirements,
+and conflicts are errors.
 
 ## Manifest
 
@@ -58,7 +60,7 @@ Manifest fields:
 |---|---|
 | `id` | Stable configuration ID matching the directory name |
 | `title`, `description` | User-facing wizard and documentation text |
-| `defaultEnabled` | Must be `false` for every repository and local feature |
+| `defaultEnabled` | Optional boolean applied only when no local or explicit feature config exists |
 | `internal` | Optional boolean for build-owned plumbing hidden from public feature selection |
 | `entrypoints.patchDescriptors` | Optional ASAR descriptor module |
 | `entrypoints.stageHook` | Last-resort app staging script |
@@ -218,4 +220,6 @@ configs migrate silently; do not make arbitrary unknown IDs valid.
 The official Linux application is the baseline. A default core patch is allowed
 only for a reproduced mandatory launch/work failure with a regression test.
 Everything optional, distro/editor/browser/workflow-specific, experimental, or
-minority-use belongs here and stays disabled by default.
+minority-use belongs here. A tracked default requires a maintained distribution
+contract, explicit opt-out, and clean feature-free validation through an
+explicit config.
