@@ -200,17 +200,20 @@ used by both official and Community applications.
 | Signed source verification | Always | Pinned repository key → `InRelease` → `Packages` SHA-256 → package SHA-256 |
 | Byte-identical baseline ASAR | Always | The ASAR is not unpacked when no enabled feature needs it |
 | Native deb, RPM, and pacman packages | Manual build | `make deb`, `make rpm`, or `make pacman` |
+| RHEL 7/9 compatibility RPMs | Manual build | `make rpm-rhel7` (split RPM 4.11 payload) or `make rpm-rhel9` |
 | AppImage | Manual build | `make appimage`; no automatic sandbox bypass or bundled updater |
 | Nix flake | Manual build | `nix run github:ilysenko/codex-desktop-linux` |
 | Transactional update manager | Native packages | Included unless built with `PACKAGE_WITH_UPDATER=0` |
 | Official Browser and Chrome integrations | Upstream | Reused from the official Linux package; no legacy port layer |
-| Optional Linux feature framework | Disabled | Configure with `make setup-native` |
+| Linux feature framework | Tracked defaults plus local overrides | Configure with `make setup-native` |
 | Distinct desktop identity | Always | **ChatGPT Community**, blue `C` icon, `codex-desktop` package identity |
 
 ### Optional Linux features
 
-Every feature below is disabled by default. Its adjacent README describes
-requirements, known limitations, configuration, and tests.
+`remote-mobile-control` and `persistent-app-server` are enabled by default for
+fresh native builds. Other features remain opt-in. A local `features.json`
+replaces those defaults with an explicit machine selection. Each adjacent
+README describes requirements, known limitations, configuration, and tests.
 
 | Feature ID | Purpose | Documentation |
 |---|---|---|
@@ -261,7 +264,8 @@ The recommended editor is the setup wizard:
 make setup-native
 ```
 
-For manual configuration, copy the example to the gitignored local file:
+For manual configuration, copy the feature-free example to the gitignored local
+file. This opts out of tracked defaults until they are explicitly listed:
 
 ```bash
 cp linux-features/features.example.json linux-features/features.json
