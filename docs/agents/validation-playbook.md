@@ -23,8 +23,8 @@ fixtures and fail closed.
 Build with `features.example.json`, inspect `.codex-linux/build-info.json`, and
 compare the official and staged `resources/app.asar` hashes. Confirm no runtime
 replacement, external CLI, or local content server appears in the staged tree.
-Confirm the desktop name is **ChatGPT Community**, its icon has the community
-mark, and the package/bin/path identity is still `codex-desktop`.
+Confirm the desktop name is **Hydex**, its icon has the community
+mark, and the package/bin/path identity is still `hydex-desktop`.
 
 Smoke-test login, project open, terminal, file picker, URI launch, tray,
 notifications, clean quit, and a second launch on GNOME Wayland, KDE Wayland,
@@ -61,7 +61,7 @@ migration without losing installed/rollback artifacts.
 ./scripts/ci-local.sh pr
 ./scripts/ci-local.sh all
 nix flake check
-nix build .#codex-desktop
+nix build .#hydex-desktop
 ```
 
 Finish with a repository search for retired active architecture references and

@@ -109,7 +109,7 @@ class Tests(unittest.TestCase):
 
     def test_native_package_hook_links_the_packaged_cli(self):
         package_root = self.root / "package"
-        package_app = package_root / "opt/codex-desktop"
+        package_app = package_root / "opt/hydex-desktop"
         resources = package_app / "resources"
         resources.mkdir(parents=True)
         for executable in ("codex", "codex-code-mode-host"):
@@ -126,14 +126,14 @@ class Tests(unittest.TestCase):
             **os.environ,
             "PACKAGE_ROOT": str(package_root),
             "PACKAGE_APP_DIR": str(package_app),
-            "PACKAGE_NAME": "codex-desktop",
+            "PACKAGE_NAME": "hydex-desktop",
         })
         self.assertEqual(
             os.readlink(package_root / "usr/bin/codex"),
-            "/opt/codex-desktop/.codex-linux/features/persistent-app-server/codex-cli-wrapper",
+            "/opt/hydex-desktop/.codex-linux/features/persistent-app-server/codex-cli-wrapper",
         )
         self.assertEqual(os.readlink(package_root / "usr/bin/codex-code-mode-host"),
-                         "/opt/codex-desktop/resources/codex-code-mode-host")
+                         "/opt/hydex-desktop/resources/codex-code-mode-host")
 
     def test_packaged_cli_first_call_ensures_service_then_preserves_cli_arguments(self):
         manager_log = self.root / "manager.log"
@@ -677,7 +677,7 @@ while True:
         fake_file = repo / "linux-features/persistent-app-server/manage.py"
         with patch.object(m, "__file__", str(fake_file)), patch.object(m.os, "getuid", return_value=12345), patch.object(m, "setup") as setup:
             m.main(["install", "--no-linger"])
-            setup.assert_called_once_with("/opt/codex-desktop", linger=False)
+            setup.assert_called_once_with("/opt/hydex-desktop", linger=False)
         self.assertIn(["make", "install-native"], self.system.calls)
         self.assertEqual(self.system.calls[0], ["node", str(fake_file.with_name("check-mobile.cjs")), str(repo)])
         selected = json.loads((repo / "linux-features/features.json").read_text())["enabled"]

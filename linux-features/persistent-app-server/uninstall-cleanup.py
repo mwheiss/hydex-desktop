@@ -11,7 +11,7 @@ import tempfile
 
 FEATURE = "persistent-app-server"
 UNIT = "codex-remote-control.service"
-UNIT_MARKER = "# Managed by codex-desktop-linux persistent-app-server v1\n"
+UNIT_MARKER = "# Managed by hydex-desktop persistent-app-server v1\n"
 SETTINGS_KEYS = ("hydex.cliExecutable", "chatgpt.cliExecutable")
 SETTINGS_ROOTS = ("Code", "Code - OSS", "VSCodium")
 
@@ -51,7 +51,7 @@ def atomic_json_write(path, value, uid, gid, mode):
 
 
 def remove_service_state(home, uid, app_dir):
-    config = home / ".config/codex-desktop/persistent-app-server.json"
+    config = home / ".config/hydex-desktop/persistent-app-server.json"
     if not owned_regular(config, uid, private=True):
         return
     try:
@@ -151,7 +151,7 @@ def main():
     if os.getuid() != 0:
         raise SystemExit("persistent-app-server cleanup must run from a package removal hook")
     app_dir = Path(os.path.abspath(args.app_dir))
-    if app_dir.parent != Path("/opt") or app_dir.name not in ("codex-desktop", "chatgpt-community"):
+    if app_dir.parent != Path("/opt") or app_dir.name not in ("hydex-desktop", "chatgpt-community"):
         raise SystemExit("refusing unexpected package app directory: " + str(app_dir))
     cleanup(app_dir)
 

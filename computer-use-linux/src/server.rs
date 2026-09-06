@@ -4323,7 +4323,7 @@ fn avatar_cursor_socket_path_from(
         .or(legacy_app_id)
         .map(str::trim)
         .filter(|value| valid_runtime_component(value))
-        .unwrap_or("codex-desktop");
+        .unwrap_or("hydex-desktop");
     let instance_id = instance_id.map(str::trim).filter(|value| !value.is_empty());
     if instance_id.is_some_and(|value| !valid_runtime_component(value)) {
         return None;
@@ -5434,22 +5434,22 @@ mod tests {
         assert_eq!(
             avatar_cursor_socket_path_from(
                 Some("/run/user/1000"),
-                Some("codex-desktop"),
+                Some("hydex-desktop"),
                 None,
                 Some("secondary"),
             ),
             Some(PathBuf::from(
-                "/run/user/1000/codex-desktop/instances/secondary/computer-use-cursor.sock",
+                "/run/user/1000/hydex-desktop/instances/secondary/computer-use-cursor.sock",
             )),
         );
         assert_eq!(
-            avatar_cursor_socket_path_from(Some("relative"), Some("codex-desktop"), None, None,),
+            avatar_cursor_socket_path_from(Some("relative"), Some("hydex-desktop"), None, None,),
             None,
         );
         assert_eq!(
             avatar_cursor_socket_path_from(
                 Some("/run/user/1000"),
-                Some("codex-desktop"),
+                Some("hydex-desktop"),
                 None,
                 Some("../escape"),
             ),
@@ -5458,7 +5458,7 @@ mod tests {
         assert_eq!(
             avatar_cursor_socket_path_from(
                 Some(&format!("/run/user/1000/{}", "x".repeat(100))),
-                Some("codex-desktop"),
+                Some("hydex-desktop"),
                 None,
                 None,
             ),
@@ -5484,14 +5484,14 @@ mod tests {
             (None, None),
         );
         assert_eq!(
-            avatar_cursor_identity_from_cmdline(b"/bin/bash\0--app-id=codex-desktop\0"),
+            avatar_cursor_identity_from_cmdline(b"/bin/bash\0--app-id=hydex-desktop\0"),
             (None, None),
         );
         assert_eq!(
             avatar_cursor_identity_from_cmdline(
-                b"/opt/codex/electron\0--app-id=codex-desktop\0--user-data-dir=/home/instances/alice/.local/state/codex-desktop/electron-user-data\0",
+                b"/opt/codex/electron\0--app-id=hydex-desktop\0--user-data-dir=/home/instances/alice/.local/state/hydex-desktop/electron-user-data\0",
             ),
-            (Some("codex-desktop".to_string()), None),
+            (Some("hydex-desktop".to_string()), None),
         );
     }
 
