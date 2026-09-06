@@ -2,7 +2,8 @@
   "id": "persistent-app-server",
   "title": "Persistent App-Server",
   "description": "Use the remote-mobile-control proxy with a separately managed systemd user app-server.",
-  "defaultEnabled": false,
+  "defaultEnabled": true,
+  "nixSupported": false,
   "requires": [
     "remote-mobile-control"
   ],
@@ -19,6 +20,21 @@
       "source": "vscode-proxy.py",
       "target": ".codex-linux/features/persistent-app-server/codex-vscode-proxy",
       "mode": "0755"
+    },
+    {
+      "source": "package-lifecycle.sh",
+      "target": ".codex-linux/features/persistent-app-server/package-lifecycle.sh",
+      "mode": "0755"
+    },
+    {
+      "source": "uninstall-cleanup.py",
+      "target": ".codex-linux/features/persistent-app-server/uninstall-cleanup.py",
+      "mode": "0755"
+    },
+    {
+      "source": "codex-cli-wrapper",
+      "target": ".codex-linux/features/persistent-app-server/codex-cli-wrapper",
+      "mode": "0755"
     }
   ],
   "runtimeHooks": {
@@ -27,8 +43,10 @@
   },
   "packageHooks": [
     {
-      "source": "package-pacman.sh",
+      "source": "package-native.sh",
       "formats": [
+        "deb",
+        "rpm",
         "pacman"
       ]
     }
