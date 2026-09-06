@@ -65,7 +65,7 @@ Use a stable socket path when the Desktop instance will be reached over SSH:
 
 ```bash
 export CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET="$HOME/.codex/app-server-control/app-server-control.sock"
-codex-desktop
+hydex-desktop
 ```
 
 Then place a small `codex` wrapper earlier in the SSH user's `PATH`. Set

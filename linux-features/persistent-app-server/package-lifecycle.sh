@@ -1,6 +1,6 @@
 #!/bin/sh
 
-PERSISTENT_APP_DIR="${PERSISTENT_APP_DIR:-/opt/codex-desktop}"
+PERSISTENT_APP_DIR="${PERSISTENT_APP_DIR:-/opt/hydex-desktop}"
 PERSISTENT_CLEANUP="$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/uninstall-cleanup.py"
 PERSISTENT_UNIT="codex-remote-control.service"
 

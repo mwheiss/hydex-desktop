@@ -3,7 +3,7 @@
 ## Purpose
 
 This repository repackages OpenAI's signed official Linux `chatgpt` package as
-the independently named `codex-desktop` distribution. It preserves the
+the independently named `hydex-desktop` distribution. It preserves the
 official ELF/Electron payload and bundled tools, adds tracked-default and opt-in
 Linux features, builds deb/RPM/pacman/AppImage/Nix outputs, and ships a Rust update
 manager that rebuilds from the signed stable APT repository.
@@ -17,9 +17,9 @@ manager that rebuilds from the signed stable APT repository.
 - Never execute upstream maintainer scripts. Extract the data payload only.
 - A clean build with no enabled ASAR feature must preserve `resources/app.asar`
   byte-for-byte.
-- Keep the output identity `codex-desktop` under `/opt/codex-desktop`; do not
+- Keep the output identity `hydex-desktop` under `/opt/hydex-desktop`; do not
   install the upstream APT source, key, package identity, or maintainer scripts.
-- Keep the user-facing desktop name **ChatGPT Community** and its distinct
+- Keep the user-facing desktop name **Hydex** and its distinct
   community icon; `ChatGPT` without the qualifier identifies the upstream app.
 - The default core patch registry is empty. A core patch requires a reproduced
   launch/work blocker and a required regression test.
@@ -78,7 +78,7 @@ feature `stage.sh`.
 - Legacy bundled Browser/Chrome cache migration must be narrow and
   fingerprinted: never wipe arbitrary plugin caches or user-authored plugins.
 - AppImage never adds `--no-sandbox` automatically. Native packages adapt the
-  upstream AppArmor policy to `/opt/codex-desktop/ChatGPT`.
+  upstream AppArmor policy to `/opt/hydex-desktop/ChatGPT`.
 - Candidate promotion is transactional. Build while running is allowed;
   promotion waits for exit. Rollback keeps the immediately previous artifact.
 

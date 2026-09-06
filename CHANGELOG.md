@@ -397,7 +397,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Added
 
 - Linux Computer Use plugin now exposes accessibility actions and editable-value setting via a new `perform_action` MCP tool. `element_index` selections resolve back to cached AT-SPI object references so actions and value writes target the same node as a click.
-- UI-driven Linux app update flow: when an update is rebuilt and ready, the in-app updater control can request install. The app exits, the user service installs the package, and the launcher relaunches `/usr/bin/codex-desktop` after the update lands. Backed by a new `codex-update-manager install-ready` subcommand and a `scripts/rebuild-candidate.sh` helper packaged into the update-builder bundle.
+- UI-driven Linux app update flow: when an update is rebuilt and ready, the in-app updater control can request install. The app exits, the user service installs the package, and the launcher relaunches `/usr/bin/hydex-desktop` after the update lands. Backed by a new `codex-update-manager install-ready` subcommand and a `scripts/rebuild-candidate.sh` helper packaged into the update-builder bundle.
 - NixOS launcher exposes Electron GL/EGL libraries and primary-runtime native libraries via `LD_LIBRARY_PATH`, so the bundled Python/Node payloads (Pillow, NumPy, sharp, canvas) load on stock NixOS.
 - The installer now bundles a managed Linux Node.js 22.22 runtime into `codex-app/resources/node-runtime`; packaged launches and local auto-update rebuilds use it before any system, nvm, asdf, or manually installed Node.js.
 
@@ -414,7 +414,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Linux quit now bypasses the close-to-tray gate so the app actually exits instead of getting trapped in the tray.
 - Keybinds settings index patch tolerates upstream minified variable-name drift; the route map is detected via a `(0,X.lazy)` lookahead instead of hard-coded `c_e` / `Xge` / `Zge` names.
 - NixOS-installed `start.sh` shebang is patched to a nix-store `bash` so the launcher actually runs on systems without `/bin/bash`.
-- Native packages now always stage `scripts/lib/node-runtime.sh` into `/opt/codex-desktop/update-builder`, so local auto-update rebuilds can source the managed Node runtime helper instead of failing before package generation.
+- Native packages now always stage `scripts/lib/node-runtime.sh` into `/opt/hydex-desktop/update-builder`, so local auto-update rebuilds can source the managed Node runtime helper instead of failing before package generation.
 
 ## [0.6.2] - 2026-05-01
 
@@ -422,7 +422,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - Missing Codex CLI recovery is now exposed as an explicit `cli_status: NotInstalled` state in updater status output and persisted state, instead of overloading `Unknown`.
 - Automatic installation of a missing Codex CLI is now documented and enforced as launcher-scoped behavior; the daemon and `codex-update-manager status` only report and notify when the dependency is missing.
-- The Computer Use in-app UI surface is now opt-in. The MCP backend still registers by default; the UI controls are enabled when the user sets `CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1` at build time, or persists `"codex-linux-computer-use-ui-enabled": true` in `~/.config/codex-desktop/settings.json` (also honoured by the `codex-update-manager` user service across rebuilds). Existing users who relied on the UI being on by default need to set one of these once.
+- The Computer Use in-app UI surface is now opt-in. The MCP backend still registers by default; the UI controls are enabled when the user sets `CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1` at build time, or persists `"codex-linux-computer-use-ui-enabled": true` in `~/.config/hydex-desktop/settings.json` (also honoured by the `codex-update-manager` user service across rebuilds). Existing users who relied on the UI being on by default need to set one of these once.
 
 ### Added
 
@@ -455,7 +455,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Changed
 
 - `make build-app` now defers to `install.sh` when no `DMG=...` override is provided, so fresh checkouts can reuse or download `Codex.dmg` through the installer's normal flow instead of failing on a missing local cache path.
-- Electron runtime downloads are now cached under `~/.cache/codex-desktop/electron` and resume interrupted transfers, reducing repeated `make build-app` rebuild time.
+- Electron runtime downloads are now cached under `~/.cache/hydex-desktop/electron` and resume interrupted transfers, reducing repeated `make build-app` rebuild time.
 - Launcher CLI preflight now uses cached local CLI state on the fast path, leaving heavier `codex --version` and registry refresh work to the updater when the cache is stale or invalid.
 
 ### Fixed
@@ -473,7 +473,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Linux keybinds settings page injected into the Codex webview, with persistent toggles for the compact prompt window, system tray, and warm-start handoff.
 - Warm-start handoff: launching the app while another instance is already running now sends the launch action over a Unix-domain socket (`launch-action.sock`) and exits, instead of starting a fresh Electron. New launcher CLI flags `--new-chat`, `--quick-chat`, `--prompt-chat`, `--hotkey-window` route through that path.
 - Linux system tray with platform-gated guard, single-instance lock, and second-instance window focus through Electron's `requestSingleInstanceLock` / `second-instance` event.
-- Polkit policy `com.github.ilysenko.codex-desktop-linux.update.policy` so privileged updater installs use the desktop authentication agent (`pkexec --disable-internal-agent`) instead of falling back to a textual prompt.
+- Polkit policy `com.github.mwheiss.hydex-desktop.update.policy` so privileged updater installs use the desktop authentication agent (`pkexec --disable-internal-agent`) instead of falling back to a textual prompt.
 - openSUSE / zypper support across `scripts/install-deps.sh`, the `make install` target, and the updater's RPM install path.
 - Browser Use bundled plugin resources are now installed alongside the Linux app, with launcher-side environment hydration for `CODEX_ELECTRON_RESOURCES_PATH`, `CODEX_BROWSER_USE_NODE_PATH`, and `CODEX_NODE_REPL_PATH`.
 - Apt Node bootstrap: `install-deps.sh` prefers a compatible distro `nodejs`/`npm` candidate and otherwise installs Node.js 22 from NodeSource. CI matrix validates the bootstrap on Ubuntu 22.04, Ubuntu 24.04, and Debian 12.

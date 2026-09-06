@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(name = "codex-update-manager", about = "Signed Linux-package updater for codex-desktop")]
+#[command(name = "codex-update-manager", about = "Signed Linux-package updater for hydex-desktop")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

@@ -28,7 +28,7 @@ flowchart LR
   D --> E{"ASAR features enabled?"}
   E -- "no" --> F["Byte-identical app.asar"]
   E -- "yes" --> G["Temporary deterministic patch"]
-  F --> H["codex-desktop outputs"]
+  F --> H["hydex-desktop outputs"]
   G --> H
 ```
 
@@ -43,7 +43,7 @@ or incomplete payloads fail closed.
 
 The upstream source/key setup and maintainer scripts are never copied into the
 custom package. This prevents an official package-manager transaction from
-owning or replacing `/opt/codex-desktop`.
+owning or replacing `/opt/hydex-desktop`.
 
 ## Ownership
 
@@ -52,7 +52,7 @@ windows, single-instance behavior, URI handling, tray, login, and lifecycle.
 This repository owns source verification, optional features, packaging,
 AppArmor path adaptation, and transactional custom updates.
 
-The launcher only establishes `codex-desktop` desktop identity, loads feature
+The launcher only establishes `hydex-desktop` desktop identity, loads feature
 environment/prelaunch/argument/lifecycle hooks, forwards arguments, and waits
 when an after-exit hook exists.
 
@@ -96,8 +96,8 @@ rebuilds cannot silently use a different selection.
 
 ## Identity and data
 
-Native packages use `codex-desktop` and `/opt/codex-desktop`; the official app
-uses `chatgpt`. The custom desktop entry is **ChatGPT Community**, with a
+Native packages use `hydex-desktop` and `/opt/hydex-desktop`; the official app
+uses `chatgpt`. The custom desktop entry is **Hydex**, with a
 community-marked icon; desktop entries and AppArmor paths are distinct. The
 upstream `Codex` profile is intentionally preserved for compatibility, so both
 runtimes must not run simultaneously. The upstream single-instance lock governs
@@ -130,7 +130,7 @@ committed. See [Generated and runtime notes](agents/generated-and-runtime-notes.
 - The clean ASAR hash equals the official package hash.
 - Upstream package scripts and APT source configuration never enter the custom
   output.
-- `codex-desktop` package identity and **ChatGPT Community** display identity
+- `hydex-desktop` package identity and **Hydex** display identity
   remain distinct from official `chatgpt` / **ChatGPT**.
 - Optional behavior stays disabled in committed configuration.
 - A core patch needs evidence of a mandatory baseline failure and a required

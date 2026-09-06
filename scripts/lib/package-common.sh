@@ -172,6 +172,35 @@ codex_cli_package_files() {
     esac
 }
 
+desktop_package_transition_metadata() {
+    local format="$1"
+
+    [ "${PACKAGE_NAME:-}" = "hydex-desktop" ] || return 0
+    case "$format" in
+        pacman)
+            cat <<'METADATA'
+provides+=('codex-desktop')
+conflicts+=('codex-desktop')
+replaces+=('codex-desktop')
+METADATA
+            ;;
+        deb)
+            cat <<'METADATA'
+Breaks: codex-desktop
+Replaces: codex-desktop
+METADATA
+            ;;
+        rpm)
+            cat <<'METADATA'
+Provides:       codex-desktop
+Conflicts:      codex-desktop
+Obsoletes:      codex-desktop
+METADATA
+            ;;
+        *) error "Unsupported Desktop transition metadata format: $format" ;;
+    esac
+}
+
 stage_update_builder_linux_features_config() {
     local update_builder_root="$1"
     local helper="$REPO_DIR/scripts/lib/linux-features.js"
@@ -373,7 +402,7 @@ render_desktop_entry() {
     local rendered_target="$target.tmp"
 
     package_name="$(sed_escape_replacement "$PACKAGE_NAME")"
-    display_name="$(sed_escape_replacement "${PACKAGE_DISPLAY_NAME:-ChatGPT Community}")"
+    display_name="$(sed_escape_replacement "${PACKAGE_DISPLAY_NAME:-Hydex}")"
     comment="$(sed_escape_replacement "${PACKAGE_COMMENT:-Community Linux distribution based on OpenAI ChatGPT}")"
 
     awk \
@@ -383,7 +412,7 @@ render_desktop_entry() {
             BEGIN { in_desktop_entry = 0 }
             /^\[Desktop Entry\]$/ {
                 in_desktop_entry = 1
-                gsub(/codex-desktop/, package_name)
+                gsub(/hydex-desktop/, package_name)
                 print
                 next
             }
@@ -391,7 +420,7 @@ render_desktop_entry() {
                 in_desktop_entry = 0
             }
             {
-                gsub(/codex-desktop/, package_name)
+                gsub(/hydex-desktop/, package_name)
                 if (in_desktop_entry && /^Name=/) {
                     print "Name=" display_name
                     next
@@ -455,7 +484,7 @@ SCRIPT
         return
     fi
 
-    sed -e "s/codex-desktop/$package_name/g" "$PACKAGED_RUNTIME_SOURCE" > "$target"
+    sed -e "s/hydex-desktop/$package_name/g" "$PACKAGED_RUNTIME_SOURCE" > "$target"
     chmod 0644 "$target"
 }
 
@@ -550,7 +579,7 @@ SCRIPT
 render_desktop_entry_doctor_helper() {
     local target="$1"
 
-    cp "$REPO_DIR/packaging/linux/codex-desktop-entry-doctor.sh" "$target"
+    cp "$REPO_DIR/packaging/linux/hydex-desktop-entry-doctor.sh" "$target"
     chmod 0644 "$target"
 }
 
@@ -568,14 +597,14 @@ if command -v update-desktop-database >/dev/null 2>&1; then
 fi
 
 CLEANUP_HELPER="/opt/$package_name/.codex-linux/codex-no-updater-transition-cleanup.sh"
-DESKTOP_ENTRY_DOCTOR="/opt/$package_name/.codex-linux/codex-desktop-entry-doctor.sh"
+DESKTOP_ENTRY_DOCTOR="/opt/$package_name/.codex-linux/hydex-desktop-entry-doctor.sh"
 if [ -f "\$CLEANUP_HELPER" ]; then
     # shellcheck source=/opt/$package_name/.codex-linux/codex-no-updater-transition-cleanup.sh
     . "\$CLEANUP_HELPER"
     codex_no_updater_cleanup_update_manager_service || true
 fi
 if [ -f "\$DESKTOP_ENTRY_DOCTOR" ]; then
-    # shellcheck source=/opt/$package_name/.codex-linux/codex-desktop-entry-doctor.sh
+    # shellcheck source=/opt/$package_name/.codex-linux/hydex-desktop-entry-doctor.sh
     . "\$DESKTOP_ENTRY_DOCTOR"
     codex_desktop_repair_system_package_shadow_entries $package_name || true
 fi
@@ -640,7 +669,7 @@ write_no_updater_pacman_install_hooks() {
     package_name="$(sed_escape_replacement "$PACKAGE_NAME")"
     cat > "$target" <<SCRIPT
 CLEANUP_HELPER="/opt/$package_name/.codex-linux/codex-no-updater-transition-cleanup.sh"
-DESKTOP_ENTRY_DOCTOR="/opt/$package_name/.codex-linux/codex-desktop-entry-doctor.sh"
+DESKTOP_ENTRY_DOCTOR="/opt/$package_name/.codex-linux/hydex-desktop-entry-doctor.sh"
 PERSISTENT_APP_DIR="/opt/$package_name"
 PERSISTENT_SERVICE_HELPER="\$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/package-lifecycle.sh"
 
@@ -654,7 +683,7 @@ codex_no_updater_cleanup_if_present() {
 
 codex_desktop_repair_if_present() {
     if [ -f "\$DESKTOP_ENTRY_DOCTOR" ]; then
-        # shellcheck source=/opt/$package_name/.codex-linux/codex-desktop-entry-doctor.sh
+        # shellcheck source=/opt/$package_name/.codex-linux/hydex-desktop-entry-doctor.sh
         . "\$DESKTOP_ENTRY_DOCTOR"
         codex_desktop_repair_system_package_shadow_entries $package_name || true
     fi
@@ -944,7 +973,7 @@ write_update_builder_manifest() {
 stage_common_package_files() {
     local root="$1"
     local app_root="$root/opt/$PACKAGE_NAME"
-    local polkit_policy="$REPO_DIR/packaging/linux/com.github.ilysenko.codex-desktop-linux.update.policy"
+    local polkit_policy="$REPO_DIR/packaging/linux/com.github.mwheiss.hydex-desktop.update.policy"
 
     ensure_app_layout
 
@@ -969,7 +998,7 @@ stage_common_package_files() {
     mkdir -p "$app_root/.codex-linux"
     cp "$ICON_SOURCE" "$app_root/.codex-linux/$PACKAGE_NAME.png"
     cp "$ICON_SOURCE" "$app_root/resources/icon-chatgpt.png"
-    render_desktop_entry_doctor_helper "$app_root/.codex-linux/codex-desktop-entry-doctor.sh"
+    render_desktop_entry_doctor_helper "$app_root/.codex-linux/hydex-desktop-entry-doctor.sh"
     render_desktop_entry "$root/usr/share/applications/$PACKAGE_NAME.desktop"
     cp "$ICON_SOURCE" "$root/usr/share/icons/hicolor/256x256/apps/$PACKAGE_NAME.png"
     render_apparmor_profile "$root/etc/apparmor.d/$PACKAGE_NAME"
@@ -978,8 +1007,8 @@ stage_common_package_files() {
         chmod 0755 "$root/usr/bin/codex-update-manager"
         cp "$UPDATER_SERVICE_SOURCE" "$root/usr/lib/systemd/user/codex-update-manager.service"
         chmod 0644 "$root/usr/lib/systemd/user/codex-update-manager.service"
-        cp "$polkit_policy" "$root/usr/share/polkit-1/actions/com.github.ilysenko.codex-desktop-linux.update.policy"
-        chmod 0644 "$root/usr/share/polkit-1/actions/com.github.ilysenko.codex-desktop-linux.update.policy"
+        cp "$polkit_policy" "$root/usr/share/polkit-1/actions/com.github.mwheiss.hydex-desktop.update.policy"
+        chmod 0644 "$root/usr/share/polkit-1/actions/com.github.mwheiss.hydex-desktop.update.policy"
     else
         render_no_updater_transition_cleanup_helper \
             "$app_root/.codex-linux/codex-no-updater-transition-cleanup.sh"

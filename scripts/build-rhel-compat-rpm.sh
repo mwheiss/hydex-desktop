@@ -6,9 +6,9 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROFILE="${1:-${RHEL_COMPAT_PROFILE:-}}"
 SOURCE_APP_DIR="${APP_DIR_OVERRIDE:-$REPO_DIR/codex-app}"
 DIST_DIR="${DIST_DIR_OVERRIDE:-$REPO_DIR/dist}"
-PACKAGE_NAME="${PACKAGE_NAME:-codex-desktop}"
+PACKAGE_NAME="${PACKAGE_NAME:-hydex-desktop}"
 RUNTIME_MANIFEST="$REPO_DIR/packaging/rhel-compat/runtime-packages.json"
-CACHE_DIR="${RHEL_COMPAT_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/codex-desktop-linux/rhel-compat}"
+CACHE_DIR="${RHEL_COMPAT_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/hydex-desktop/rhel-compat}"
 BUILD_TMP="${TMPDIR:-/tmp}"
 
 info() { printf '[rhel-compat] %s\n' "$*" >&2; }

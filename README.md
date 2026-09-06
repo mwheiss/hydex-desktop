@@ -1,8 +1,8 @@
-<h1 align="center">ChatGPT Community for Linux</h1>
+<h1 align="center">Hydex for Linux</h1>
 
 <p align="center">
-  <a href="https://github.com/ilysenko/codex-desktop-linux/actions/workflows/ci.yml"><img src="https://github.com/ilysenko/codex-desktop-linux/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/ilysenko/codex-desktop-linux/actions/workflows/upstream-build-app.yml"><img src="https://github.com/ilysenko/codex-desktop-linux/actions/workflows/upstream-build-app.yml/badge.svg" alt="Official Linux package build"></a>
+  <a href="https://github.com/mwheiss/hydex-desktop/actions/workflows/ci.yml"><img src="https://github.com/mwheiss/hydex-desktop/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/mwheiss/hydex-desktop/actions/workflows/upstream-build-app.yml"><img src="https://github.com/mwheiss/hydex-desktop/actions/workflows/upstream-build-app.yml/badge.svg" alt="Official Linux package build"></a>
   <a href="https://discord.gg/skCB3DXqgw"><img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white" alt="Join the Discord community"></a>
 </p>
 
@@ -10,14 +10,14 @@
   English | <a href="README.zh-CN.md">简体中文</a>
 </p>
 
-`codex-desktop` is an unofficial, community-maintained distribution of
+`hydex-desktop` is an unofficial, community-maintained distribution of
 OpenAI's official Linux ChatGPT desktop application. It verifies and
 repackages the signed upstream Linux payload, adds disabled-by-default Linux
 features, and produces deb, RPM, pacman, AppImage, and Nix outputs.
 
-The custom application appears in desktop menus as **ChatGPT Community** and
+The custom application appears in desktop menus as **Hydex** and
 uses an icon marked with a blue `C`. Its package, command, and installation
-identity remain `codex-desktop` and `/opt/codex-desktop`, so it is easy to
+identity remain `hydex-desktop` and `/opt/hydex-desktop`, so it is easy to
 distinguish from OpenAI's separate **ChatGPT** package.
 
 OpenAI's signed Linux `.deb` is the only upstream source. The official
@@ -45,8 +45,8 @@ coding agents should also read [AGENTS.md](AGENTS.md).
 Clone the repository before building a native package or AppImage:
 
 ```bash
-git clone https://github.com/ilysenko/codex-desktop-linux.git
-cd codex-desktop-linux
+git clone https://github.com/mwheiss/hydex-desktop.git
+cd hydex-desktop
 ```
 
 | Platform | Recommended command | Result |
@@ -56,7 +56,7 @@ cd codex-desktop-linux
 | Fedora | `make bootstrap-native` | Builds and installs an RPM |
 | openSUSE | `make bootstrap-native` | Builds and installs an RPM |
 | Arch, Manjaro, EndeavourOS | `make bootstrap-native` | Builds and installs a pacman package |
-| NixOS or another Nix system | `nix run github:ilysenko/codex-desktop-linux` | Builds and runs the flake output; see [Nix](docs/nix.md) |
+| NixOS or another Nix system | `nix run github:ilysenko/hydex-desktop` | Builds and runs the flake output; see [Nix](docs/nix.md) |
 | Atomic desktops or another distribution | `make build-app && make appimage` | Produces a local AppImage without the native updater |
 
 The recommended native installation is:
@@ -109,7 +109,7 @@ Old `.dmg`, `DMG=`, and `CODEX_DMG_*` inputs are intentionally unsupported.
   `dpkg-deb`, tar, make, and a C/C++ toolchain. Rust is used for the updater and
   enabled native feature helpers. `make bootstrap-native` installs or guides
   you through these requirements.
-- The official `chatgpt` and custom `codex-desktop` packages may coexist, but
+- The official `chatgpt` and custom `hydex-desktop` packages may coexist, but
   both intentionally use the upstream `Codex` user profile. Do not run them at
   the same time; the upstream single-instance lock may route the second launch
   into the process that is already running.
@@ -133,26 +133,26 @@ request, or any other error never delays the application and produces no
 output. Disable the usage count with the single environment variable:
 
 ```bash
-CODEX_LINUX_DISABLE_USAGE_REPORTING=1 codex-desktop
+CODEX_LINUX_DISABLE_USAGE_REPORTING=1 hydex-desktop
 ```
 
 ## Uninstall
 
-First close both **ChatGPT Community** and the official **ChatGPT** application.
+First close both **Hydex** and the official **ChatGPT** application.
 Then remove the native package with the package manager that installed it:
 
 ```bash
 # Debian / Ubuntu
-sudo apt remove codex-desktop
+sudo apt remove hydex-desktop
 
 # Fedora
-sudo dnf remove codex-desktop
+sudo dnf remove hydex-desktop
 
 # openSUSE
-sudo zypper remove codex-desktop
+sudo zypper remove hydex-desktop
 
 # Arch / Manjaro
-sudo pacman -R codex-desktop
+sudo pacman -R hydex-desktop
 ```
 
 Native package removal disables the user update service. If a service from an
@@ -177,9 +177,9 @@ Package removal preserves user data. To remove only Community wrapper and
 updater state, inspect and then delete the following directories:
 
 ```text
-~/.config/codex-desktop
-~/.local/state/codex-desktop
-~/.cache/codex-desktop
+~/.config/hydex-desktop
+~/.local/state/hydex-desktop
+~/.cache/hydex-desktop
 ~/.config/codex-update-manager
 ~/.local/state/codex-update-manager
 ~/.cache/codex-update-manager
@@ -202,11 +202,11 @@ used by both official and Community applications.
 | Native deb, RPM, and pacman packages | Manual build | `make deb`, `make rpm`, or `make pacman` |
 | RHEL 7/9 compatibility RPMs | Manual build | `make rpm-rhel7` (split RPM 4.11 payload) or `make rpm-rhel9` |
 | AppImage | Manual build | `make appimage`; no automatic sandbox bypass or bundled updater |
-| Nix flake | Manual build | `nix run github:ilysenko/codex-desktop-linux` |
+| Nix flake | Manual build | `nix run github:ilysenko/hydex-desktop` |
 | Transactional update manager | Native packages | Included unless built with `PACKAGE_WITH_UPDATER=0` |
 | Official Browser and Chrome integrations | Upstream | Reused from the official Linux package; no legacy port layer |
 | Linux feature framework | Tracked defaults plus local overrides | Configure with `make setup-native` |
-| Distinct desktop identity | Always | **ChatGPT Community**, blue `C` icon, `codex-desktop` package identity |
+| Distinct desktop identity | Always | **Hydex**, blue `C` icon, `hydex-desktop` package identity |
 
 ### Optional Linux features
 
@@ -359,8 +359,8 @@ output layout, parallelism, and payload inspection.
 | AppImage opens from Flatpak Chrome, but the extension says `Native transport disconnected` | Enable `flatpak-chrome-native-messaging`; see [Flatpak Chrome setup](docs/troubleshooting.md#appimage-opens-from-flatpak-chrome-but-the-extension-cannot-connect) |
 | Browser/Chrome extension cannot connect after migration | Exit ChatGPT and Chrome completely, then follow the narrow cache repair in [Troubleshooting](docs/troubleshooting.md#browser-or-chrome-plugin-is-visible-but-cannot-connect) |
 | Signature or package verification fails | Do not bypass it; check time, network, `gpgv`, architecture, and disk space |
-| App does not launch | Run `/opt/codex-desktop/start.sh --diagnose` |
-| App uses XWayland or needs persistent Electron flags | A confirmed Wayland session selects the native backend automatically; pin one with `CODEX_OZONE_PLATFORM=x11\|wayland`, or put one flag per line in `~/.config/codex-desktop/electron-flags.conf`, for example `--ozone-platform=x11` |
+| App does not launch | Run `/opt/hydex-desktop/start.sh --diagnose` |
+| App uses XWayland or needs persistent Electron flags | A confirmed Wayland session selects the native backend automatically; pin one with `CODEX_OZONE_PLATFORM=x11\|wayland`, or put one flag per line in `~/.config/hydex-desktop/electron-flags.conf`, for example `--ozone-platform=x11` |
 | AppImage reports a sandbox error | Enable user namespaces or install a native package; `--no-sandbox` is not added automatically |
 | Enabled feature drifts after an upstream release | Disable that feature to confirm the clean baseline and attach its patch report to an issue |
 | Updater waits for application exit | Close official and Community processes, then inspect `codex-update-manager status --json` |

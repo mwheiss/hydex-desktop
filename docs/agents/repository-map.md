@@ -33,7 +33,7 @@
 
 The official Linux package supplies the complete application runtime and
 bundled commands. There is no repository-owned runtime replacement layer.
-The packaged desktop entry is **ChatGPT Community**; `codex-desktop` remains
+The packaged desktop entry is **Hydex**; `hydex-desktop` remains
 the package, executable, and installation-path identity.
 
 Generated output includes `codex-app/`, `codex-app.backup-*`, candidates,

@@ -2,7 +2,7 @@ Name:           __PACKAGE_NAME__
 Version:        __RPM_VERSION__
 Release:        __RPM_RELEASE__%{?dist}
 %global codex_rhel_compat __RPM_COMPAT_MAJOR__
-Summary:        ChatGPT Community for Linux
+Summary:        Hydex for Linux
 %if 0%{codex_rhel_compat}
 License:        Proprietary and LGPLv2+ and GPLv3+ with exceptions and ASL 2.0
 %else
@@ -24,6 +24,7 @@ ExclusiveArch:  __ARCH__
 %endif
 
 __CODEX_CLI_PACKAGE_METADATA__
+__DESKTOP_PACKAGE_TRANSITION_METADATA__
 
 %if __PACKAGE_WITH_UPDATER__
 Requires:       polkit, curl, dpkg, nodejs, xdg-utils
@@ -57,7 +58,7 @@ Requires:       __PACKAGE_NAME__-cli-runtime = %{version}-%{release}
 
 %if 0%{codex_rhel_compat} == 7
 %package cli-runtime
-Summary:        Version-matched Hydex CLI runtime for ChatGPT Community
+Summary:        Version-matched Hydex CLI runtime for Hydex
 License:        Proprietary
 Requires:       __PACKAGE_NAME__ = %{version}-%{release}
 
@@ -67,7 +68,7 @@ payload below its legacy cpio size boundary.
 %endif
 
 %description
-Custom codex-desktop distribution built from OpenAI's signed official Linux package.
+Custom hydex-desktop distribution built from OpenAI's signed official Linux package.
 The complete official runtime, Codex CLI, rg, and code-mode host are bundled.
 %if __PACKAGE_WITH_UPDATER__
 Local updates verify OpenAI's signed APT metadata and rebuild from the indexed Linux package.
@@ -97,7 +98,7 @@ __CODEX_CLI_PACKAGE_FILES__
 /usr/share/icons/hicolor/256x256/apps/__PACKAGE_NAME__.png
 __LINUX_FEATURE_FILES__
 %if __PACKAGE_WITH_UPDATER__
-/usr/share/polkit-1/actions/com.github.ilysenko.codex-desktop-linux.update.policy
+/usr/share/polkit-1/actions/com.github.mwheiss.hydex-desktop.update.policy
 %endif
 
 %if 0%{codex_rhel_compat} == 7
@@ -114,7 +115,7 @@ if command -v aa-enabled >/dev/null 2>&1 && command -v apparmor_parser >/dev/nul
    aa-enabled --quiet && [ -f /etc/apparmor.d/__PACKAGE_NAME__ ]; then
     apparmor_parser -r -W -T /etc/apparmor.d/__PACKAGE_NAME__ >/dev/null 2>&1 || true
 fi
-DESKTOP_ENTRY_DOCTOR=/opt/__PACKAGE_NAME__/.codex-linux/codex-desktop-entry-doctor.sh
+DESKTOP_ENTRY_DOCTOR=/opt/__PACKAGE_NAME__/.codex-linux/hydex-desktop-entry-doctor.sh
 if [ -f "$DESKTOP_ENTRY_DOCTOR" ]; then
     . "$DESKTOP_ENTRY_DOCTOR"
     codex_desktop_repair_system_package_shadow_entries __PACKAGE_NAME__ || true
@@ -177,5 +178,5 @@ fi
 %endif
 
 %changelog
-* Thu Jan 01 2026 ChatGPT Community for Linux Maintainers <maintainers@codex-desktop-linux>
+* Thu Jan 01 2026 Hydex for Linux Maintainers <maintainers@hydex-desktop>
 - Initial RPM package
