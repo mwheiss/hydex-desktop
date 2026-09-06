@@ -110,6 +110,29 @@ linux_feature_enabled() {
     grep -Fxq "$feature_id" <<<"$enabled_output"
 }
 
+pacman_codex_cli_package_metadata() {
+    local root="$1"
+    local codex_link="$root/usr/bin/codex"
+    local code_mode_link="$root/usr/bin/codex-code-mode-host"
+    local expected_codex="/opt/$PACKAGE_NAME/resources/codex"
+    local expected_code_mode="/opt/$PACKAGE_NAME/resources/codex-code-mode-host"
+
+    if [ ! -e "$codex_link" ] && [ ! -L "$codex_link" ] && \
+        [ ! -e "$code_mode_link" ] && [ ! -L "$code_mode_link" ]; then
+        return 0
+    fi
+    [ -L "$codex_link" ] && [ "$(readlink "$codex_link")" = "$expected_codex" ] || \
+        error "Pacman Codex CLI entrypoint is incomplete or unexpected: $codex_link"
+    [ -L "$code_mode_link" ] && [ "$(readlink "$code_mode_link")" = "$expected_code_mode" ] || \
+        error "Pacman Codex code-mode entrypoint is incomplete or unexpected: $code_mode_link"
+
+    cat <<'METADATA'
+provides=('codex' 'openai-codex')
+conflicts=('hydex-bin' 'codex' 'codex-bin' 'openai-codex' 'openai-codex-bin' 'openai-codex-autoup-bin')
+replaces=('hydex-bin' 'openai-codex-bin' 'openai-codex-autoup-bin')
+METADATA
+}
+
 stage_update_builder_linux_features_config() {
     local update_builder_root="$1"
     local helper="$REPO_DIR/scripts/lib/linux-features.js"
