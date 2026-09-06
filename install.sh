@@ -1,15 +1,15 @@
 #!/bin/bash
 set -Eeuo pipefail
 
-# Build the custom codex-desktop distribution from OpenAI's official Linux
+# Build the custom hydex-desktop distribution from OpenAI's official Linux
 # package. The unattended source of trust is the signed stable APT index.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CODEX_APP_ID="${CODEX_APP_ID:-codex-desktop}"
-CODEX_APP_DISPLAY_NAME="${CODEX_APP_DISPLAY_NAME:-ChatGPT Community}"
+CODEX_APP_ID="${CODEX_APP_ID:-hydex-desktop}"
+CODEX_APP_DISPLAY_NAME="${CODEX_APP_DISPLAY_NAME:-Hydex}"
 INSTALL_ROOT="${CODEX_INSTALL_ROOT:-$SCRIPT_DIR}"
 DEFAULT_INSTALL_DIR_NAME="codex-app"
-if [ "$CODEX_APP_ID" != "codex-desktop" ]; then
+if [ "$CODEX_APP_ID" != "hydex-desktop" ]; then
     DEFAULT_INSTALL_DIR_NAME="$CODEX_APP_ID-app"
 fi
 INSTALL_DIR="${CODEX_INSTALL_DIR:-$INSTALL_ROOT/$DEFAULT_INSTALL_DIR_NAME}"
@@ -137,7 +137,7 @@ build_from_upstream_package() {
 
 main() {
     echo "============================================" >&2
-    echo "  codex-desktop — official Linux upstream" >&2
+    echo "  hydex-desktop — official Linux upstream" >&2
     echo "============================================" >&2
 
     parse_args "$@"

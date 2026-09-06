@@ -42,8 +42,8 @@ function createApp(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-launcher-test-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }));
   const launcher = fs.readFileSync(templatePath, "utf8")
-    .replaceAll("__CODEX_LINUX_APP_ID__", "codex-desktop")
-    .replaceAll("__CODEX_LINUX_APP_DISPLAY_NAME__", "ChatGPT Community");
+    .replaceAll("__CODEX_LINUX_APP_ID__", "hydex-desktop")
+    .replaceAll("__CODEX_LINUX_APP_DISPLAY_NAME__", "Hydex");
   writeExecutable(path.join(root, "start.sh"), launcher);
   for (const relative of ["resources/app.asar", "resources/codex", "resources/rg", "resources/codex-code-mode-host"]) {
     const target = path.join(root, relative);
@@ -209,13 +209,13 @@ test("launcher composes declarative hooks and forwards arguments", (t) => {
   });
   assert.equal(result.status, 7);
   assert.deepEqual(fs.readFileSync(path.join(root, "environment"), "utf8").trim().split("\n"), [
-    "codex-desktop.desktop",
-    "/usr/share/applications/codex-desktop.desktop",
+    "hydex-desktop.desktop",
+    "/usr/share/applications/hydex-desktop.desktop",
     "from-env",
     "from-launcher",
   ]);
   assert.deepEqual(fs.readFileSync(path.join(root, "arguments"), "utf8").trim().split("\n"), [
-    "--class=codex-desktop",
+    "--class=hydex-desktop",
     "--feature-arg=one two",
     "--launcher-arg=value",
     "codex://thread/123",
@@ -229,9 +229,9 @@ test("launcher preserves desktop arguments and exposes the after-exit status", (
   for (const originalArgs of [[], ["codex://thread/123", "--new-window"]]) {
     const root = createApp(t);
     const hooks = path.join(root, ".codex-linux");
-    const stateDir = path.join(root, "state", "codex-desktop");
-    const cacheDir = path.join(root, "cache", "codex-desktop");
-    const expectedDesktopArgs = ["--class=codex-desktop", ...originalArgs];
+    const stateDir = path.join(root, "state", "hydex-desktop");
+    const cacheDir = path.join(root, "cache", "hydex-desktop");
+    const expectedDesktopArgs = ["--class=hydex-desktop", ...originalArgs];
     const expectedHookContext = [
       `app=${root}`,
       `state=${stateDir}`,
@@ -457,13 +457,13 @@ test("launcher canonicalizes CODEX_HOME loaded from an environment hook", (t) =>
 test("launcher loads global and app-specific Electron flags", (t) => {
   const root = createApp(t);
   const configHome = path.join(root, "config");
-  fs.mkdirSync(path.join(configHome, "codex-desktop"), { recursive: true });
+  fs.mkdirSync(path.join(configHome, "hydex-desktop"), { recursive: true });
   fs.writeFileSync(
     path.join(configHome, "electron-flags.conf"),
     "# Shared Electron flags\n  --ozone-platform=wayland  \r\n\n",
   );
   fs.writeFileSync(
-    path.join(configHome, "codex-desktop", "electron-flags.conf"),
+    path.join(configHome, "hydex-desktop", "electron-flags.conf"),
     "  # Community-only flags\n--enable-features=WaylandWindowDecorations\n",
   );
   writeExecutable(
@@ -487,7 +487,7 @@ test("launcher loads global and app-specific Electron flags", (t) => {
 
   assert.equal(result.status, 7);
   assert.deepEqual(fs.readFileSync(path.join(root, "arguments"), "utf8").trim().split("\n"), [
-    "--class=codex-desktop",
+    "--class=hydex-desktop",
     "--ozone-platform=wayland",
     "--enable-features=WaylandWindowDecorations",
     "--ozone-platform=x11",
@@ -496,7 +496,7 @@ test("launcher loads global and app-specific Electron flags", (t) => {
   assert.deepEqual(
     fs.readFileSync(path.join(root, "launcher-hook-arguments"), "utf8").trim().split("\n"),
     [
-      "--class=codex-desktop",
+      "--class=hydex-desktop",
       "--ozone-platform=wayland",
       "--enable-features=WaylandWindowDecorations",
       "--ozone-platform=x11",
@@ -510,9 +510,9 @@ test("launcher uses the HOME config fallback and ignores non-file flag paths", (
   const home = path.join(root, "home");
   const configHome = path.join(home, ".config");
   fs.mkdirSync(path.join(configHome, "electron-flags.conf"), { recursive: true });
-  fs.mkdirSync(path.join(configHome, "codex-desktop"), { recursive: true });
+  fs.mkdirSync(path.join(configHome, "hydex-desktop"), { recursive: true });
   fs.writeFileSync(
-    path.join(configHome, "codex-desktop", "electron-flags.conf"),
+    path.join(configHome, "hydex-desktop", "electron-flags.conf"),
     "--ozone-platform=wayland\n",
   );
   const env = {
@@ -532,7 +532,7 @@ test("launcher uses the HOME config fallback and ignores non-file flag paths", (
   assert.equal(result.stderr, "");
   assert.equal(
     fs.readFileSync(path.join(root, "arguments"), "utf8"),
-    "--class=codex-desktop\n--ozone-platform=wayland\n",
+    "--class=hydex-desktop\n--ozone-platform=wayland\n",
   );
 });
 
@@ -598,7 +598,7 @@ test("launcher selects the Wayland backend for a confirmed Wayland session", (t)
   const session = createWaylandSession(t, root);
 
   assert.deepEqual(launchArguments(root, session, ["codex://thread/123"]).args, [
-    "--class=codex-desktop",
+    "--class=hydex-desktop",
     "--ozone-platform=wayland",
     "codex://thread/123",
   ]);
@@ -606,7 +606,7 @@ test("launcher selects the Wayland backend for a confirmed Wayland session", (t)
   // An absolute socket path.
   assert.deepEqual(
     launchArguments(root, { ...session, WAYLAND_DISPLAY: path.join(session.XDG_RUNTIME_DIR, "wayland-0") }).args,
-    ["--class=codex-desktop", "--ozone-platform=wayland"],
+    ["--class=hydex-desktop", "--ozone-platform=wayland"],
   );
 
   // GNOME with a single connected output is not the multi-monitor case.
@@ -616,7 +616,7 @@ test("launcher selects the Wayland backend for a confirmed Wayland session", (t)
       CODEX_DRM_CLASS_ROOT: createDrmRoot(t, 1),
       XDG_CURRENT_DESKTOP: "GNOME",
     }).args,
-    ["--class=codex-desktop", "--ozone-platform=wayland"],
+    ["--class=hydex-desktop", "--ozone-platform=wayland"],
   );
 });
 
@@ -626,7 +626,7 @@ test("launcher keeps the X11 default when no Wayland session is confirmed", (t) 
   const expectDefault = (env) => {
     const { result, args } = launchArguments(root, env);
     assert.equal(result.stderr, "");
-    assert.deepEqual(args, ["--class=codex-desktop"]);
+    assert.deepEqual(args, ["--class=hydex-desktop"]);
   };
 
   // No compositor at all.
@@ -655,12 +655,12 @@ test("launcher treats a socket inode without a listener as no session", (t) => {
   const { result, args } = launchArguments(root, stale);
 
   assert.equal(result.stderr, "");
-  assert.deepEqual(args, ["--class=codex-desktop"]);
+  assert.deepEqual(args, ["--class=hydex-desktop"]);
 
   // Without a usable iproute2 the inode check stands on its own.
   const unlisted = createWaylandSession(t, root, { listening: "unavailable" });
   assert.deepEqual(launchArguments(root, unlisted).args, [
-    "--class=codex-desktop",
+    "--class=hydex-desktop",
     "--ozone-platform=wayland",
   ]);
 });
@@ -671,7 +671,7 @@ test("launcher finds Sommelier markers that only the systemd user manager export
     systemdEnvironment: "DISPLAY=:0\nSOMMELIER_VERSION=0.20\nWAYLAND_DISPLAY=wayland-0\n",
   });
 
-  assert.deepEqual(launchArguments(root, session).args, ["--class=codex-desktop"]);
+  assert.deepEqual(launchArguments(root, session).args, ["--class=hydex-desktop"]);
 });
 
 test("launcher keeps GNOME Wayland multi-monitor sessions on X11", (t) => {
@@ -686,14 +686,14 @@ test("launcher keeps GNOME Wayland multi-monitor sessions on X11", (t) => {
   ]) {
     assert.deepEqual(
       launchArguments(root, { ...session, CODEX_DRM_CLASS_ROOT: drmRoot, ...desktop }).args,
-      ["--class=codex-desktop"],
+      ["--class=hydex-desktop"],
     );
   }
 
   // Another desktop with the same monitors keeps native Wayland.
   assert.deepEqual(
     launchArguments(root, { ...session, CODEX_DRM_CLASS_ROOT: drmRoot, XDG_CURRENT_DESKTOP: "KDE" }).args,
-    ["--class=codex-desktop", "--ozone-platform=wayland"],
+    ["--class=hydex-desktop", "--ozone-platform=wayland"],
   );
 });
 
@@ -704,21 +704,21 @@ test("CODEX_OZONE_PLATFORM pins a backend ahead of session detection", (t) => {
   // Pinning X11 inside a confirmed Wayland session, as the Nix wrapper does.
   let launch = launchArguments(root, { ...session, CODEX_OZONE_PLATFORM: "x11" });
   assert.equal(launch.result.stderr, "");
-  assert.deepEqual(launch.args, ["--class=codex-desktop", "--ozone-platform=x11"]);
+  assert.deepEqual(launch.args, ["--class=hydex-desktop", "--ozone-platform=x11"]);
 
   // Pinning Wayland where detection would have declined.
   launch = launchArguments(root, { ...session, CODEX_OZONE_PLATFORM: "wayland", SOMMELIER_VERSION: "0.20" });
   assert.equal(launch.result.stderr, "");
-  assert.deepEqual(launch.args, ["--class=codex-desktop", "--ozone-platform=wayland"]);
+  assert.deepEqual(launch.args, ["--class=hydex-desktop", "--ozone-platform=wayland"]);
 
   // An invalid value warns and falls back to detection.
   launch = launchArguments(root, { ...session, CODEX_OZONE_PLATFORM: "gtk" });
   assert.match(launch.result.stderr, /Ignoring CODEX_OZONE_PLATFORM=gtk; expected auto, x11, or wayland/);
-  assert.deepEqual(launch.args, ["--class=codex-desktop", "--ozone-platform=wayland"]);
+  assert.deepEqual(launch.args, ["--class=hydex-desktop", "--ozone-platform=wayland"]);
 
   // An explicit switch still wins over the pin.
   launch = launchArguments(root, { ...session, CODEX_OZONE_PLATFORM: "wayland" }, ["--ozone-platform=x11"]);
-  assert.deepEqual(launch.args, ["--class=codex-desktop", "--ozone-platform=x11"]);
+  assert.deepEqual(launch.args, ["--class=hydex-desktop", "--ozone-platform=x11"]);
 });
 
 test("an explicit Ozone selection suppresses the Wayland backend", (t) => {
@@ -728,7 +728,7 @@ test("an explicit Ozone selection suppresses the Wayland backend", (t) => {
   const hooks = path.join(root, ".codex-linux");
   const expectExplicit = (args) => {
     assert.deepEqual(launchArguments(root, session, args).args, [
-      "--class=codex-desktop",
+      "--class=hydex-desktop",
       "--ozone-platform=x11",
     ]);
   };
@@ -737,13 +737,13 @@ test("an explicit Ozone selection suppresses the Wayland backend", (t) => {
   expectExplicit(["--ozone-platform=x11"]);
 
   // A user flag file.
-  fs.mkdirSync(path.join(configHome, "codex-desktop"), { recursive: true });
+  fs.mkdirSync(path.join(configHome, "hydex-desktop"), { recursive: true });
   fs.writeFileSync(
-    path.join(configHome, "codex-desktop", "electron-flags.conf"),
+    path.join(configHome, "hydex-desktop", "electron-flags.conf"),
     "--ozone-platform=x11\n",
   );
   expectExplicit([]);
-  fs.rmSync(path.join(configHome, "codex-desktop", "electron-flags.conf"));
+  fs.rmSync(path.join(configHome, "hydex-desktop", "electron-flags.conf"));
 
   // A feature argument file.
   fs.mkdirSync(path.join(hooks, "electron-args.d"), { recursive: true });
@@ -762,11 +762,11 @@ test("an explicit Ozone selection suppresses the Wayland backend", (t) => {
   // A leftover hint is not a selection: this runtime ignores it, so the
   // session would otherwise stay on XWayland.
   fs.writeFileSync(
-    path.join(configHome, "codex-desktop", "electron-flags.conf"),
+    path.join(configHome, "hydex-desktop", "electron-flags.conf"),
     "--ozone-platform-hint=auto\n",
   );
   assert.deepEqual(launchArguments(root, session).args, [
-    "--class=codex-desktop",
+    "--class=hydex-desktop",
     "--ozone-platform-hint=auto",
     "--ozone-platform=wayland",
   ]);

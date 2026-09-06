@@ -211,7 +211,7 @@ mod tests {
             ".pkg.tar.lz5",
         ] {
             let dist = tempdir()?;
-            let package = dist.path().join(format!("codex-desktop-1{suffix}"));
+            let package = dist.path().join(format!("hydex-desktop-1{suffix}"));
             fs::write(&package, b"package fixture")?;
             assert_eq!(find_package(dist.path())?, package);
         }
@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn find_package_ignores_package_named_directories() -> Result<()> {
         let dist = tempdir()?;
-        let package = dist.path().join("codex-desktop-1.deb");
+        let package = dist.path().join("hydex-desktop-1.deb");
         fs::write(&package, b"package fixture")?;
         for name in ["staging.deb", "staging.rpm", "staging.pkg.tar.zst"] {
             fs::create_dir(dist.path().join(name))?;
@@ -233,15 +233,15 @@ mod tests {
     #[test]
     fn find_package_ignores_sidecars_and_unrelated_files() -> Result<()> {
         let dist = tempdir()?;
-        let package = dist.path().join("codex-desktop-1.pkg.tar.zst");
+        let package = dist.path().join("hydex-desktop-1.pkg.tar.zst");
         fs::write(&package, b"package fixture")?;
         for name in [
-            "codex-desktop-1.pkg.tar.zst.sig",
-            "codex-desktop-1.pkg.tar.zst.sha256",
-            "codex-desktop-1.pkg.tar.zst.part",
+            "hydex-desktop-1.pkg.tar.zst.sig",
+            "hydex-desktop-1.pkg.tar.zst.sha256",
+            "hydex-desktop-1.pkg.tar.zst.part",
             "report.pkg.tar.json",
-            "codex-desktop-1.deb.sig",
-            "codex-desktop-1.rpm.sig",
+            "hydex-desktop-1.deb.sig",
+            "hydex-desktop-1.rpm.sig",
             "build.log",
         ] {
             fs::write(dist.path().join(name), b"not a package")?;
@@ -262,7 +262,7 @@ mod tests {
 
         let outside = root.path().join("outside.pkg.tar.zst");
         fs::write(&outside, b"outside fixture")?;
-        symlink(&outside, dist.join("codex-desktop-latest.pkg.tar.zst"))?;
+        symlink(&outside, dist.join("hydex-desktop-latest.pkg.tar.zst"))?;
         assert_eq!(
             find_package(&dist).unwrap_err().to_string(),
             "expected one rebuilt package, found 0"
@@ -291,14 +291,14 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn find_package_ignores_latest_alias_symlink() {
-        // build-pacman.sh writes codex-desktop-latest.pkg.tar.zst as a symlink
+        // build-pacman.sh writes hydex-desktop-latest.pkg.tar.zst as a symlink
         // next to the real artifact; it must not count as a second package.
         let dist = scratch_dir("latest-alias");
-        let real = dist.join("codex-desktop-2026.09.03.120000-1-x86_64.pkg.tar.zst");
+        let real = dist.join("hydex-desktop-2026.09.03.120000-1-x86_64.pkg.tar.zst");
         fs::write(&real, b"package").expect("real package");
         std::os::unix::fs::symlink(
             real.file_name().expect("file name"),
-            dist.join("codex-desktop-latest.pkg.tar.zst"),
+            dist.join("hydex-desktop-latest.pkg.tar.zst"),
         )
         .expect("latest symlink");
 
@@ -311,9 +311,9 @@ mod tests {
     #[test]
     fn find_package_still_rejects_two_real_packages() {
         let dist = scratch_dir("two-real");
-        fs::write(dist.join("codex-desktop-2026.09.03.120000-1-x86_64.pkg.tar.zst"), b"a")
+        fs::write(dist.join("hydex-desktop-2026.09.03.120000-1-x86_64.pkg.tar.zst"), b"a")
             .expect("first package");
-        fs::write(dist.join("codex-desktop-2026.09.03.130000-1-x86_64.pkg.tar.zst"), b"b")
+        fs::write(dist.join("hydex-desktop-2026.09.03.130000-1-x86_64.pkg.tar.zst"), b"b")
             .expect("second package");
 
         let error = find_package(&dist).expect_err("ambiguous dist must fail");

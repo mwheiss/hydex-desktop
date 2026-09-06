@@ -1,10 +1,10 @@
 {
-  description = "codex-desktop built from OpenAI's official Linux package";
+  description = "hydex-desktop built from OpenAI's official Linux package";
 
   nixConfig = {
-    extra-substituters = [ "https://codex-desktop-linux.cachix.org" ];
+    extra-substituters = [ "https://hydex-desktop.cachix.org" ];
     extra-trusted-public-keys = [
-      "codex-desktop-linux.cachix.org-1:nX/xy6AdK9hQE24A8ALGjkCKj2ObFmcnemiL5Cid4nk="
+      "hydex-desktop.cachix.org-1:nX/xy6AdK9hQE24A8ALGjkCKj2ObFmcnemiL5Cid4nk="
     ];
   };
 
@@ -51,7 +51,7 @@
           name = "chatgpt_${codexVersion}_${officialPackage.architecture}.deb";
         };
         flakeSourceCommit = self.rev or (self.dirtyRev or "");
-        flakeSourceRemote = "https://github.com/ilysenko/codex-desktop-linux.git";
+        flakeSourceRemote = "https://github.com/mwheiss/hydex-desktop.git";
         flakeSourceDateEpoch = toString (self.lastModified or 1);
         sourceRoot = lib.cleanSourceWith {
           src = ./.;
@@ -126,7 +126,7 @@
         dynamicLinker = pkgs.stdenv.cc.bintools.dynamicLinker;
         mkNixosBwrap = { realBwrap, runtimeInterpreter ? genericRuntimeInterpreter }:
           let
-            source = pkgs.writeText "codex-desktop-nixos-bwrap.c" ''
+            source = pkgs.writeText "hydex-desktop-nixos-bwrap.c" ''
               #define _XOPEN_SOURCE 700
               #include <errno.h>
               #include <stdio.h>
@@ -158,7 +158,7 @@
                 if (mount_destination == NULL) {
                   if (errno == ENOENT) {
                     fprintf(stderr,
-                            "codex-desktop: generic interpreter %s is unavailable; "
+                            "hydex-desktop: generic interpreter %s is unavailable; "
                             "cached generic runtimes remain disabled\n",
                             generic_interpreter);
                     execv(real_bwrap, argv);
@@ -199,7 +199,7 @@
                 return 127;
               }
             '';
-          in pkgs.runCommandCC "codex-desktop-nixos-bwrap" { } ''
+          in pkgs.runCommandCC "hydex-desktop-nixos-bwrap" { } ''
             mkdir -p "$out/bin"
             "$CC" -std=c11 -O2 -Wall -Wextra -Werror \
               -o "$out/bin/bwrap" ${source}
@@ -207,7 +207,7 @@
         nixosBwrap = mkNixosBwrap {
           realBwrap = "${pkgs.bubblewrap}/bin/bwrap";
         };
-        nixRuntimeLauncher = pkgs.writeShellScript "codex-desktop-nix-runtime-launcher" ''
+        nixRuntimeLauncher = pkgs.writeShellScript "hydex-desktop-nix-runtime-launcher" ''
           set -euo pipefail
           [ "$#" -gt 0 ]
           if [[ -e /etc/NIXOS ]]; then
@@ -303,7 +303,7 @@
               ++ lib.optionals recordReplayBackendEnabled [ "codex-record-replay-linux" ];
           in
           if cargoPackages == [ ] then null else staticCratesBuildRustPackage {
-            pname = "codex-desktop-feature-helpers";
+            pname = "hydex-desktop-feature-helpers";
             version = "0.1.0";
             src = helperWorkspaceSource;
             cargoLock.lockFile = ./Cargo.lock;
@@ -455,7 +455,7 @@
             suffix = if userFeatureIds == [ ] then "" else "-${lib.concatStringsSep "-" userFeatureIds}";
           in
           pkgs.stdenv.mkDerivation {
-            pname = "codex-desktop${suffix}";
+            pname = "hydex-desktop${suffix}";
             version = codexVersion;
             src = sourceRoot;
             # This derivation's fail-closed audit owns ELF interpreters and
@@ -487,7 +487,7 @@
               substituteInPlace "$source_dir/scripts/lib/asar-patch.sh" \
                 --replace-fail "npx --yes @electron/asar" "${pkgs.asar}/bin/asar"
               export CODEX_INSTALL_TRANSACTION_ACTIVE=1
-              export CODEX_INSTALL_DIR="$out/opt/codex-desktop"
+              export CODEX_INSTALL_DIR="$out/opt/hydex-desktop"
               export CODEX_LINUX_FEATURES_CONFIG="${featuresConfig}"
               export CODEX_INTERNAL_LINUX_FEATURE_IDS="${lib.concatStringsSep "," internalNixFeatureIds}"
               ${lib.optionalString (flakeSourceCommit != "") ''
@@ -515,7 +515,7 @@
               ''}
               bash "$source_dir/install.sh" "${upstreamDeb}"
 
-              app="$out/opt/codex-desktop"
+              app="$out/opt/hydex-desktop"
               test -d "$app"
               node "$source_dir/scripts/ci/validate-patch-report.js" \
                 "$app/.codex-linux/patch-report.json" \
@@ -530,8 +530,8 @@
                 --chatgpt-relocator "$source_dir/nix/relocate-elf-interpreter.cjs"
               patchShebangs --build "$app"
 
-              install -Dm0644 "$app/.codex-linux/codex-desktop.png" \
-                "$out/share/icons/hicolor/256x256/apps/codex-desktop.png"
+              install -Dm0644 "$app/.codex-linux/hydex-desktop.png" \
+                "$out/share/icons/hicolor/256x256/apps/hydex-desktop.png"
               ${lib.optionalString codexMicroEnabled ''
               install -Dm0644 \
                 "$source_dir/linux-features/codex-micro/resources/70-codex-micro.rules" \
@@ -545,18 +545,18 @@
                 skip { next }
                 /^Actions=/ { print "Actions=new-window;"; next }
                 { print }
-              ' "$source_dir/packaging/linux/codex-desktop.desktop" \
-                > "$out/share/applications/codex-desktop.desktop"
-              substituteInPlace "$out/share/applications/codex-desktop.desktop" \
-                --replace-fail "/usr/bin/codex-desktop" "$out/bin/codex-desktop" \
-                --replace-fail "/usr/share/applications/codex-desktop.desktop" "$out/share/applications/codex-desktop.desktop"
-              makeWrapper "${nixRuntimeLauncher}" "$out/bin/codex-desktop" \
+              ' "$source_dir/packaging/linux/hydex-desktop.desktop" \
+                > "$out/share/applications/hydex-desktop.desktop"
+              substituteInPlace "$out/share/applications/hydex-desktop.desktop" \
+                --replace-fail "/usr/bin/hydex-desktop" "$out/bin/hydex-desktop" \
+                --replace-fail "/usr/share/applications/hydex-desktop.desktop" "$out/share/applications/hydex-desktop.desktop"
+              makeWrapper "${nixRuntimeLauncher}" "$out/bin/hydex-desktop" \
                 --prefix PATH : "${runtimePathFor effectiveFeatureIds}" \
                 --set-default ALSA_PLUGIN_DIR "${pkgs.pipewire}/lib/alsa-lib" \
                 --set-default CODEX_OZONE_PLATFORM x11 \
                 --run 'export XDG_DATA_DIRS="''${XDG_DATA_DIRS:-${xdgDefaultDataDirs}}"' \
                 --prefix XDG_DATA_DIRS : "${gsettingsSchemaDataDirs}" \
-                --set-default BAMF_DESKTOP_FILE_HINT "$out/share/applications/codex-desktop.desktop" \
+                --set-default BAMF_DESKTOP_FILE_HINT "$out/share/applications/hydex-desktop.desktop" \
                 --set-default CODEX_CLI_PATH "$app/resources/codex" \
                 --add-flags "$app/start.sh" \
                 --add-flags "\''${NIXOS_OZONE_WL:+\''${WAYLAND_DISPLAY:+--ozone-platform=wayland --enable-wayland-ime=true --wayland-text-input-version=3}}"
@@ -578,11 +578,11 @@
               upstreamArchitecture = officialPackage.architecture;
             };
             meta = {
-              description = "Custom codex-desktop distribution based on OpenAI's official Linux package";
-              homepage = "https://github.com/ilysenko/codex-desktop-linux";
+              description = "Custom hydex-desktop distribution based on OpenAI's official Linux package";
+              homepage = "https://github.com/mwheiss/hydex-desktop";
               license = lib.licenses.unfree;
               platforms = [ "x86_64-linux" "aarch64-linux" ];
-              mainProgram = "codex-desktop";
+              mainProgram = "hydex-desktop";
             };
           };
 
@@ -602,7 +602,7 @@
         maximalShallow = codexDesktop.override {
           linuxFeatureIds = maximalShallowFeatureIds;
         };
-        installedLauncher = pkgs.writeShellScript "codex-desktop-installed-launcher" ''
+        installedLauncher = pkgs.writeShellScript "hydex-desktop-installed-launcher" ''
           set -euo pipefail
           app_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
           export PATH="${runtimePathFor nixLinuxFeatures.supportedFeatureIds}''${PATH:+:$PATH}"
@@ -611,7 +611,7 @@
           fi
           export XDG_DATA_DIRS="${gsettingsSchemaDataDirs}:''${XDG_DATA_DIRS:-${xdgDefaultDataDirs}}"
           export CODEX_CLI_PATH="''${CODEX_CLI_PATH:-$app_dir/resources/codex}"
-          export BAMF_DESKTOP_FILE_HINT="''${BAMF_DESKTOP_FILE_HINT:-$app_dir/.codex-linux/codex-desktop.desktop}"
+          export BAMF_DESKTOP_FILE_HINT="''${BAMF_DESKTOP_FILE_HINT:-$app_dir/.codex-linux/hydex-desktop.desktop}"
           export CODEX_OZONE_PLATFORM="''${CODEX_OZONE_PLATFORM:-x11}"
           extra_flags=()
           if [[ -n "''${NIXOS_OZONE_WL-}" && -n "''${WAYLAND_DISPLAY-}" ]]; then
@@ -625,7 +625,7 @@
             "$app_dir/.start.sh-nix" "$@" "''${extra_flags[@]}"
         '';
         installerWorkspaceHelpers = mkWorkspaceHelpers maximalDirectoryFeatureIds;
-        installerRuntimeClosure = pkgs.writeText "codex-desktop-installer-runtime-closure" (
+        installerRuntimeClosure = pkgs.writeText "hydex-desktop-installer-runtime-closure" (
           lib.concatMapStringsSep "\n" toString (
             [
               sourceRoot upstreamDeb installedLauncher installerWorkspaceHelpers
@@ -638,9 +638,9 @@
           )
         );
         installerPreviousRuntimeClosure = pkgs.writeText
-          "codex-desktop-installer-previous-runtime-closure"
+          "hydex-desktop-installer-previous-runtime-closure"
           "previous installer runtime closure used by the transaction test\n";
-        mockNixStore = pkgs.writeShellScript "codex-desktop-mock-nix-store" ''
+        mockNixStore = pkgs.writeShellScript "hydex-desktop-mock-nix-store" ''
           set -euo pipefail
           root=""
           closure=""
@@ -671,7 +671,7 @@
           printf '%s\n' "$closure"
         '';
         installer = pkgs.writeShellApplication {
-          name = "codex-desktop-installer";
+          name = "hydex-desktop-installer";
           runtimeInputs = baseRuntimePackages ++ [
             pkgs.dpkg pkgs.gnupg pkgs.makeWrapper pkgs.nix pkgs.patchelf
           ] ++ featureRuntimePackages nixLinuxFeatures.supportedFeatureIds;
@@ -841,7 +841,7 @@
         };
         wrapperEnvironmentProbe = pkgs.writeText "codex-nix-wrapper-environment-probe" ''
           case "$0" in
-            */opt/codex-desktop/start.sh)
+            */opt/hydex-desktop/start.sh)
               {
                 printf 'alsa=%s:%s\n' "''${ALSA_PLUGIN_DIR+x}" "''${ALSA_PLUGIN_DIR-}"
                 printf 'xdg=%s:%s\n' "''${XDG_DATA_DIRS+x}" "''${XDG_DATA_DIRS-}"
@@ -866,28 +866,28 @@
           ${pkgs.coreutils}/bin/env -u ALSA_PLUGIN_DIR -u XDG_DATA_DIRS -u LD_LIBRARY_PATH \
             -u NIXOS_OZONE_WL -u WAYLAND_DISPLAY \
             BASH_ENV=${wrapperEnvironmentProbe} CODEX_NIX_ENV_CAPTURE="$capture" \
-            ${package}/bin/codex-desktop --diagnose
+            ${package}/bin/hydex-desktop --diagnose
           ${pkgs.gnugrep}/bin/grep -Fx 'alsa=x:${pkgs.pipewire}/lib/alsa-lib' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx 'xdg=x:${gsettingsSchemaDataDirs}:${xdgDefaultDataDirs}' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx \
             'bwrap=${lib.optionalString expectNixBwrap "${nixosBwrap}/bin/bwrap"}' \
             "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx 'ld=:' "$capture"
-          ${pkgs.gnugrep}/bin/grep -Fx 'bamf=${package}/share/applications/codex-desktop.desktop' "$capture"
+          ${pkgs.gnugrep}/bin/grep -Fx 'bamf=${package}/share/applications/hydex-desktop.desktop' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx 'ozone=x11' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx 'args=<--diagnose>' "$capture"
           ${pkgs.coreutils}/bin/env -u WAYLAND_DISPLAY NIXOS_OZONE_WL=1 \
             BASH_ENV=${wrapperEnvironmentProbe} CODEX_NIX_ENV_CAPTURE="$capture" \
-            ${package}/bin/codex-desktop --diagnose
+            ${package}/bin/hydex-desktop --diagnose
           ${pkgs.gnugrep}/bin/grep -Fx 'args=<--diagnose>' "$capture"
           ${pkgs.coreutils}/bin/env -u NIXOS_OZONE_WL WAYLAND_DISPLAY=wayland-1 \
             BASH_ENV=${wrapperEnvironmentProbe} CODEX_NIX_ENV_CAPTURE="$capture" \
-            ${package}/bin/codex-desktop --diagnose
+            ${package}/bin/hydex-desktop --diagnose
           ${pkgs.gnugrep}/bin/grep -Fx 'args=<--diagnose>' "$capture"
           ${pkgs.coreutils}/bin/env ALSA_PLUGIN_DIR= XDG_DATA_DIRS= LD_LIBRARY_PATH=/caller/lib \
             PATH=/caller/bin NIXOS_OZONE_WL=1 WAYLAND_DISPLAY=wayland-1 \
             BASH_ENV=${wrapperEnvironmentProbe} CODEX_NIX_ENV_CAPTURE="$capture" \
-            ${package}/bin/codex-desktop --diagnose
+            ${package}/bin/hydex-desktop --diagnose
           ${pkgs.gnugrep}/bin/grep -Fx 'alsa=x:' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx 'xdg=x:${gsettingsSchemaDataDirs}:${xdgDefaultDataDirs}' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx \
@@ -900,7 +900,7 @@
           ${pkgs.coreutils}/bin/env ALSA_PLUGIN_DIR=/caller/alsa XDG_DATA_DIRS=/caller/share \
             BAMF_DESKTOP_FILE_HINT=/caller/desktop LD_LIBRARY_PATH= \
             BASH_ENV=${wrapperEnvironmentProbe} CODEX_NIX_ENV_CAPTURE="$capture" \
-            ${package}/bin/codex-desktop --diagnose
+            ${package}/bin/hydex-desktop --diagnose
           ${pkgs.gnugrep}/bin/grep -Fx 'alsa=x:/caller/alsa' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx 'xdg=x:${gsettingsSchemaDataDirs}:/caller/share' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx 'ld=x:' "$capture"
@@ -933,7 +933,7 @@
           realBwrap = bwrapArgumentProbe;
           runtimeInterpreter = bwrapInterpreterLink;
         };
-        missingBwrapInterpreter = "/codex-desktop-missing-runtime/ld-linux.so";
+        missingBwrapInterpreter = "/hydex-desktop-missing-runtime/ld-linux.so";
         nixosBwrapMissingProbe = mkNixosBwrap {
           realBwrap = bwrapArgumentProbe;
           runtimeInterpreter = missingBwrapInterpreter;
@@ -968,7 +968,7 @@
             nativeBuildInputs = [ pkgs.coreutils pkgs.dpkg pkgs.nodejs pkgs.patchelf ];
           } ''
             set -euo pipefail
-            app=${package}/opt/codex-desktop
+            app=${package}/opt/hydex-desktop
             dynamic_linker="$(cat ${pkgs.stdenv.cc}/nix-support/dynamic-linker)"
             node ${sourceRoot}/nix/elf-runtime.cjs audit \
               --root "$app" \
@@ -1030,14 +1030,14 @@
               --require-applied feature:nix-store-bundled-marketplace-permissions:bundled-marketplace-staging-copy-permissions
             ''}
             test -x ${pkgs.pipewire}/lib/alsa-lib/libasound_module_pcm_pipewire.so
-            ! grep -q 'LD_LIBRARY_PATH=' ${package}/bin/codex-desktop
-            ! grep -q '/usr/bin/' ${package}/share/applications/codex-desktop.desktop
+            ! grep -q 'LD_LIBRARY_PATH=' ${package}/bin/hydex-desktop
+            ! grep -q '/usr/bin/' ${package}/share/applications/hydex-desktop.desktop
             ! grep -q 'CheckForUpdates\|InstallReadyUpdate' \
-              ${package}/share/applications/codex-desktop.desktop
+              ${package}/share/applications/hydex-desktop.desktop
             mkdir -p "$out"
             ln -s ${package} "$out/package"
           '';
-        vmSmokeScript = pkgs.writeShellScript "codex-desktop-vm-smoke" ''
+        vmSmokeScript = pkgs.writeShellScript "hydex-desktop-vm-smoke" ''
           set -euo pipefail
           export HOME="$(mktemp -d)"
           export XDG_CONFIG_HOME="$HOME/.config"
@@ -1060,7 +1060,7 @@
           ${pkgs.dbus}/bin/dbus-run-session -- ${pkgs.bash}/bin/bash -c '
             set -euo pipefail
             log="$HOME/electron.log"
-            ${codexDesktop}/bin/codex-desktop --no-sandbox >"$log" 2>&1 &
+            ${codexDesktop}/bin/hydex-desktop --no-sandbox >"$log" 2>&1 &
             pid=$!
             sleep 10
             if ! kill -0 "$pid" 2>/dev/null; then
@@ -1074,14 +1074,14 @@
               exit 1
             fi
           '
-          timeout 10 ${codexDesktop}/opt/codex-desktop/browser_crashpad_handler --version
+          timeout 10 ${codexDesktop}/opt/hydex-desktop/browser_crashpad_handler --version
           # TCG can make the larger helpers miss this deadline. A timeout still
           # proves that the Nix loader started the process; loader/SIGILL exits
           # remain fatal.
           set +e
-          timeout 10 ${codexDesktop}/opt/codex-desktop/${officialRuntimePaths.sky} --help >/dev/null
+          timeout 10 ${codexDesktop}/opt/hydex-desktop/${officialRuntimePaths.sky} --help >/dev/null
           sky_status=$?
-          timeout 10 ${codexDesktop}/opt/codex-desktop/${officialRuntimePaths.extensionHost} --help >/dev/null
+          timeout 10 ${codexDesktop}/opt/hydex-desktop/${officialRuntimePaths.extensionHost} --help >/dev/null
           extension_status=$?
           set -e
           test "$sky_status" = 0 -o "$sky_status" = 124
@@ -1090,28 +1090,28 @@
       in {
         packages = {
           default = codexDesktop;
-          codex-desktop = codexDesktop;
-          codex-desktop-computer-use-ui = computerUse;
-          codex-desktop-remote-mobile-control = remoteMobile;
-          codex-desktop-computer-use-ui-remote-mobile-control = codexDesktop.override {
+          hydex-desktop = codexDesktop;
+          hydex-desktop-computer-use-ui = computerUse;
+          hydex-desktop-remote-mobile-control = remoteMobile;
+          hydex-desktop-computer-use-ui-remote-mobile-control = codexDesktop.override {
             linuxFeatureIds = [ "computer-use-linux" "remote-mobile-control" ];
           };
-          codex-desktop-maximal-directory-watch = maximalDirectory;
-          codex-desktop-maximal-shallow-watch = maximalShallow;
+          hydex-desktop-maximal-directory-watch = maximalDirectory;
+          hydex-desktop-maximal-shallow-watch = maximalShallow;
           inherit installer;
         };
         apps = {
-          default = { type = "app"; program = "${codexDesktop}/bin/codex-desktop"; };
-          codex-desktop = { type = "app"; program = "${codexDesktop}/bin/codex-desktop"; };
-          codex-desktop-computer-use-ui = { type = "app"; program = "${computerUse}/bin/codex-desktop"; };
-          codex-desktop-remote-mobile-control = { type = "app"; program = "${remoteMobile}/bin/codex-desktop"; };
-          codex-desktop-computer-use-ui-remote-mobile-control = {
+          default = { type = "app"; program = "${codexDesktop}/bin/hydex-desktop"; };
+          hydex-desktop = { type = "app"; program = "${codexDesktop}/bin/hydex-desktop"; };
+          hydex-desktop-computer-use-ui = { type = "app"; program = "${computerUse}/bin/hydex-desktop"; };
+          hydex-desktop-remote-mobile-control = { type = "app"; program = "${remoteMobile}/bin/hydex-desktop"; };
+          hydex-desktop-computer-use-ui-remote-mobile-control = {
             type = "app";
             program = "${codexDesktop.override {
               linuxFeatureIds = [ "computer-use-linux" "remote-mobile-control" ];
-            }}/bin/codex-desktop";
+            }}/bin/hydex-desktop";
           };
-          installer = { type = "app"; program = "${installer}/bin/codex-desktop-installer"; };
+          installer = { type = "app"; program = "${installer}/bin/hydex-desktop-installer"; };
         };
         checks.official-linux-package = pkgs.runCommand "official-linux-package-check" { nativeBuildInputs = [ pkgs.dpkg ]; } ''
           test "$(dpkg-deb -f ${upstreamDeb} Package)" = chatgpt
@@ -1144,7 +1144,7 @@
           set -euo pipefail
           export CODEX_INSTALL_DIR="$TMPDIR/installed"
           export CODEX_NIX_STORE_BIN=${mockNixStore}
-          ${installer}/bin/codex-desktop-installer
+          ${installer}/bin/hydex-desktop-installer
           runtime_root="$TMPDIR/.installed.nix-runtime"
           runtime_marker="$CODEX_INSTALL_DIR/.codex-linux/nix-runtime-closure"
           test "$(readlink -f "$runtime_root")" = ${installerRuntimeClosure}
@@ -1169,7 +1169,7 @@
             -r ${installerPreviousRuntimeClosure} >/dev/null
           set +e
           CODEX_PROMOTION_TEST_FAIL_EXCHANGE=1 \
-            ${installer}/bin/codex-desktop-installer >/dev/null 2>&1
+            ${installer}/bin/hydex-desktop-installer >/dev/null 2>&1
           rejected_status=$?
           set -e
           test "$rejected_status" -ne 0
@@ -1183,7 +1183,7 @@
             echo "Rejected promotion leaked a previous runtime root" >&2
             exit 1
           fi
-          ${installer}/bin/codex-desktop-installer
+          ${installer}/bin/hydex-desktop-installer
           test "$(stat -c %i "$CODEX_INSTALL_DIR/ChatGPT")" != "$first_chatgpt"
           backup="$(find "$TMPDIR" -maxdepth 1 -type d -name 'installed.backup-*' -print -quit)"
           test -n "$backup"
@@ -1199,13 +1199,13 @@
             echo "Successful promotion leaked a previous runtime root" >&2
             exit 1
           fi
-          grep -q 'candidate_runtime_root=' ${installer}/bin/codex-desktop-installer
-          grep -q 'PROMOTED_BACKUP_APP_DIR/.codex-nix-runtime' ${installer}/bin/codex-desktop-installer
+          grep -q 'candidate_runtime_root=' ${installer}/bin/hydex-desktop-installer
+          grep -q 'PROMOTED_BACKUP_APP_DIR/.codex-nix-runtime' ${installer}/bin/hydex-desktop-installer
           mkdir -p "$out"
         '';
         checks.nixos-vm = if system == "x86_64-linux" then
           pkgs.testers.runNixOSTest {
-            name = "codex-desktop-nixos-smoke";
+            name = "hydex-desktop-nixos-smoke";
             nodes.machine = { pkgs, ... }: {
               imports = [ self.nixosModules.default ];
               programs.codexDesktopLinux = {
@@ -1228,7 +1228,7 @@
             };
             testScript = ''
               machine.wait_for_unit("multi-user.target")
-              machine.succeed("codex-desktop --diagnose")
+              machine.succeed("hydex-desktop --diagnose")
               machine.succeed("test -f /etc/systemd/user/codex-remote-control.service")
               machine.succeed("grep -q 'CODEX_NIX_VM=true' /etc/systemd/user/codex-remote-control.service")
               machine.succeed("grep -q 'After=network.target' /etc/systemd/user/codex-remote-control.service")
@@ -1247,7 +1247,7 @@
               machine.succeed("! grep -R 'Could not start dynamically linked executable' /var/log")
             '';
           }
-        else pkgs.runCommand "codex-desktop-nixos-smoke-not-supported" { } ''
+        else pkgs.runCommand "hydex-desktop-nixos-smoke-not-supported" { } ''
           touch "$out"
         '';
         devShells.default = pkgs.mkShell { packages = [ pkgs.nodejs pkgs.python3 pkgs.dpkg pkgs.gnupg ]; };
@@ -1255,11 +1255,11 @@
     ) // {
       homeManagerModules = rec {
         default = import ./nix/home-manager-module.nix { inherit self; };
-        codex-desktop-linux = default;
+        hydex-desktop = default;
       };
       nixosModules = rec {
         default = import ./nix/nixos-module.nix { inherit self; };
-        codex-desktop-linux = default;
+        hydex-desktop = default;
       };
     };
 }

@@ -77,16 +77,16 @@ test("persistent native packages replace the standalone Codex CLI provider", (t)
   const binDir = path.join(root, "usr/bin");
   fs.mkdirSync(binDir, { recursive: true });
   fs.symlinkSync(
-    "/opt/codex-desktop/.codex-linux/features/persistent-app-server/codex-cli-wrapper",
+    "/opt/hydex-desktop/.codex-linux/features/persistent-app-server/codex-cli-wrapper",
     path.join(binDir, "codex"),
   );
   fs.symlinkSync(
-    "/opt/codex-desktop/resources/codex-code-mode-host",
+    "/opt/hydex-desktop/resources/codex-code-mode-host",
     path.join(binDir, "codex-code-mode-host"),
   );
 
   const pacman = runPackageCommon(
-    `PACKAGE_NAME=codex-desktop codex_cli_package_metadata pacman ${JSON.stringify(root)}`,
+    `PACKAGE_NAME=hydex-desktop codex_cli_package_metadata pacman ${JSON.stringify(root)}`,
     root,
   );
   assert.match(pacman, /provides=\('codex' 'openai-codex'\)/);
@@ -95,7 +95,7 @@ test("persistent native packages replace the standalone Codex CLI provider", (t)
   assert.doesNotMatch(pacman, /replaces=.*'codex-bin'/);
 
   const deb = runPackageCommon(
-    `PACKAGE_NAME=codex-desktop codex_cli_package_metadata deb ${JSON.stringify(root)}`,
+    `PACKAGE_NAME=hydex-desktop codex_cli_package_metadata deb ${JSON.stringify(root)}`,
     root,
   );
   assert.match(deb, /^Provides: codex, openai-codex$/m);
@@ -103,7 +103,7 @@ test("persistent native packages replace the standalone Codex CLI provider", (t)
   assert.match(deb, /^Replaces: hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin$/m);
 
   const rpm = runPackageCommon(
-    `PACKAGE_NAME=codex-desktop codex_cli_package_metadata rpm ${JSON.stringify(root)}`,
+    `PACKAGE_NAME=hydex-desktop codex_cli_package_metadata rpm ${JSON.stringify(root)}`,
     root,
   );
   assert.match(rpm, /^Provides:\s+codex$/m);
@@ -111,7 +111,7 @@ test("persistent native packages replace the standalone Codex CLI provider", (t)
   assert.match(rpm, /^Obsoletes:\s+hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin$/m);
   assert.equal(
     runPackageCommon(
-      `PACKAGE_NAME=codex-desktop codex_cli_package_files rpm ${JSON.stringify(root)}`,
+      `PACKAGE_NAME=hydex-desktop codex_cli_package_files rpm ${JSON.stringify(root)}`,
       root,
     ),
     "/usr/bin/codex\n/usr/bin/codex-code-mode-host\n",
@@ -120,11 +120,49 @@ test("persistent native packages replace the standalone Codex CLI provider", (t)
   fs.unlinkSync(path.join(binDir, "codex-code-mode-host"));
   assert.throws(
     () => runPackageCommon(
-      `PACKAGE_NAME=codex-desktop codex_cli_package_metadata pacman ${JSON.stringify(root)}`,
+      `PACKAGE_NAME=hydex-desktop codex_cli_package_metadata pacman ${JSON.stringify(root)}`,
       root,
     ),
     /incomplete or unexpected/,
   );
+});
+
+test("Hydex Desktop replaces the retired external package identity", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "hydex-package-transition-"));
+  try {
+    const pacman = runPackageCommon(
+      "PACKAGE_NAME=hydex-desktop desktop_package_transition_metadata pacman",
+      root,
+    );
+    assert.match(pacman, /provides\+=\('codex-desktop'\)/);
+    assert.match(pacman, /conflicts\+=\('codex-desktop'\)/);
+    assert.match(pacman, /replaces\+=\('codex-desktop'\)/);
+
+    const deb = runPackageCommon(
+      "PACKAGE_NAME=hydex-desktop desktop_package_transition_metadata deb",
+      root,
+    );
+    assert.match(deb, /^Breaks: codex-desktop$/m);
+    assert.match(deb, /^Replaces: codex-desktop$/m);
+
+    const rpm = runPackageCommon(
+      "PACKAGE_NAME=hydex-desktop desktop_package_transition_metadata rpm",
+      root,
+    );
+    assert.match(rpm, /^Provides:\s+codex-desktop$/m);
+    assert.match(rpm, /^Conflicts:\s+codex-desktop$/m);
+    assert.match(rpm, /^Obsoletes:\s+codex-desktop$/m);
+
+    assert.equal(
+      runPackageCommon(
+        "PACKAGE_NAME=side-by-side desktop_package_transition_metadata rpm",
+        root,
+      ),
+      "",
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("Debian package control inherits dependency fields from upstream", () => {
@@ -139,7 +177,7 @@ test("Debian package control inherits dependency fields from upstream", () => {
 });
 
 test("non-Debian package formats map the official runtime libraries", () => {
-  const rpm = fs.readFileSync(path.join(repoRoot, "packaging/linux/codex-desktop.spec"), "utf8");
+  const rpm = fs.readFileSync(path.join(repoRoot, "packaging/linux/hydex-desktop.spec"), "utf8");
   const pacman = fs.readFileSync(path.join(repoRoot, "packaging/linux/PKGBUILD.template"), "utf8");
   const flake = fs.readFileSync(path.join(repoRoot, "flake.nix"), "utf8");
 
@@ -156,7 +194,7 @@ test("non-Debian package formats map the official runtime libraries", () => {
 });
 
 test("RPM updater selects the distro-specific GnuPG package", () => {
-  const rpm = fs.readFileSync(path.join(repoRoot, "packaging/linux/codex-desktop.spec"), "utf8");
+  const rpm = fs.readFileSync(path.join(repoRoot, "packaging/linux/hydex-desktop.spec"), "utf8");
   assert.match(
     rpm,
     /%if __PACKAGE_WITH_UPDATER__\nRequires:\s+polkit, curl, dpkg, nodejs, xdg-utils\n%if 0%\{\?suse_version\}\nRequires:\s+gpg2\n%else\nRequires:\s+gnupg2\n%endif\n%else\nRequires:\s+xdg-utils\n%endif/,
@@ -164,7 +202,7 @@ test("RPM updater selects the distro-specific GnuPG package", () => {
 });
 
 test("RPM packaging preserves validated prebuilt payload binaries", () => {
-  const rpm = fs.readFileSync(path.join(repoRoot, "packaging/linux/codex-desktop.spec"), "utf8");
+  const rpm = fs.readFileSync(path.join(repoRoot, "packaging/linux/hydex-desktop.spec"), "utf8");
 
   for (const macro of [
     "__os_install_post",
@@ -217,7 +255,7 @@ test("RHEL compatibility RPMs pin a private runtime and split the EL7 payload", 
   assert.match(builder, /rpmlib\\\(\(LargeFiles\|PayloadIsZstd\)\\\)/);
 
   const spec = fs.readFileSync(
-    path.join(repoRoot, "packaging/linux/codex-desktop.spec"),
+    path.join(repoRoot, "packaging/linux/hydex-desktop.spec"),
     "utf8",
   );
   assert.match(spec, /%package cli-runtime/);

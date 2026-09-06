@@ -1,8 +1,8 @@
-<h1 align="center">ChatGPT Community for Linux</h1>
+<h1 align="center">Hydex for Linux</h1>
 
 <p align="center">
-  <a href="https://github.com/ilysenko/codex-desktop-linux/actions/workflows/ci.yml"><img src="https://github.com/ilysenko/codex-desktop-linux/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/ilysenko/codex-desktop-linux/actions/workflows/upstream-build-app.yml"><img src="https://github.com/ilysenko/codex-desktop-linux/actions/workflows/upstream-build-app.yml/badge.svg" alt="官方 Linux 软件包构建"></a>
+  <a href="https://github.com/mwheiss/hydex-desktop/actions/workflows/ci.yml"><img src="https://github.com/mwheiss/hydex-desktop/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/mwheiss/hydex-desktop/actions/workflows/upstream-build-app.yml"><img src="https://github.com/mwheiss/hydex-desktop/actions/workflows/upstream-build-app.yml/badge.svg" alt="官方 Linux 软件包构建"></a>
   <a href="https://discord.gg/skCB3DXqgw"><img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white" alt="加入 Discord 社区"></a>
 </p>
 
@@ -10,13 +10,13 @@
   <a href="README.md">English</a> | 简体中文
 </p>
 
-`codex-desktop` 是 OpenAI 官方 Linux ChatGPT 桌面应用的非官方社区发行版。
+`hydex-desktop` 是 OpenAI 官方 Linux ChatGPT 桌面应用的非官方社区发行版。
 它验证并重新打包已签名的官方 Linux 软件包，提供默认关闭的 Linux 扩展，
 并可构建 deb、RPM、pacman、AppImage 和 Nix 产物。
 
-桌面菜单中的自定义应用名为 **ChatGPT Community**，图标带有蓝色 `C`。
-软件包名、命令名和安装目录仍为 `codex-desktop`、`codex-desktop` 和
-`/opt/codex-desktop`，因此可以与 OpenAI 的 **ChatGPT** 清楚区分。
+桌面菜单中的自定义应用名为 **Hydex**，图标带有蓝色 `C`。
+软件包名、命令名和安装目录仍为 `hydex-desktop`、`hydex-desktop` 和
+`/opt/hydex-desktop`，因此可以与 OpenAI 的 **ChatGPT** 清楚区分。
 
 唯一的上游来源是 OpenAI 已签名的 Linux `.deb`。官方 Electron runtime、
 原生模块、内置 `codex` 和 `rg`、code-mode host、插件、库、locale 与 Owl
@@ -42,8 +42,8 @@ metadata 均被直接复用。未启用修改 ASAR 的扩展时，`resources/app
 构建原生软件包或 AppImage 前先克隆仓库：
 
 ```bash
-git clone https://github.com/ilysenko/codex-desktop-linux.git
-cd codex-desktop-linux
+git clone https://github.com/mwheiss/hydex-desktop.git
+cd hydex-desktop
 ```
 
 | 平台 | 推荐命令 | 结果 |
@@ -53,7 +53,7 @@ cd codex-desktop-linux
 | Fedora | `make bootstrap-native` | 构建并安装 RPM |
 | openSUSE | `make bootstrap-native` | 构建并安装 RPM |
 | Arch、Manjaro、EndeavourOS | `make bootstrap-native` | 构建并安装 pacman 软件包 |
-| NixOS 或其他 Nix 系统 | `nix run github:ilysenko/codex-desktop-linux` | 构建并运行 flake；参阅 [Nix](docs/nix.md) |
+| NixOS 或其他 Nix 系统 | `nix run github:ilysenko/hydex-desktop` | 构建并运行 flake；参阅 [Nix](docs/nix.md) |
 | Atomic 桌面或其他发行版 | `make build-app && make appimage` | 生成不含原生更新器的本地 AppImage |
 
 推荐的原生安装命令：
@@ -101,7 +101,7 @@ UPSTREAM_DEB=/path/to/chatgpt_<version>_<arch>.deb make build-app
 - 构建需要 Node.js 20+、npm、Python 3、curl、`gpgv`、`dpkg-deb`、tar、
   make 和 C/C++ 工具链。更新器及启用的原生扩展 helper 还需要 Rust。
   `make bootstrap-native` 会安装或提示这些依赖。
-- 官方 `chatgpt` 与自定义 `codex-desktop` 可以同时安装，但两者会共享上游
+- 官方 `chatgpt` 与自定义 `hydex-desktop` 可以同时安装，但两者会共享上游
   `Codex` 用户 profile。请勿同时运行；上游 single-instance lock 可能把第二次
   启动交给已经运行的进程。
 - AppImage 不会自动添加 `--no-sandbox`。若发行版禁用了 unprivileged user
@@ -120,26 +120,26 @@ UPSTREAM_DEB=/path/to/chatgpt_<version>_<arch>.deb make build-app
 都不会被延迟，也不会产生输出。可用唯一的环境变量关闭此计数：
 
 ```bash
-CODEX_LINUX_DISABLE_USAGE_REPORTING=1 codex-desktop
+CODEX_LINUX_DISABLE_USAGE_REPORTING=1 hydex-desktop
 ```
 
 ## 卸载
 
-先完全关闭 **ChatGPT Community** 和官方 **ChatGPT**，然后使用安装它的包
+先完全关闭 **Hydex** 和官方 **ChatGPT**，然后使用安装它的包
 管理器卸载：
 
 ```bash
 # Debian / Ubuntu
-sudo apt remove codex-desktop
+sudo apt remove hydex-desktop
 
 # Fedora
-sudo dnf remove codex-desktop
+sudo dnf remove hydex-desktop
 
 # openSUSE
-sudo zypper remove codex-desktop
+sudo zypper remove hydex-desktop
 
 # Arch / Manjaro
-sudo pacman -R codex-desktop
+sudo pacman -R hydex-desktop
 ```
 
 原生包卸载时会禁用用户更新服务。若旧安装或手动安装仍留下服务：
@@ -162,9 +162,9 @@ Nix 用户应从 profile、Home Manager 配置或 NixOS module 中删除该包�
 请先检查再删除以下目录：
 
 ```text
-~/.config/codex-desktop
-~/.local/state/codex-desktop
-~/.cache/codex-desktop
+~/.config/hydex-desktop
+~/.local/state/hydex-desktop
+~/.cache/hydex-desktop
 ~/.config/codex-update-manager
 ~/.local/state/codex-update-manager
 ~/.cache/codex-update-manager
@@ -185,11 +185,11 @@ Nix 用户应从 profile、Home Manager 配置或 NixOS module 中删除该包�
 | 逐字节一致的 baseline ASAR | 始终启用 | 无扩展需要 ASAR 时不进行解包 |
 | deb、RPM、pacman 原生包 | 手动构建 | `make deb`、`make rpm`、`make pacman` |
 | AppImage | 手动构建 | `make appimage`；不绕过 sandbox，不含原生 updater |
-| Nix flake | 手动构建 | `nix run github:ilysenko/codex-desktop-linux` |
+| Nix flake | 手动构建 | `nix run github:ilysenko/hydex-desktop` |
 | 事务式更新管理器 | 原生包 | 除非设置 `PACKAGE_WITH_UPDATER=0` |
 | 官方 Browser 和 Chrome 集成 | 上游提供 | 直接复用官方 Linux 实现，不保留旧移植层 |
 | Linux 可选扩展框架 | 默认关闭 | 使用 `make setup-native` 配置 |
-| 独立桌面标识 | 始终启用 | **ChatGPT Community**、蓝色 `C` 图标、`codex-desktop` package identity |
+| 独立桌面标识 | 始终启用 | **Hydex**、蓝色 `C` 图标、`hydex-desktop` package identity |
 
 ### 可选 Linux 扩展
 
@@ -332,8 +332,8 @@ make appimage
 | Flatpak Chrome 能打开 AppImage，但扩展显示 `Native transport disconnected` | 启用 `flatpak-chrome-native-messaging`；参阅 [Flatpak Chrome 设置](docs/troubleshooting.md#appimage-opens-from-flatpak-chrome-but-the-extension-cannot-connect) |
 | 迁移后 Browser/Chrome extension 无法连接 | 完全退出 ChatGPT 与 Chrome，再按[故障排除](docs/troubleshooting.md#browser-or-chrome-plugin-is-visible-but-cannot-connect)执行窄范围 cache repair |
 | 签名或软件包验证失败 | 不要绕过；检查系统时间、网络、`gpgv`、architecture 和磁盘空间 |
-| 应用无法启动 | 运行 `/opt/codex-desktop/start.sh --diagnose` |
-| 应用使用 XWayland，或需要持久化 Electron 参数 | 确认为 Wayland 会话时会自动选择原生后端；可用 `CODEX_OZONE_PLATFORM=x11\|wayland` 固定后端，或在 `~/.config/codex-desktop/electron-flags.conf` 中每行写一个参数，例如 `--ozone-platform=x11` |
+| 应用无法启动 | 运行 `/opt/hydex-desktop/start.sh --diagnose` |
+| 应用使用 XWayland，或需要持久化 Electron 参数 | 确认为 Wayland 会话时会自动选择原生后端；可用 `CODEX_OZONE_PLATFORM=x11\|wayland` 固定后端，或在 `~/.config/hydex-desktop/electron-flags.conf` 中每行写一个参数，例如 `--ozone-platform=x11` |
 | AppImage 报 sandbox 错误 | 启用 user namespaces 或安装原生包；不会自动添加 `--no-sandbox` |
 | 上游更新后启用扩展发生 drift | 禁用该扩展确认 clean baseline，并在 issue 中附上 patch report |
 | updater 等待应用退出 | 关闭官方与 Community 进程，检查 `codex-update-manager status --json` |
