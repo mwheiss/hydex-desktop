@@ -3,6 +3,7 @@ Version: __VERSION__
 Section: utils
 Priority: optional
 Architecture: __ARCH__
+__CODEX_CLI_PACKAGE_METADATA__
 Maintainer: ChatGPT Community for Linux Maintainers
 Depends: __UPSTREAM_DEPENDENCIES__, __UPDATER_DEPENDENCIES____LINUX_FEATURE_DEPENDENCIES__
 Recommends: __UPSTREAM_RECOMMENDS__

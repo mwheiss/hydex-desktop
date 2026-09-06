@@ -15,6 +15,7 @@ PACKAGE_NAME="${PACKAGE_NAME:-codex-desktop}"
 PACKAGE_VERSION="${PACKAGE_VERSION:-$(date -u +%Y.%m.%d.%H%M%S)}"
 MAX_BUILD_THREADS="${MAX_BUILD_THREADS:-0}"
 RPM_BINARY_PAYLOAD="${RPM_BINARY_PAYLOAD:-}"
+RPM_COMPAT_PROFILE="${RPM_COMPAT_PROFILE:-}"
 UPDATER_BINARY_SOURCE="${UPDATER_BINARY_SOURCE:-$REPO_DIR/target/release/codex-update-manager}"
 UPDATER_SERVICE_SOURCE="${UPDATER_SERVICE_SOURCE:-$SERVICE_TEMPLATE}"
 PACKAGED_RUNTIME_SOURCE="${PACKAGED_RUNTIME_SOURCE:-$PACKAGED_RUNTIME_TEMPLATE}"
@@ -66,6 +67,16 @@ rpm_version_parts() {
 
 main() {
     validate_max_build_threads
+    local rpm_compat_major=0
+    case "$RPM_COMPAT_PROFILE" in
+        "") ;;
+        rhel7) rpm_compat_major=7 ;;
+        rhel9) rpm_compat_major=9 ;;
+        *) error "RPM_COMPAT_PROFILE must be empty, rhel7, or rhel9" ;;
+    esac
+    if [ "$rpm_compat_major" != 0 ] && package_with_updater_enabled; then
+        error "RHEL compatibility profiles require PACKAGE_WITH_UPDATER=0"
+    fi
     if [ -z "$RPM_BINARY_PAYLOAD" ] && [ "$MAX_BUILD_THREADS" != "0" ]; then
         RPM_BINARY_PAYLOAD="w19T${MAX_BUILD_THREADS}.zstdio"
     fi
@@ -120,6 +131,7 @@ SCRIPT
         -e "s|__RPM_STAGING_DIR__|$staging_root|g" \
         -e "s/__ARCH__/$arch/g" \
         -e "s/__PACKAGE_WITH_UPDATER__/$(package_with_updater_enabled && echo 1 || echo 0)/g" \
+        -e "s/__RPM_COMPAT_MAJOR__/$rpm_compat_major/g" \
         "$SPEC_TEMPLATE" > "$spec_file"
     local feature_dependency_suffix
     local feature_files
@@ -141,6 +153,18 @@ SCRIPT
         "$spec_file" \
         "__LINUX_FEATURE_FILES__" \
         "$feature_files"
+    local cli_package_metadata
+    local cli_package_files
+    cli_package_metadata="$(codex_cli_package_metadata rpm "$staging_root")"
+    cli_package_files="$(codex_cli_package_files rpm "$staging_root")"
+    replace_literal_file_token \
+        "$spec_file" \
+        "__CODEX_CLI_PACKAGE_METADATA__" \
+        "$cli_package_metadata"
+    replace_literal_file_token \
+        "$spec_file" \
+        "__CODEX_CLI_PACKAGE_FILES__" \
+        "$cli_package_files"
 
     local rpmbuild_dir="$build_root/rpmbuild"
     mkdir -p \
@@ -167,16 +191,27 @@ SCRIPT
     else
         info "RPM binary payload compression: tool default"
     fi
+    if [ "$RPM_COMPAT_PROFILE" = rhel7 ]; then
+        rpmbuild_args+=(
+            --define "_rpmformat 4"
+            --define "_source_payload w9.gzdio"
+        )
+    fi
     rpmbuild_args+=("$spec_file")
     rpmbuild "${rpmbuild_args[@]}" >&2
 
     local rpm_file
-    rpm_file="$(find "$rpmbuild_dir/RPMS" -name "*.rpm" | head -n 1)"
-    [ -f "$rpm_file" ] || error "rpmbuild did not produce an RPM"
-
-    local output_file="$DIST_DIR/${PACKAGE_NAME}-${rpm_ver}-${rpm_rel}.${arch}.rpm"
-    cp "$rpm_file" "$output_file"
-    info "Built package: $output_file"
+    local output_file
+    local built=0
+    while IFS= read -r rpm_file; do
+        [ -f "$rpm_file" ] || continue
+        output_file="$DIST_DIR/$(basename "$rpm_file")"
+        cp "$rpm_file" "$output_file"
+        info "Built package: $output_file"
+        printf '%s\n' "$output_file"
+        built=$((built + 1))
+    done < <(find "$rpmbuild_dir/RPMS" -name "*.rpm" -type f | LC_ALL=C sort)
+    [ "$built" -gt 0 ] || error "rpmbuild did not produce an RPM"
 }
 
 main "$@"

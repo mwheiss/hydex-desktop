@@ -571,7 +571,11 @@ run_feature_config_python() {
     local apply_changes="$3"
     local output_mode="${4:-}"
     local config_path
+    local use_manifest_defaults=0
     config_path="$(feature_config_path)"
+    if [ -z "${CODEX_LINUX_FEATURES_CONFIG:-}" ] && [ ! -e "$config_path" ]; then
+        use_manifest_defaults=1
+    fi
 
     if ! command -v python3 >/dev/null 2>&1; then
         if [ -n "$enable_raw$disable_raw" ]; then
@@ -581,7 +585,7 @@ run_feature_config_python() {
         return
     fi
 
-    if ! python3 - "$FEATURES_ROOT" "$config_path" "$enable_raw" "$disable_raw" "$apply_changes" "$output_mode" <<'PY'
+    if ! python3 - "$FEATURES_ROOT" "$config_path" "$enable_raw" "$disable_raw" "$apply_changes" "$output_mode" "$use_manifest_defaults" <<'PY'
 import json
 import pathlib
 import re
@@ -593,6 +597,7 @@ enable_raw = sys.argv[3]
 disable_raw = sys.argv[4]
 apply_changes = sys.argv[5] == "1"
 output_mode = sys.argv[6] if len(sys.argv) > 6 else ""
+use_manifest_defaults = sys.argv[7] == "1"
 
 id_re = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
@@ -697,8 +702,8 @@ def discover_features(root):
             continue
         if not (manifest_path.parent / "README.md").is_file():
             die(f"Linux feature '{feature_id}' must include README.md next to feature.json")
-        if data.get("defaultEnabled") is True:
-            die(f"Linux feature '{feature_id}' must be disabled by default; defaultEnabled true is not allowed")
+        if "defaultEnabled" in data and not isinstance(data["defaultEnabled"], bool):
+            die(f"Linux feature '{feature_id}' defaultEnabled must be a boolean")
         if "internal" in data and not isinstance(data["internal"], bool):
             die(f"Linux feature '{feature_id}' internal must be a boolean")
         if data.get("internal") is True:
@@ -715,6 +720,7 @@ def discover_features(root):
             "local": origin == "local",
             "requires": normalize_id_list(data.get("requires"), "requires", manifest_path),
             "conflicts": normalize_id_list(data.get("conflicts"), "conflicts", manifest_path),
+            "default_enabled": data.get("defaultEnabled") is True,
             "manifest_path": str(manifest_path),
         }
     return dict(sorted(features.items()))
@@ -787,7 +793,11 @@ features = discover_features(features_root)
 config_data = read_feature_config(config_path)
 if not isinstance(config_data, dict):
     die(f"Linux features config {config_path} must be a JSON object")
-current = expand_enabled(read_enabled_ids(config_data, config_path))
+defaults = [
+    feature_id for feature_id, feature in features.items()
+    if use_manifest_defaults and feature["default_enabled"]
+]
+current = expand_enabled(defaults + read_enabled_ids(config_data, config_path))
 
 if output_mode == "tsv":
     # Machine-readable discovery for the GUI feature picker: one

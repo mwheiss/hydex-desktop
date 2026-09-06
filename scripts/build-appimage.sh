@@ -99,6 +99,9 @@ prepare_appdir() {
 
 main() {
     ensure_app_layout
+    if linux_feature_enabled persistent-app-server; then
+        error "persistent-app-server requires a native systemd package and cannot be packaged as AppImage; rebuild with an explicit feature config that disables it"
+    fi
     ensure_file_exists "$APPRUN_TEMPLATE" "AppImage AppRun template"
     ensure_file_exists "$DESKTOP_TEMPLATE" "AppImage desktop template"
     ensure_file_exists "$APPIMAGE_RUNTIME_TEMPLATE" "AppImage runtime helper template"

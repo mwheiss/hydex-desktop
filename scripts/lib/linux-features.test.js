@@ -84,6 +84,32 @@ test("enabled feature dependencies are added for persisted and explicit selectio
   );
 });
 
+test("manifest defaults apply only until a local or explicit feature config exists", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-feature-defaults-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const featuresRoot = path.join(root, "linux-features");
+  const featureDir = path.join(featuresRoot, "default-feature");
+  fs.mkdirSync(featureDir, { recursive: true });
+  fs.writeFileSync(path.join(featuresRoot, "features.example.json"), '{"enabled":[]}\n');
+  fs.writeFileSync(path.join(featureDir, "README.md"), "# Default Feature\n");
+  fs.writeFileSync(path.join(featureDir, "feature.json"), JSON.stringify({
+    id: "default-feature",
+    title: "Default Feature",
+    defaultEnabled: true,
+  }));
+
+  assert.deepEqual(linuxFeaturesConfig({ featuresRoot }).enabled, ["default-feature"]);
+  assert.deepEqual(
+    linuxFeaturesConfig({
+      featuresRoot,
+      featuresConfigPath: path.join(featuresRoot, "features.example.json"),
+    }).enabled,
+    [],
+  );
+  fs.writeFileSync(path.join(featuresRoot, "features.json"), '{"enabled":[]}\n');
+  assert.deepEqual(linuxFeaturesConfig({ featuresRoot }).enabled, []);
+});
+
 function makeFeatureRoot(root, featureManifest) {
   const featuresRoot = path.join(root, "linux-features");
   const featureDir = path.join(featuresRoot, "unsafe-link");
