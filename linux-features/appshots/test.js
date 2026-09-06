@@ -346,12 +346,12 @@ test("AppShots maps an explicit Hyprland picker selection and keeps X11 stacking
   });
   const windows = [
     {
-      app_id: "codex-desktop",
+      app_id: "hydex-desktop",
       focused: true,
       pid: 101,
       title: "ChatGPT",
       window_id: Number.parseInt("0x100", 16),
-      wm_class: "codex-desktop",
+      wm_class: "hydex-desktop",
     },
     {
       app_id: "chromium",
@@ -660,12 +660,12 @@ test("AppShots requires a safe return target before changing Hyprland focus", as
   assert.equal(focusCalls, 0);
 
   const hiddenReturn = {
-    app_id: "codex-desktop",
+    app_id: "hydex-desktop",
     bounds: { height: 800, width: 1200, x: 0, y: 0 },
     hidden: true,
     pid: 101,
     window_id: 0x100,
-    wm_class: "codex-desktop",
+    wm_class: "hydex-desktop",
   };
   assert.equal(context.codexLinuxAppshotValidReturnWindow(hiddenReturn), false);
   assert.equal(
@@ -752,12 +752,12 @@ test("AppShots activates a selected Hyprland window and waits for stable bounds"
     focused: true,
   };
   const ownWindow = {
-    app_id: "codex-desktop",
+    app_id: "hydex-desktop",
     bounds: { height: 800, width: 1200, x: 0, y: 0 },
     focused: false,
     pid: 101,
     window_id: 0x100,
-    wm_class: "codex-desktop",
+    wm_class: "hydex-desktop",
   };
   const focusCalls = [];
   let windowReports = 0;
@@ -800,12 +800,12 @@ test("AppShots restores ChatGPT after successful and failed Hyprland capture", a
     setTimeout,
   });
   const ownWindow = {
-    app_id: "codex-desktop",
+    app_id: "hydex-desktop",
     bounds: { height: 800, width: 1200, x: 0, y: 0 },
     focused: true,
     pid: 101,
     window_id: 0x100,
-    wm_class: "codex-desktop",
+    wm_class: "hydex-desktop",
   };
   const selected = {
     app_id: "chromium",
@@ -922,7 +922,7 @@ test("AppShots captures accessibility and pixels concurrently", async () => {
     setTimeout,
   });
   const ownWindow = {
-    app_id: "codex-desktop",
+    app_id: "hydex-desktop",
     focused: false,
     pid: 101,
     window_id: 0x100,

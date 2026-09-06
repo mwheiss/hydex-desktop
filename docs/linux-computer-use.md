@@ -138,11 +138,11 @@ rebuild/reinstall.
 Nix:
 
 ```bash
-nix run github:ilysenko/codex-desktop-linux#codex-desktop-computer-use-ui
+nix run github:ilysenko/hydex-desktop#hydex-desktop-computer-use-ui
 ```
 
 Combined with a Linux feature output:
 
 ```bash
-nix run github:ilysenko/codex-desktop-linux#codex-desktop-computer-use-ui-remote-mobile-control
+nix run github:ilysenko/hydex-desktop#hydex-desktop-computer-use-ui-remote-mobile-control
 ```
