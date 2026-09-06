@@ -9,9 +9,11 @@ Every feature targets the verified official Linux `.deb` payload; none depends
 on a macOS bundle, replacement Electron runtime, or rebuilt upstream native
 module.
 
-By default, no optional Linux features are enabled. Copy
-`features.example.json` to `features.json` before running `./install.sh` or
-building packages, then list the feature ids you want:
+Repository features may declare a tracked `defaultEnabled` value. Those defaults
+apply only while no local `features.json` exists and no explicit
+`CODEX_LINUX_FEATURES_CONFIG` is supplied. Copy `features.example.json` to
+`features.json` to take explicit control before running `./install.sh` or
+building packages, then list the exact feature ids you want:
 
 ```json
 {
@@ -19,7 +21,11 @@ building packages, then list the feature ids you want:
 }
 ```
 
-`features.json` is ignored by git so local choices do not leak into commits.
+`features.json` is ignored by git because it is the machine-local override:
+developers can select private/local features and settings without leaking those
+choices into releases. Distribution defaults belong in tracked feature
+manifests, while `features.example.json` remains the explicit feature-free
+configuration used by clean-build validation.
 Feature choices are read during the install/build pipeline; if you change this
 file after an app has already been generated, rerun the install/build step.
 Native packages preserve the enabled feature id list and settings in the
@@ -98,6 +104,11 @@ Repository-owned build plumbing may set `"internal": true` in `feature.json`.
 Internal features are hidden from the setup wizard and public feature summary,
 cannot be selected through native `features.json`, and must be explicitly
 allowlisted by the owning build integration.
+
+Features whose runtime artifact or lifecycle is supplied only by native
+packaging set `"nixSupported": false`. Nix rejects those IDs during evaluation
+and omits them from the maximal flake outputs instead of producing a derivation
+that can only fail later during staging.
 
 `stage.sh` hooks run with `SCRIPT_DIR`, `INSTALL_DIR`, `WORK_DIR`, `ARCH`, and
 `CODEX_UPSTREAM_APP_DIR` in the environment.
