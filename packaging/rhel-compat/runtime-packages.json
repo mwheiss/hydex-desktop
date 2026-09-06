@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "distribution": "Ubuntu 22.04",
+  "architecture": "amd64",
+  "rhel7CupsSource": {
+    "version": "2.4.11",
+    "fileName": "cups-2.4.11-source.tar.gz",
+    "url": "https://github.com/OpenPrinting/cups/releases/download/v2.4.11/cups-2.4.11-source.tar.gz",
+    "sha256": "9a88fe1da3a29a917c3fc67ce6eb3178399d68e1a548c6d86c70d9b13651fd71",
+    "buildImage": "quay.io/centos/centos:7@sha256:e4ca2ed0202e76be184e75fb26d14bf974193579039d5573fb2348664deef76e"
+  },
+  "packages": [
+    {
+      "name": "libc6",
+      "fileName": "libc6_2.35-0ubuntu3.14_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/glibc/libc6_2.35-0ubuntu3.14_amd64.deb",
+      "sha256": "4aa2feae34cb6296e133af5c7429756ab5606549cd16a9d26a0060e010214523"
+    },
+    {
+      "name": "libcups2",
+      "fileName": "libcups2_2.4.1op1-1ubuntu4.21_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/c/cups/libcups2_2.4.1op1-1ubuntu4.21_amd64.deb",
+      "sha256": "563f1355772c47290633c0283e6c53f6ba109d4961dee3397c9ed96359722630"
+    },
+    {
+      "name": "gcc-12-base",
+      "fileName": "gcc-12-base_12.3.0-1ubuntu1~22.04.3_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-12/gcc-12-base_12.3.0-1ubuntu1%7E22.04.3_amd64.deb",
+      "sha256": "7f9253b7e0976f0526fc21346c73ee006e185a7b2f2f865048ea78a2af55bc8d"
+    },
+    {
+      "name": "libgcc-s1",
+      "fileName": "libgcc-s1_12.3.0-1ubuntu1~22.04.3_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-12/libgcc-s1_12.3.0-1ubuntu1%7E22.04.3_amd64.deb",
+      "sha256": "d383e642d83263147f7b4b69fb92cf1036e5246c6be3accf10b77f986684589a"
+    },
+    {
+      "name": "libstdc++6",
+      "fileName": "libstdc++6_12.3.0-1ubuntu1~22.04.3_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-12/libstdc%2B%2B6_12.3.0-1ubuntu1%7E22.04.3_amd64.deb",
+      "sha256": "29ef3d289b272704b75141906c8f683db0f2bdb0942061366691333bfb289bdc"
+    }
+  ]
+}
