@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "version": "0.0.0+copr.2026.09.06.1",
+  "architecture": "amd64",
+  "url": "https://github.com/mwheiss/codex-desktop-linux/releases/download/official-linux-DUMMY/chatgpt_0.0.0%2Bcopr.2026.09.06.1_amd64.deb",
+  "sha256": "4108d007cc99cb5584b4182c71c1948a9bdb449b7252b3e162bb3dfde18d7bad",
+  "dummy": true,
+  "hydexArtifact": {
+    "url": "https://github.com/mwheiss/hydex/releases/download/hydex-runtime-v0.153.4-r1/hydex-runtime-0.153.4-r1-x86_64-unknown-linux-musl.tar.gz",
+    "sha256": "e54c7d2ffa80e85c47a7a23adf333911330bcc5aa82340b0bb7ea40fc209eba4"
+  }
+}

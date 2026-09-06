@@ -101,7 +101,27 @@ jobs:
             throw new Error("signed metadata no longer matches the dispatched watchdog campaign");
           }
           NODE
-          if git diff --quiet -- nix/upstream-linux-packages.json; then
+          node - .copr/upstream-artifact.json <<'NODE'
+          const fs = require("node:fs");
+          const manifestPath = process.argv[2];
+          const version = process.env.EXPECTED_VERSION;
+          const releaseId = process.env.RELEASE_ID;
+          const fileName = "chatgpt_" + version + "_amd64.deb";
+          const existing = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+          const value = {
+            schemaVersion: 1,
+            version,
+            architecture: "amd64",
+            url: "https://github.com/" + process.env.GITHUB_REPOSITORY
+              + "/releases/download/official-linux-" + releaseId + "/"
+              + encodeURIComponent(fileName),
+            sha256: process.env.EXPECTED_AMD64_SHA256,
+            dummy: false,
+            hydexArtifact: existing.hydexArtifact,
+          };
+          fs.writeFileSync(manifestPath, JSON.stringify(value, null, 2) + "\n");
+          NODE
+          if git diff --quiet -- nix/upstream-linux-packages.json .copr/upstream-artifact.json; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -111,7 +131,8 @@ jobs:
         if: steps.pins.outputs.changed == 'true'
         run: |
           set -euo pipefail
-          test "$(git diff --name-only | sort)" = "nix/upstream-linux-packages.json"
+          diff -u <(printf '%s\n' .copr/upstream-artifact.json nix/upstream-linux-packages.json) \
+            <(git diff --name-only | sort)
           nix flake check --no-build
           nix build .#checks.x86_64-linux.nix-runtime --no-link
 
@@ -127,7 +148,7 @@ jobs:
           git config user.name codex-linux-package-bot
           git config user.email actions@github.com
           git checkout -B "$branch"
-          git add nix/upstream-linux-packages.json
+          git add .copr/upstream-artifact.json nix/upstream-linux-packages.json
           desired_tree="$(git write-tree)"
           remote_record="$(git ls-remote --heads origin "refs/heads/$branch")"
           remote_head="${remote_record%%[[:space:]]*}"
@@ -160,6 +181,7 @@ jobs:
             echo
             echo "## Summary"
             echo "- refresh amd64 and arm64 pins from OpenAI signed APT metadata"
+            echo "- bind the COPR source entry to the expected GitHub release asset"
             echo "- bind the refresh to accepted main \`$EXPECTED_MAIN_SHA\`"
             echo
             echo "## Checks"
