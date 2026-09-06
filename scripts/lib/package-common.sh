@@ -110,27 +110,66 @@ linux_feature_enabled() {
     grep -Fxq "$feature_id" <<<"$enabled_output"
 }
 
-pacman_codex_cli_package_metadata() {
+codex_cli_package_links_present() {
     local root="$1"
     local codex_link="$root/usr/bin/codex"
     local code_mode_link="$root/usr/bin/codex-code-mode-host"
-    local expected_codex="/opt/$PACKAGE_NAME/resources/codex"
+    local expected_codex="/opt/$PACKAGE_NAME/.codex-linux/features/persistent-app-server/codex-cli-wrapper"
     local expected_code_mode="/opt/$PACKAGE_NAME/resources/codex-code-mode-host"
 
     if [ ! -e "$codex_link" ] && [ ! -L "$codex_link" ] && \
         [ ! -e "$code_mode_link" ] && [ ! -L "$code_mode_link" ]; then
-        return 0
+        return 1
     fi
     [ -L "$codex_link" ] && [ "$(readlink "$codex_link")" = "$expected_codex" ] || \
-        error "Pacman Codex CLI entrypoint is incomplete or unexpected: $codex_link"
+        error "Codex CLI package entrypoint is incomplete or unexpected: $codex_link"
     [ -L "$code_mode_link" ] && [ "$(readlink "$code_mode_link")" = "$expected_code_mode" ] || \
-        error "Pacman Codex code-mode entrypoint is incomplete or unexpected: $code_mode_link"
+        error "Codex code-mode package entrypoint is incomplete or unexpected: $code_mode_link"
+}
 
+codex_cli_package_metadata() {
+    local format="$1"
+    local root="$2"
+
+    codex_cli_package_links_present "$root" || return 0
+
+    case "$format" in
+    pacman)
     cat <<'METADATA'
 provides=('codex' 'openai-codex')
-conflicts=('hydex-bin' 'codex' 'codex-bin' 'openai-codex' 'openai-codex-bin' 'openai-codex-autoup-bin')
+conflicts=('hydex' 'hydex-bin' 'codex' 'codex-bin' 'openai-codex' 'openai-codex-bin' 'openai-codex-autoup-bin')
 replaces=('hydex-bin' 'openai-codex-bin' 'openai-codex-autoup-bin')
 METADATA
+        ;;
+    deb)
+        cat <<'METADATA'
+Provides: codex, openai-codex
+Conflicts: hydex, hydex-bin, codex, codex-bin, openai-codex, openai-codex-bin, openai-codex-autoup-bin
+Replaces: hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin
+METADATA
+        ;;
+    rpm)
+        cat <<'METADATA'
+Provides:       codex
+Provides:       openai-codex
+Conflicts:      hydex, hydex-bin, codex, codex-bin, openai-codex, openai-codex-bin, openai-codex-autoup-bin
+Obsoletes:      hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin
+METADATA
+        ;;
+    *) error "Unsupported Codex CLI package metadata format: $format" ;;
+    esac
+}
+
+codex_cli_package_files() {
+    local format="$1"
+    local root="$2"
+
+    codex_cli_package_links_present "$root" || return 0
+    case "$format" in
+        rpm) printf '/usr/bin/codex\n/usr/bin/codex-code-mode-host\n' ;;
+        deb|pacman) ;;
+        *) error "Unsupported Codex CLI package file format: $format" ;;
+    esac
 }
 
 stage_update_builder_linux_features_config() {
@@ -573,6 +612,16 @@ write_no_updater_deb_prerm() {
 set -eu
 
 CLEANUP_HELPER="/opt/$package_name/.codex-linux/codex-no-updater-transition-cleanup.sh"
+PERSISTENT_APP_DIR="/opt/$package_name"
+PERSISTENT_SERVICE_HELPER="\$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/package-lifecycle.sh"
+case "\${1:-}" in
+    remove|purge|deconfigure)
+        if [ -f "\$PERSISTENT_SERVICE_HELPER" ]; then
+            . "\$PERSISTENT_SERVICE_HELPER"
+            codex_persistent_remove_all_users || true
+        fi
+        ;;
+esac
 if [ -f "\$CLEANUP_HELPER" ]; then
     # shellcheck source=/opt/$package_name/.codex-linux/codex-no-updater-transition-cleanup.sh
     . "\$CLEANUP_HELPER"
@@ -592,6 +641,8 @@ write_no_updater_pacman_install_hooks() {
     cat > "$target" <<SCRIPT
 CLEANUP_HELPER="/opt/$package_name/.codex-linux/codex-no-updater-transition-cleanup.sh"
 DESKTOP_ENTRY_DOCTOR="/opt/$package_name/.codex-linux/codex-desktop-entry-doctor.sh"
+PERSISTENT_APP_DIR="/opt/$package_name"
+PERSISTENT_SERVICE_HELPER="\$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/package-lifecycle.sh"
 
 codex_no_updater_cleanup_if_present() {
     if [ -f "\$CLEANUP_HELPER" ]; then
@@ -609,6 +660,13 @@ codex_desktop_repair_if_present() {
     fi
 }
 
+codex_persistent_remove_if_present() {
+    if [ -f "\$PERSISTENT_SERVICE_HELPER" ]; then
+        . "\$PERSISTENT_SERVICE_HELPER"
+        codex_persistent_remove_all_users || true
+    fi
+}
+
 post_install() {
     if command -v update-desktop-database >/dev/null 2>&1; then
         update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
@@ -622,6 +680,7 @@ post_upgrade() {
 }
 
 pre_remove() {
+    codex_persistent_remove_if_present
     codex_no_updater_cleanup_if_present
 }
 SCRIPT
@@ -951,13 +1010,17 @@ stage_update_builder_bundle() {
         "$update_builder_root/scripts/lib" \
         "$update_builder_root/scripts/patches" \
         "$update_builder_root/launcher" \
+        "$update_builder_root/nix" \
         "$update_builder_root/packaging/linux" \
+        "$update_builder_root/packaging/rhel-compat" \
         "$update_builder_root/assets"
 
     cp "$REPO_DIR/install.sh" "$update_builder_root/install.sh"
     cp "$REPO_DIR/launcher/start.sh.template" "$update_builder_root/launcher/start.sh.template"
     cp "$REPO_DIR/scripts/build-deb.sh" "$update_builder_root/scripts/build-deb.sh"
     cp "$REPO_DIR/scripts/build-rpm.sh" "$update_builder_root/scripts/build-rpm.sh"
+    cp "$REPO_DIR/scripts/build-rhel-compat-rpm.sh" \
+        "$update_builder_root/scripts/build-rhel-compat-rpm.sh"
     cp "$REPO_DIR/scripts/build-pacman.sh" "$update_builder_root/scripts/build-pacman.sh"
     cp "$REPO_DIR/scripts/patch-linux-window-ui.js" "$update_builder_root/scripts/patch-linux-window-ui.js"
     cp -a "$REPO_DIR/scripts/patches/." "$update_builder_root/scripts/patches/"
@@ -982,6 +1045,13 @@ stage_update_builder_bundle() {
     done
 
     cp -a "$REPO_DIR/packaging/linux/." "$update_builder_root/packaging/linux/"
+    cp "$REPO_DIR/packaging/rhel-compat/runtime-packages.json" \
+        "$update_builder_root/packaging/rhel-compat/runtime-packages.json"
+    cp "$REPO_DIR/nix/elf-runtime.cjs" "$update_builder_root/nix/elf-runtime.cjs"
+    cp "$REPO_DIR/nix/elf-runtime-manifest.json" \
+        "$update_builder_root/nix/elf-runtime-manifest.json"
+    cp "$REPO_DIR/nix/relocate-elf-interpreter.cjs" \
+        "$update_builder_root/nix/relocate-elf-interpreter.cjs"
     cp "$REPO_DIR/assets/codex.png" "$update_builder_root/assets/codex.png"
     cp "$REPO_DIR/assets/codex-linux.png" "$update_builder_root/assets/codex-linux.png"
     cp "$REPO_DIR/assets/openai-codex-linux-repository-key.gpg.base64" \
