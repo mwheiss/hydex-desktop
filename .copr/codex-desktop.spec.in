@@ -1,0 +1,87 @@
+%if 0%{?rhel} == 7 || 0%{?centos} == 7
+%global _rpmformat 4
+%global _binary_payload w9.gzdio
+%global _source_payload w9.gzdio
+%endif
+
+%global debug_package %{nil}
+%global __os_install_post %{nil}
+
+Name:           codex-desktop
+Version:        @RPM_VERSION@
+Release:        @RPM_RELEASE@%{?dist}
+Summary:        ChatGPT Community built from a pinned GitHub release artifact
+License:        @PACKAGE_LICENSE@
+URL:            https://github.com/mwheiss/codex-desktop-linux
+Source0:        @SOURCE_ARCHIVE@
+Source1:        @UPSTREAM_DEB@
+Source2:        upstream-artifact.json
+Source3:        dpkg-deb
+Source4:        @HYDEX_ARCHIVE@
+BuildArch:      x86_64
+
+BuildRequires:  bash
+BuildRequires:  binutils
+BuildRequires:  curl
+BuildRequires:  gawk
+BuildRequires:  git
+BuildRequires:  gnupg2
+BuildRequires:  gzip
+BuildRequires:  make
+BuildRequires:  nodejs
+BuildRequires:  npm
+BuildRequires:  patchelf
+BuildRequires:  python3
+BuildRequires:  rpm-build
+BuildRequires:  tar
+BuildRequires:  unzip
+BuildRequires:  util-linux
+BuildRequires:  xz
+
+%description
+Build ChatGPT Community through the same signed-package downloader, feature
+patcher, Hydex injection, compatibility-runtime, and native RPM pipeline used
+by codex-desktop-linux. The current COPR entry deliberately points at the
+redistributable DUMMY GitHub artifact and is expected to fail when its
+synthetic ASAR reaches the real feature patchers.
+
+%prep
+%setup -q -n @SOURCE_ROOT@
+cp %{SOURCE2} .copr/upstream-artifact.json
+install -m 0755 %{SOURCE3} .copr/dpkg-deb
+
+%build
+export PATH="$PWD/.copr:$PATH"
+mkdir -p hydex-runtime
+tar -xzf %{SOURCE4} -C hydex-runtime --strip-components=1
+hydex_cli="$PWD/hydex-runtime/bin/codex"
+test -x "$hydex_cli"
+
+CODEX_INSTALL_TRANSACTION_ACTIVE=1 \
+CODEX_INSTALL_DIR="$PWD/codex-app" \
+CODEX_LINUX_FEATURES_CONFIG="$PWD/.copr/features.json" \
+CODEX_PATCH_REPORT_JSON="$PWD/copr-patch-report.json" \
+HYDEX_CLI_BINARY="$hydex_cli" \
+PACKAGE_WITH_UPDATER=0 \
+UPSTREAM_DEB="%{SOURCE1}" \
+  bash ./install.sh
+
+# If the DUMMY input ever passes the real patchers, continue into the exact
+# compatibility package builder rather than substituting a reduced test RPM.
+%if 0%{?rhel} == 7 || 0%{?centos} == 7
+PACKAGE_WITH_UPDATER=0 make rpm-rhel7
+%else
+PACKAGE_WITH_UPDATER=0 make rpm-rhel9
+%endif
+
+echo 'The DUMMY COPR entry unexpectedly reached final package promotion.' >&2
+exit 1
+
+%install
+:
+
+%files
+
+%changelog
+* Sun Sep 06 2026 Michael W. Heiss <mheiss@users.noreply.github.com> - @RPM_VERSION@-@RPM_RELEASE@
+- Configure the real Desktop build pipeline against the DUMMY release artifact
