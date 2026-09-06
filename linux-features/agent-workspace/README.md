@@ -1,6 +1,6 @@
 # Agent Workspaces Linux Feature
 
-`agent-workspace` is an opt-in ChatGPT Community feature that adds the
+`agent-workspace` is an opt-in Hydex feature that adds the
 `agent-workspace-linux` control surface to the app settings UI.
 
 Enable it in `linux-features/features.json` before running the install/build
@@ -21,7 +21,7 @@ the agent-facing progressive routing entrypoint; the feature does not write
 `~/.codex/config.toml` or register a generic MCP server at startup.
 
 The feature adds a Linux-only settings section named **Agent Workspaces**. The
-page can point ChatGPT Community at an `agent-workspace-linux` binary, list and edit
+page can point Hydex at an `agent-workspace-linux` binary, list and edit
 saved profiles, validate profile JSON without saving, preview profile-backed
 workspace starts, require an explicit approval card before starting a hidden
 workspace, stop running workspaces, run stale workspace cleanup, and create a restricted Chrome
