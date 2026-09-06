@@ -10,8 +10,10 @@ The manifest `id` must equal the declaring feature directory's final name:
 roots. Discovery checks the declaration path, not a symlink target's name, and
 reports mismatches without renaming directories or migrating private features.
 
-Features are always disabled by default. Enable them only in the gitignored
-configuration:
+Repository manifests may opt a feature into fresh builds with
+`defaultEnabled: true`. Defaults apply only while no gitignored local
+`features.json` exists and no explicit configuration path is supplied. A local
+configuration is the complete machine selection:
 
 ```json
 {
@@ -28,7 +30,7 @@ remains enabled for updater rebuilds because its validated snapshot is included
 in the custom package's minimal update-builder.
 
 Known retired IDs and their aliases are discarded during config loading. Other
-unknown enabled IDs, default-enabled manifests, unmet requirements, and
+unknown enabled IDs, non-boolean defaults, unmet requirements, and
 conflicts are errors. Strict configuration reads (`strictConfig: true`),
 including native package plans, also reject duplicate enabled IDs and malformed
 settings. Non-strict reads warn and ignore malformed settings entries (or the
@@ -77,7 +79,7 @@ Manifest fields:
 |---|---|
 | `id` | Stable configuration ID matching the directory name |
 | `title`, `description` | User-facing wizard and documentation text |
-| `defaultEnabled` | Omitted means `false`; an explicit value must be boolean `false`, including local and internal features |
+| `defaultEnabled` | Optional boolean applied only when no local or explicit feature config exists |
 | `internal` | Optional boolean for build-owned plumbing hidden from public feature selection; omission means `false`, and explicit `null` or non-boolean values are rejected |
 | `entrypoints.patchDescriptors` | Optional ASAR descriptor module |
 | `entrypoints.stageHook` | Last-resort app staging script |
@@ -365,4 +367,6 @@ configs migrate silently; do not make arbitrary unknown IDs valid.
 The official Linux application is the baseline. A default core patch is allowed
 only for a reproduced mandatory launch/work failure with a regression test.
 Everything optional, distro/editor/browser/workflow-specific, experimental, or
-minority-use belongs here and stays disabled by default.
+minority-use belongs here. A tracked default requires a maintained distribution
+contract, explicit opt-out, and clean feature-free validation through an
+explicit config.
