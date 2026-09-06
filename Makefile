@@ -14,7 +14,10 @@ MAX_BUILD_THREADS_ENABLED := $(filter-out 0,$(MAX_BUILD_THREADS_VALUE))
 CARGO_JOBS_ARG = $(if $(MAX_BUILD_THREADS_ENABLED),--jobs $(MAX_BUILD_THREADS_VALUE),)
 RPM_BINARY_PAYLOAD ?= $(if $(MAX_BUILD_THREADS_ENABLED),w19T$(MAX_BUILD_THREADS_VALUE).zstdio,)
 DEB_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)_*.deb
-RPM_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)-*.rpm
+RPM_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)-[0-9]*.rpm
+RHEL7_RPM_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)-[0-9]*-rhel7*.rpm
+RHEL7_CLI_RPM_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)-cli-runtime-[0-9]*-rhel7*.rpm
+RHEL9_RPM_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)-[0-9]*-rhel9*.rpm
 PACMAN_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)-[0-9]*.pkg.tar.*
 .DEFAULT_GOAL := help
 .PHONY: native-preflight native-bootstrap-preflight
@@ -26,7 +29,7 @@ format="$$("$(PACKAGE_FORMAT_DETECTOR)")"; \
 case "$$format" in deb|rpm|pacman|ebuild) ;; *) echo 'No supported native package format found.' >&2; exit 1 ;; esac
 endef
 
-.PHONY: help check test ci-pr ci-all build-updater maybe-build-updater build-native-feature-helpers update rebuild rebuild-install inspect-upstream build-app build-app-fresh setup-native guided-install bootstrap-native install-native update-native rebuild-next run-app deb rpm pacman gentoo appimage package install service-enable service-status clean-dist clean-state
+.PHONY: help check test ci-pr ci-all build-updater maybe-build-updater build-native-feature-helpers update rebuild rebuild-install inspect-upstream build-app build-app-fresh setup-native guided-install bootstrap-native install-native update-native rebuild-next run-app deb rpm rpm-rhel7 rpm-rhel9 pacman gentoo appimage package install install-rhel7 install-rhel9 service-enable service-status clean-dist clean-state
 
 help:
 	@printf '\nChatGPT Community from the official OpenAI Linux package\n\n'
@@ -39,6 +42,10 @@ help:
 	@printf '  %-20s %s\n' 'make bootstrap-native' 'Install build dependencies, build, package, install'
 	@printf '  %-20s %s\n' 'make install-native' 'Build, package, and install for this distro'
 	@printf '  %-20s %s\n' 'make deb|rpm|pacman|gentoo' 'Build a native package in dist/'
+	@printf '  %-20s %s\n' 'make rpm-rhel7' 'Build split RPM 4.11-compatible packages with a private runtime'
+	@printf '  %-20s %s\n' 'make rpm-rhel9' 'Build a RHEL 9 package with a private runtime'
+	@printf '  %-20s %s\n' 'make install-rhel7' 'Install the newest matching RHEL 7 package pair'
+	@printf '  %-20s %s\n' 'make install-rhel9' 'Install the newest RHEL 9 compatibility package'
 	@printf '  %-20s %s\n' 'make appimage' 'Build the AppImage in dist/'
 	@printf '  %-20s %s\n' 'make ci-all' 'Run the complete local CI suite'
 	@printf '\nVariables:\n  UPSTREAM_DEB=/path/to/chatgpt_<version>_<arch>.deb\n  PACKAGE_WITH_UPDATER=0\n  MAX_BUILD_THREADS=8\n\n'
@@ -127,6 +134,12 @@ deb: maybe-build-updater
 rpm: maybe-build-updater
 	MAX_BUILD_THREADS="$(MAX_BUILD_THREADS)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" PACKAGE_WITH_UPDATER="$(PACKAGE_WITH_UPDATER)" RPM_BINARY_PAYLOAD="$(RPM_BINARY_PAYLOAD)" ./scripts/build-rpm.sh
 
+rpm-rhel7:
+	MAX_BUILD_THREADS="$(MAX_BUILD_THREADS)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" ./scripts/build-rhel-compat-rpm.sh rhel7
+
+rpm-rhel9:
+	MAX_BUILD_THREADS="$(MAX_BUILD_THREADS)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" RPM_BINARY_PAYLOAD="$(RPM_BINARY_PAYLOAD)" ./scripts/build-rhel-compat-rpm.sh rhel9
+
 pacman: maybe-build-updater
 	MAX_BUILD_THREADS="$(MAX_BUILD_THREADS)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" PACKAGE_WITH_UPDATER="$(PACKAGE_WITH_UPDATER)" ./scripts/build-pacman.sh
 
@@ -155,6 +168,16 @@ install:
 	  ebuild) bash "$(CURDIR)/scripts/install-gentoo.sh" "$(CURDIR)/dist/gentoo/repository" ;; \
 	  *) echo 'No supported package manager found.' >&2; exit 1 ;; \
 	esac
+
+install-rhel7:
+	@main="$$($(CURDIR)/scripts/select-latest-package.sh '$(RHEL7_RPM_GLOB)')"; \
+	runtime="$$($(CURDIR)/scripts/select-latest-package.sh '$(RHEL7_CLI_RPM_GLOB)')"; \
+	[ "$$(rpm -qp --qf '%{VERSION}-%{RELEASE}' "$$main")" = "$$(rpm -qp --qf '%{VERSION}-%{RELEASE}' "$$runtime")" ]; \
+	"$(CURDIR)/scripts/sudo-with-alert.sh" yum install -y "$$main" "$$runtime"
+
+install-rhel9:
+	@artifact="$$($(CURDIR)/scripts/select-latest-package.sh '$(RHEL9_RPM_GLOB)')"; \
+	"$(CURDIR)/scripts/sudo-with-alert.sh" dnf install -y "$$artifact"
 
 service-enable:
 	systemctl --user daemon-reload
