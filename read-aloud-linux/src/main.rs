@@ -575,7 +575,7 @@ fn kokoro_config(params: &ReadAloudParams) -> KokoroConfig {
         .or_else(|| settings_string(&settings, SETTINGS_KOKORO_PYTHON))
         .unwrap_or_else(|| {
             data_home
-                .join("codex-desktop/read-aloud/kokoro-venv/bin/python")
+                .join("hydex-desktop/read-aloud/kokoro-venv/bin/python")
                 .display()
                 .to_string()
         });
@@ -659,7 +659,7 @@ fn default_settings_path() -> PathBuf {
     let app_id = env_trimmed("CODEX_LINUX_APP_ID")
         .or_else(|| env_trimmed("CODEX_APP_ID"))
         .filter(|value| is_safe_app_id(value))
-        .unwrap_or_else(|| "codex-desktop".to_string());
+        .unwrap_or_else(|| "hydex-desktop".to_string());
     xdg_config_home().join(app_id).join("settings.json")
 }
 
@@ -877,12 +877,12 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap();
         let previous_app_id = env::var_os("CODEX_LINUX_APP_ID");
         let previous_codex_app_id = env::var_os("CODEX_APP_ID");
-        env::set_var("CODEX_LINUX_APP_ID", "codex-desktop-5");
-        env::set_var("CODEX_APP_ID", "codex-desktop");
+        env::set_var("CODEX_LINUX_APP_ID", "hydex-desktop-5");
+        env::set_var("CODEX_APP_ID", "hydex-desktop");
 
         let path = default_settings_path();
 
-        assert!(path.ends_with("codex-desktop-5/settings.json"));
+        assert!(path.ends_with("hydex-desktop-5/settings.json"));
         restore_env("CODEX_LINUX_APP_ID", previous_app_id);
         restore_env("CODEX_APP_ID", previous_codex_app_id);
     }
@@ -897,7 +897,7 @@ mod tests {
 
         let path = default_settings_path();
 
-        assert!(path.ends_with("codex-desktop/settings.json"));
+        assert!(path.ends_with("hydex-desktop/settings.json"));
         restore_env("CODEX_LINUX_APP_ID", previous_app_id);
         restore_env("CODEX_APP_ID", previous_codex_app_id);
     }
