@@ -1,6 +1,6 @@
 # COPR source contract
 
-The codex-desktop COPR package uses this repository as an SCM source with the
+The hydex-desktop COPR package uses this repository as an SCM source with the
 make_srpm method. upstream-artifact.json selects one immutable GitHub release
 asset and SHA-256. The source-RPM builder embeds that Debian package, the exact
 Git tree, and the immutable Hydex runtime before target builds run.

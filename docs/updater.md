@@ -4,7 +4,7 @@
 updates the custom distribution without transferring ownership to the official
 `chatgpt` package.
 
-It updates the `codex-desktop` package shown as **ChatGPT Community**. It does
+It updates the `hydex-desktop` package shown as **Hydex**. It does
 not install, remove, or update OpenAI's separate `chatgpt` package.
 
 ## Release discovery
@@ -155,7 +155,7 @@ journalctl --user -u codex-update-manager.service -f
 
 ## Manual-update packages
 
-To build `codex-desktop` without the service and update-builder:
+To build `hydex-desktop` without the service and update-builder:
 
 ```bash
 PACKAGE_WITH_UPDATER=0 make package
@@ -176,7 +176,7 @@ own replacement workflows and do not use this mutable native package updater.
 `WaitingForAppExit` waits for the configured managed executable. The updater
 scans `/proc/<pid>/exe` and compares its link target exactly with
 `app_executable_path` in its `config.toml`, defaulting to
-`/opt/codex-desktop/ChatGPT`. Changing that setting changes which executable is
+`/opt/hydex-desktop/ChatGPT`. Changing that setting changes which executable is
 monitored. Process names and profile directories do not participate, so the
 guard does not automatically cover official, portable, or separately installed
 copies at other paths.
@@ -186,10 +186,10 @@ Close the matching managed app. `status --json` shows persisted waiting state;
 path check. If installation failed, fix the reported package-manager or polkit
 problem and run `install-ready`.
 
-Separately, official **ChatGPT** and **ChatGPT Community** share the upstream
+Separately, official **ChatGPT** and **Hydex** share the upstream
 `Codex` profile by default and must not run concurrently. The optional
 [`community-profile-isolation`](../linux-features/community-profile-isolation/README.md)
-feature provides separate Community state and bundled CLI resolution. This
+feature provides separate Hydex state and bundled CLI resolution. This
 profile constraint and its explicit isolation option do not change the
 updater's executable-path matching rule.
 
