@@ -116,7 +116,7 @@ remote_mobile_control_main() {
 
     if [ -z "$bundled_codex" ] || [ ! -x "$bundled_codex" ]; then
         echo "Remote mobile control Codex runtime is not executable: ${bundled_codex:-<unset>}"
-        echo "The feature uses the official Codex bundled in ChatGPT Community; set CODEX_REMOTE_CONTROL_CODEX_PATH only for an explicit override."
+        echo "The feature uses the official Codex bundled in Hydex; set CODEX_REMOTE_CONTROL_CODEX_PATH only for an explicit override."
         return 0
     fi
 

@@ -15,8 +15,8 @@ test("Cachix publishes every audited Nix runtime for both architectures", () => 
   assert.match(workflow, /test -n "\$CACHIX_AUTH_TOKEN"/);
   assert.match(workflow, /nix-runtime-maximal-directory-watch/);
   assert.match(workflow, /nix-runtime-maximal-shallow-watch/);
-  assert.match(workflow, /codex-desktop-maximal-directory-watch/);
-  assert.match(workflow, /codex-desktop-maximal-shallow-watch/);
+  assert.match(workflow, /hydex-desktop-maximal-directory-watch/);
+  assert.match(workflow, /hydex-desktop-maximal-shallow-watch/);
   assert.match(workflow, /nix-installer/);
   assert.doesNotMatch(workflow, /if \[ -n "\$CACHIX_AUTH_TOKEN"/);
   assert.match(workflow, /nix build/);
