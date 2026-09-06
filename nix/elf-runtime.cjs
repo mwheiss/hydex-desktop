@@ -444,12 +444,17 @@ function planFixups(root, architecture, manifest = loadManifest()) {
   });
 }
 
-function buildPatchelfInvocations(action, dynamicLinker, runtimeLibraryPath) {
+function buildPatchelfInvocations(
+  action,
+  dynamicLinker,
+  runtimeLibraryPath,
+  forceRpath = false,
+) {
   const interpreterArguments = action.setInterpreter
     ? ["--set-interpreter", dynamicLinker]
     : [];
   const rpathArguments = action.addRpath
-    ? ["--add-rpath", runtimeLibraryPath]
+    ? [...(forceRpath ? ["--force-rpath"] : []), "--add-rpath", runtimeLibraryPath]
     : [];
   return action.strategy === "patchelf-rpath-first"
     ? [rpathArguments, interpreterArguments]
@@ -473,6 +478,7 @@ function applyFixups({
   runtimeLibraryPath,
   patchelf = "patchelf",
   chatgptRelocator,
+  forceRpath = false,
   manifest = loadManifest(),
 }) {
   if (!path.isAbsolute(dynamicLinker)) fail("dynamic linker must be an absolute path");
@@ -486,6 +492,7 @@ function applyFixups({
       action,
       dynamicLinker,
       runtimeLibraryPath,
+      forceRpath,
     );
     const originalMode = fs.statSync(filePath).mode & 0o777;
     if ((originalMode & 0o200) === 0)
@@ -678,6 +685,7 @@ function main(argv) {
       runtimeLibraryPath: options["runtime-library-path"],
       patchelf: options.patchelf,
       chatgptRelocator: options["chatgpt-relocator"],
+      forceRpath: options["force-rpath"] === "true",
       manifest,
     });
   } else if (command === "audit") {
