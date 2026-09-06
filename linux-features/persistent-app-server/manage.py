@@ -85,6 +85,10 @@ def helper_path(config):
     return Path(config["app_dir"]) / ".codex-linux/features/persistent-app-server/manage.py"
 
 
+def client_adapter_path(config):
+    return Path(config["app_dir"]) / ".codex-linux/features/persistent-app-server/codex-vscode-proxy"
+
+
 def quote_unit(value, *, argument=False):
     value = str(value)
     if any(c in value for c in "\x00\r\n"):
@@ -184,7 +188,9 @@ def setup(app_dir, *, linger=True):
     if config["app_dir"] != str(app_dir):
         raise ValueError("Configured for another app directory; remove the old service explicitly first")
     cli = cli_path(config)
-    if not helper_path(config).is_file() or not os.access(cli, os.X_OK):
+    adapter = client_adapter_path(config)
+    if (not helper_path(config).is_file() or not os.access(cli, os.X_OK)
+            or not adapter.is_file() or not os.access(adapter, os.X_OK)):
         raise ValueError("Install the package with this feature enabled before service setup")
     # Written by mobile's stage hook only after its launch transform is found.
     # The historical marker label is not the runtime owner in proxy mode.
@@ -226,6 +232,7 @@ def emit_environment(config):
         raise ValueError("This Desktop is not the installation configured for the persistent server")
     values = {
         "CODEX_HOME": config["codex_home"],
+        "CODEX_CLI_PATH": str(client_adapter_path(config)),
         "CODEX_REMOTE_CONTROL_APP_SERVER_MODE": "proxy",
         "CODEX_REMOTE_CONTROL_APP_SERVER_PROXY_SOCKET": str(socket_path(config)),
         "CODEX_REMOTE_CONTROL_DAEMON_AUTOSTART_DISABLED": "1",
