@@ -71,6 +71,36 @@ test("package metadata rejects architectures without an official package", (t) =
   assert.match(result.stderr, /expected amd64 or arm64/);
 });
 
+test("persistent pacman package replaces the standalone Codex CLI provider", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-package-cli-provider-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const binDir = path.join(root, "usr/bin");
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.symlinkSync("/opt/codex-desktop/resources/codex", path.join(binDir, "codex"));
+  fs.symlinkSync(
+    "/opt/codex-desktop/resources/codex-code-mode-host",
+    path.join(binDir, "codex-code-mode-host"),
+  );
+
+  const metadata = runPackageCommon(
+    `PACKAGE_NAME=codex-desktop pacman_codex_cli_package_metadata ${JSON.stringify(root)}`,
+    root,
+  );
+  assert.match(metadata, /provides=\('codex' 'openai-codex'\)/);
+  assert.match(metadata, /conflicts=\('hydex-bin' 'codex' 'codex-bin' 'openai-codex'/);
+  assert.match(metadata, /replaces=\('hydex-bin'/);
+  assert.doesNotMatch(metadata, /replaces=.*'codex-bin'/);
+
+  fs.unlinkSync(path.join(binDir, "codex-code-mode-host"));
+  assert.throws(
+    () => runPackageCommon(
+      `PACKAGE_NAME=codex-desktop pacman_codex_cli_package_metadata ${JSON.stringify(root)}`,
+      root,
+    ),
+    /incomplete or unexpected/,
+  );
+});
+
 test("Debian package control inherits dependency fields from upstream", () => {
   const template = fs.readFileSync(path.join(repoRoot, "packaging/linux/control"), "utf8");
   const builder = fs.readFileSync(path.join(repoRoot, "scripts/build-deb.sh"), "utf8");
