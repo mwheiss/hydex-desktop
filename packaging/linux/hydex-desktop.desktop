@@ -1,21 +1,21 @@
 [Desktop Entry]
-Name=ChatGPT Community
+Name=Hydex
 Comment=Community Linux distribution based on OpenAI ChatGPT
-Exec=env BAMF_DESKTOP_FILE_HINT=/usr/share/applications/codex-desktop.desktop CHROME_DESKTOP=codex-desktop.desktop /usr/bin/codex-desktop %u
-Icon=codex-desktop
+Exec=env BAMF_DESKTOP_FILE_HINT=/usr/share/applications/hydex-desktop.desktop CHROME_DESKTOP=hydex-desktop.desktop /usr/bin/hydex-desktop %u
+Icon=hydex-desktop
 Terminal=false
 Type=Application
 Categories=Development;
 MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;
 Keywords=codex;openai;ai;coding;
 StartupNotify=true
-StartupWMClass=codex-desktop
-X-GNOME-WMClass=codex-desktop
+StartupWMClass=hydex-desktop
+X-GNOME-WMClass=hydex-desktop
 Actions=new-window;CheckForUpdates;InstallReadyUpdate;
 
 [Desktop Action new-window]
 Name=New Window
-Exec=env BAMF_DESKTOP_FILE_HINT=/usr/share/applications/codex-desktop.desktop CHROME_DESKTOP=codex-desktop.desktop CODEX_MULTI_LAUNCH=1 /usr/bin/codex-desktop --new-instance
+Exec=env BAMF_DESKTOP_FILE_HINT=/usr/share/applications/hydex-desktop.desktop CHROME_DESKTOP=hydex-desktop.desktop CODEX_MULTI_LAUNCH=1 /usr/bin/hydex-desktop --new-instance
 
 [Desktop Action CheckForUpdates]
 Name=Check for Updates

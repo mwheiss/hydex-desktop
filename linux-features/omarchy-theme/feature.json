@@ -1,15 +1,15 @@
 {
   "id": "omarchy-theme",
   "title": "Omarchy Theme",
-  "description": "Loads user CSS generated from the active Omarchy theme into ChatGPT Community.",
+  "description": "Loads user CSS generated from the active Omarchy theme into Hydex.",
   "defaultEnabled": false,
   "entrypoints": {
     "patchDescriptors": "./patch.js"
   },
   "resources": [
     {
-      "source": "codex-desktop.css.tpl",
-      "target": ".codex-linux/features/omarchy-theme/codex-desktop.css.tpl",
+      "source": "hydex-desktop.css.tpl",
+      "target": ".codex-linux/features/omarchy-theme/hydex-desktop.css.tpl",
       "mode": "0644"
     }
   ],
