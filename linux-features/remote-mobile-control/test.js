@@ -292,7 +292,7 @@ function findExecutableOnPath(name) {
 }
 
 function remoteControlKeyStorePaths(configHome) {
-  const directory = path.join(configHome, "codex-desktop", "remote-control-device-keys");
+  const directory = path.join(configHome, "hydex-desktop", "remote-control-device-keys");
   const store = path.join(directory, "remote-control-device-keys-v1.json");
   return { directory, lock: `${store}.lock`, store };
 }
@@ -628,7 +628,7 @@ test("remote mobile control feature exposes its stage hook when enabled", () => 
 test("remote mobile stage hook preserves official single-instance and browser RPC clients", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-stage-"));
   try {
-    const installDir = path.join(tempRoot, "package", "opt", "codex-desktop");
+    const installDir = path.join(tempRoot, "package", "opt", "hydex-desktop");
     const workDir = path.join(tempRoot, "work");
     const buildDir = path.join(workDir, "app-extracted", ".vite", "build");
     const featureMarker = path.join(installDir, ".codex-linux", "remote-mobile-control-enabled");
@@ -682,7 +682,7 @@ test("remote mobile stage hook preserves official single-instance and browser RP
 test("remote mobile stage hook removes a stale ownership marker when only the legacy WSL patch marker exists", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-stage-"));
   try {
-    const installDir = path.join(tempRoot, "package", "opt", "codex-desktop");
+    const installDir = path.join(tempRoot, "package", "opt", "hydex-desktop");
     const workDir = path.join(tempRoot, "work");
     const buildDir = path.join(workDir, "app-extracted", ".vite", "build");
     const marker = path.join(installDir, ".codex-linux", "desktop-app-server-remote-control-enabled");
@@ -711,7 +711,7 @@ test("remote mobile stage hook removes a stale ownership marker when only the le
 test("remote mobile stage hook rejects an incomplete local Desktop patch marker", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-stage-"));
   try {
-    const installDir = path.join(tempRoot, "package", "opt", "codex-desktop");
+    const installDir = path.join(tempRoot, "package", "opt", "hydex-desktop");
     const workDir = path.join(tempRoot, "work");
     const buildDir = path.join(workDir, "app-extracted", ".vite", "build");
     const marker = path.join(installDir, ".codex-linux", "desktop-app-server-remote-control-enabled");
@@ -738,7 +738,7 @@ test("remote mobile stage hook rejects an incomplete local Desktop patch marker"
 test("remote mobile stage hook replaces an ownership marker symlink without following it", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-stage-"));
   try {
-    const installDir = path.join(tempRoot, "package", "opt", "codex-desktop");
+    const installDir = path.join(tempRoot, "package", "opt", "hydex-desktop");
     const workDir = path.join(tempRoot, "work");
     const buildDir = path.join(workDir, "app-extracted", ".vite", "build");
     const marker = path.join(installDir, ".codex-linux", "desktop-app-server-remote-control-enabled");
@@ -804,7 +804,7 @@ test("remote mobile cold-start hook skips daemon when Desktop app-server owns re
   try {
     const home = path.join(tempRoot, "home");
     const codexHome = path.join(tempRoot, "codex-home");
-    const appDir = path.join(tempRoot, "package", "share", "codex-desktop", "app");
+    const appDir = path.join(tempRoot, "package", "share", "hydex-desktop", "app");
     const callsLog = path.join(tempRoot, "calls.log");
 
     fs.mkdirSync(home, { recursive: true });
@@ -954,7 +954,7 @@ test("remote mobile cold-start hook removes dead pid files from both daemon name
     const home = path.join(tempRoot, "home");
     const codexHome = path.join(tempRoot, "codex-home");
     const daemonDir = path.join(codexHome, "app-server-daemon");
-    const appDir = path.join(tempRoot, "package", "share", "codex-desktop", "app");
+    const appDir = path.join(tempRoot, "package", "share", "hydex-desktop", "app");
     const pidFiles = ["app-server.pid", "app-server-updater.pid", "daemon.pid", "daemon-updater.pid"]
       .map((name) => path.join(daemonDir, name));
 
@@ -989,7 +989,7 @@ test("remote mobile cold-start hook preserves live pid files from both daemon na
     const home = path.join(tempRoot, "home");
     const codexHome = path.join(tempRoot, "codex-home");
     const daemonDir = path.join(codexHome, "app-server-daemon");
-    const appDir = path.join(tempRoot, "package", "share", "codex-desktop", "app");
+    const appDir = path.join(tempRoot, "package", "share", "hydex-desktop", "app");
     const pidFiles = ["app-server.pid", "app-server-updater.pid", "daemon.pid", "daemon-updater.pid"]
       .map((name) => path.join(daemonDir, name));
     const pidRecord = JSON.stringify({ pid: process.pid, processStartTime: "fixture" });
@@ -3073,7 +3073,7 @@ test("upstream auto-connect service preserves an explicit settings choice", asyn
 test("patched Linux device-key provider signs upstream-canonical enrollment and connection payloads", async () => {
   const configHome = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-key-store-"));
   try {
-    const sharedConfigDirectory = path.join(configHome, "codex-desktop");
+    const sharedConfigDirectory = path.join(configHome, "hydex-desktop");
     fs.mkdirSync(sharedConfigDirectory, { mode: 0o755 });
     const patched = applyLinuxRemoteControlDeviceKeyPatch(syntheticMainBundle());
     const context = {
@@ -3548,7 +3548,7 @@ test("Linux device-key store moves the previous key file into its private direct
     const client = createPatchedDeviceKeyClient(configHome);
     const created = await client.createDeviceKey("allow_os_protected_nonextractable");
     const { directory, lock, store } = remoteControlKeyStorePaths(configHome);
-    const legacyStore = path.join(configHome, "codex-desktop", "remote-control-device-keys-v1.json");
+    const legacyStore = path.join(configHome, "hydex-desktop", "remote-control-device-keys-v1.json");
     fs.rmSync(lock, { force: true });
     fs.renameSync(store, legacyStore);
     fs.rmdirSync(directory);
@@ -3612,7 +3612,7 @@ test("Linux device-key store rejects unsafe filesystem objects", { timeout: 2_00
     const directoryTarget = path.join(root, "directory-target");
     fs.mkdirSync(directorySymlinkHome, { mode: 0o700 });
     fs.mkdirSync(directoryTarget, { mode: 0o700 });
-    fs.symlinkSync(directoryTarget, path.join(directorySymlinkHome, "codex-desktop"));
+    fs.symlinkSync(directoryTarget, path.join(directorySymlinkHome, "hydex-desktop"));
     await assert.rejects(
       () => createPatchedDeviceKeyClient(directorySymlinkHome).createDeviceKey("test"),
       /config path must be a regular directory/,

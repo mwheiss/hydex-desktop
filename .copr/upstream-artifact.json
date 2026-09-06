@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "version": "0.0.0+copr.2026.09.06.1",
   "architecture": "amd64",
-  "url": "https://github.com/mwheiss/codex-desktop-linux/releases/download/official-linux-DUMMY/chatgpt_0.0.0%2Bcopr.2026.09.06.1_amd64.deb",
+  "url": "https://github.com/mwheiss/hydex-desktop/releases/download/official-linux-DUMMY/chatgpt_0.0.0%2Bcopr.2026.09.06.1_amd64.deb",
   "sha256": "4108d007cc99cb5584b4182c71c1948a9bdb449b7252b3e162bb3dfde18d7bad",
   "dummy": true,
   "hydexArtifact": {

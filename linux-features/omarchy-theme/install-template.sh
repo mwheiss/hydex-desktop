@@ -17,7 +17,7 @@ if [ -z "${HOME:-}" ] || [ -z "${CODEX_LINUX_FEATURES_DIR:-}" ]; then
     exit 0
 fi
 
-source_path="$CODEX_LINUX_FEATURES_DIR/omarchy-theme/codex-desktop.css.tpl"
+source_path="$CODEX_LINUX_FEATURES_DIR/omarchy-theme/hydex-desktop.css.tpl"
 if [ ! -f "$source_path" ]; then
     warn "template source not found at $source_path"
     exit 0
@@ -25,8 +25,8 @@ fi
 
 omarchy_home="$HOME/.config/omarchy"
 target_dir="$omarchy_home/themed"
-target_path="$target_dir/codex-desktop.css.tpl"
-generated_path="$omarchy_home/current/theme/codex-desktop.css"
+target_path="$target_dir/hydex-desktop.css.tpl"
+generated_path="$omarchy_home/current/theme/hydex-desktop.css"
 
 if [ -f "$target_path" ] && ! cmp -s "$source_path" "$target_path"; then
     warn "$target_path already exists with local changes; leaving it untouched"
@@ -35,7 +35,7 @@ elif [ ! -f "$target_path" ]; then
         warn "could not install Omarchy template at $target_path"
         exit 0
     fi
-    echo "Installed Omarchy ChatGPT Community theme template at $target_path" >&2
+    echo "Installed Omarchy Hydex theme template at $target_path" >&2
 fi
 
 if [ -s "$generated_path" ]; then
