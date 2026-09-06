@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Attach the current Codex VS Code JSONL transport to a Unix WebSocket server."""
+"""Attach local Codex JSONL clients to the persistent Unix WebSocket server."""
 import base64
 import hashlib
 import json
@@ -53,6 +53,34 @@ def read_config():
     if config.get("version") != 1 or config.get("feature") != "persistent-app-server":
         fail("unrecognized persistent service configuration")
     return config
+
+
+def config_overrides_only(args):
+    index = 0
+    while index < len(args):
+        argument = args[index]
+        if argument in ("-c", "--config", "--enable", "--disable"):
+            if index + 1 >= len(args):
+                return False
+            index += 2
+            continue
+        if argument.startswith(("-c=", "--config=", "--enable=", "--disable=")):
+            index += 1
+            continue
+        return False
+    return True
+
+
+def is_desktop_proxy_launch(args, socket_path):
+    try:
+        command_index = args.index("app-server")
+    except ValueError:
+        return False
+    expected = ["app-server", "proxy", "--sock", str(socket_path)]
+    if args[command_index:command_index + len(expected)] != expected:
+        return False
+    remaining = args[:command_index] + args[command_index + len(expected):]
+    return config_overrides_only(remaining)
 
 
 class UnixWebSocket:
@@ -246,8 +274,9 @@ def main():
         fail(f"packaged Codex CLI is unavailable: {binary}")
 
     args = sys.argv[1:]
-    if args == EXPECTED_APP_SERVER_ARGS:
-        bridge_jsonl_to_websocket(codex_home / "app-server-control/app-server-control.sock")
+    socket_path = codex_home / "app-server-control/app-server-control.sock"
+    if args == EXPECTED_APP_SERVER_ARGS or is_desktop_proxy_launch(args, socket_path):
+        bridge_jsonl_to_websocket(socket_path)
         return
     if "app-server" in args:
         fail(

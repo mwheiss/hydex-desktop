@@ -61,6 +61,8 @@ class Tests(unittest.TestCase):
         self.feature = self.app / ".codex-linux/features/persistent-app-server"
         self.feature.mkdir(parents=True)
         shutil.copyfile(HERE / "manage.py", self.feature / "manage.py")
+        shutil.copyfile(HERE / "vscode-proxy.py", self.feature / "codex-vscode-proxy")
+        (self.feature / "codex-vscode-proxy").chmod(0o755)
         self.cli = self.app / "resources/codex"
         self.cli.parent.mkdir()
         self.cli.write_text("#!/bin/sh\nexit 0\n")
@@ -124,70 +126,80 @@ class Tests(unittest.TestCase):
         self.assertEqual(os.readlink(package_root / "usr/bin/codex-code-mode-host"),
                          "/opt/codex-desktop/resources/codex-code-mode-host")
 
-    def test_vscode_proxy_attaches_the_current_extension_launch(self):
+    def test_client_adapter_attaches_vscode_and_desktop_launches(self):
         config = self.install()
         socket_path = m.socket_path(config)
         socket_path.parent.mkdir(parents=True)
-        received = []
-        ready = threading.Event()
-
-        def server():
-            with socket.socket(socket.AF_UNIX) as listener:
-                listener.bind(str(socket_path))
-                listener.listen(1)
-                ready.set()
-                connection, _ = listener.accept()
-                with connection:
-                    request = bytearray()
-                    while b"\r\n\r\n" not in request:
-                        request.extend(connection.recv(4096))
-                    headers = {}
-                    for line in bytes(request).split(b"\r\n")[1:]:
-                        name, separator, value = line.partition(b":")
-                        if separator:
-                            headers[name.strip().lower()] = value.strip()
-                    key = headers[b"sec-websocket-key"].decode("ascii")
-                    accept = base64.b64encode(hashlib.sha1(
-                        (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
-                    ).digest()).decode("ascii")
-                    connection.sendall((
-                        "HTTP/1.1 101 Switching Protocols\r\n"
-                        "Upgrade: websocket\r\nConnection: Upgrade\r\n"
-                        f"Sec-WebSocket-Accept: {accept}\r\n\r\n").encode("ascii"))
-                    first, second = connection.recv(2)
-                    self.assertEqual(first, 0x81)
-                    self.assertTrue(second & 0x80)
-                    length = second & 0x7F
-                    if length == 126:
-                        length = struct.unpack("!H", connection.recv(2))[0]
-                    mask = connection.recv(4)
-                    payload = bytearray()
-                    while len(payload) < length:
-                        payload.extend(connection.recv(length - len(payload)))
-                    received.append(bytes(
-                        value ^ mask[index % 4] for index, value in enumerate(payload)))
-                    response = b'{"id":0,"result":{"ok":true}}'
-                    connection.sendall(bytes((0x81, len(response))) + response)
-                    connection.sendall(bytes((0x88, 0)))
-
-        thread = threading.Thread(target=server)
-        thread.start()
-        self.assertTrue(ready.wait(timeout=5))
-        result = subprocess.run(
-            [sys.executable, str(HERE / "vscode-proxy.py"),
-             "-c", "features.code_mode_host=true", "app-server",
+        invocations = [
+            ["-c", "features.code_mode_host=true", "app-server",
              "--analytics-default-enabled"],
-            check=False,
-            input='{"method":"initialize","id":0,"params":{}}\n',
-            text=True,
-            capture_output=True,
-            env=os.environ,
-        )
-        thread.join(timeout=5)
-        self.assertFalse(thread.is_alive())
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(received, [b'{"method":"initialize","id":0,"params":{}}'])
-        self.assertEqual(result.stdout.strip(), '{"id":0,"result":{"ok":true}}')
+            ["-c", "features.code_mode_host=true", "app-server", "proxy", "--sock",
+             str(socket_path), "-c", 'mcp_servers.codex_app={"enabled"=true}'],
+        ]
+        for invocation in invocations:
+            with self.subTest(invocation=invocation):
+                if socket_path.exists():
+                    socket_path.unlink()
+                received = []
+                ready = threading.Event()
+
+                def server():
+                    with socket.socket(socket.AF_UNIX) as listener:
+                        listener.bind(str(socket_path))
+                        listener.listen(1)
+                        ready.set()
+                        connection, _ = listener.accept()
+                        with connection:
+                            request = bytearray()
+                            while b"\r\n\r\n" not in request:
+                                request.extend(connection.recv(4096))
+                            headers = {}
+                            for line in bytes(request).split(b"\r\n")[1:]:
+                                name, separator, value = line.partition(b":")
+                                if separator:
+                                    headers[name.strip().lower()] = value.strip()
+                            key = headers[b"sec-websocket-key"].decode("ascii")
+                            accept = base64.b64encode(hashlib.sha1(
+                                (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
+                            ).digest()).decode("ascii")
+                            connection.sendall((
+                                "HTTP/1.1 101 Switching Protocols\r\n"
+                                "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+                                f"Sec-WebSocket-Accept: {accept}\r\n\r\n").encode("ascii"))
+                            first, second = connection.recv(2)
+                            self.assertEqual(first, 0x81)
+                            self.assertTrue(second & 0x80)
+                            length = second & 0x7F
+                            if length == 126:
+                                length = struct.unpack("!H", connection.recv(2))[0]
+                            mask = connection.recv(4)
+                            payload = bytearray()
+                            while len(payload) < length:
+                                payload.extend(connection.recv(length - len(payload)))
+                            received.append(bytes(
+                                value ^ mask[index % 4]
+                                for index, value in enumerate(payload)))
+                            response = b'{"id":0,"result":{"ok":true}}'
+                            connection.sendall(bytes((0x81, len(response))) + response)
+                            connection.sendall(bytes((0x88, 0)))
+
+                thread = threading.Thread(target=server)
+                thread.start()
+                self.assertTrue(ready.wait(timeout=5))
+                result = subprocess.run(
+                    [sys.executable, str(HERE / "vscode-proxy.py"), *invocation],
+                    check=False,
+                    input='{"method":"initialize","id":0,"params":{}}\n',
+                    text=True,
+                    capture_output=True,
+                    env=os.environ,
+                )
+                thread.join(timeout=5)
+                self.assertFalse(thread.is_alive())
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    received, [b'{"method":"initialize","id":0,"params":{}}'])
+                self.assertEqual(result.stdout.strip(), '{"id":0,"result":{"ok":true}}')
 
     def test_vscode_proxy_forwards_cli_probes_and_rejects_unknown_server_launches(self):
         self.install()
@@ -207,6 +219,15 @@ class Tests(unittest.TestCase):
         )
         self.assertEqual(rejected.returncode, 78)
         self.assertIn("refusing an unrecognized app-server launch", rejected.stderr)
+        wrong_socket = subprocess.run(
+            [sys.executable, str(HERE / "vscode-proxy.py"), "app-server", "proxy",
+             "--sock", str(self.root / "wrong.sock")],
+            text=True,
+            capture_output=True,
+            env=os.environ,
+        )
+        self.assertEqual(wrong_socket.returncode, 78)
+        self.assertIn("refusing an unrecognized app-server launch", wrong_socket.stderr)
 
     def test_feature_selection_preserves_other_features_and_settings(self):
         repo = self.root / "repo"
@@ -350,6 +371,7 @@ class Tests(unittest.TestCase):
             m.emit_environment(config)
         lines = stream.getvalue().splitlines()
         self.assertIn("env CODEX_HOME=" + config["codex_home"], lines)
+        self.assertIn("env CODEX_CLI_PATH=" + str(m.client_adapter_path(config)), lines)
         self.assertIn("env CODEX_REMOTE_CONTROL_APP_SERVER_MODE=proxy", lines)
         self.assertIn("env CODEX_REMOTE_CONTROL_DAEMON_AUTOSTART_DISABLED=1", lines)
         self.assertIn("env CODEX_REMOTE_CONTROL_APP_SERVER_PROXY_SOCKET=" + str(m.socket_path(config)), lines)
