@@ -312,7 +312,7 @@ mod tests {
 
     #[test]
     fn cosmic_backend_can_exact_focus_targets() {
-        let mut window = window(2, "Codex", "codex-desktop", "codex-desktop");
+        let mut window = window(2, "Codex", "hydex-desktop", "hydex-desktop");
         window.backend = COSMIC_WAYLAND_BACKEND.to_string();
 
         ensure_backend_can_focus_target(
@@ -327,7 +327,7 @@ mod tests {
 
     #[test]
     fn i3_backend_can_exact_focus_targets() {
-        let mut window = window(2, "Codex", "codex-desktop", "codex-desktop");
+        let mut window = window(2, "Codex", "hydex-desktop", "hydex-desktop");
         window.backend = I3_BACKEND.to_string();
 
         ensure_backend_can_focus_target(
@@ -511,14 +511,14 @@ mod tests {
                 "/dev/pts/1",
                 201,
                 "codex",
-                "/home/avifenesh/projects/codex-desktop-linux",
+                "/home/avifenesh/projects/hydex-desktop-linux",
             ),
         ];
 
         let matched = resolve_window_target(
             &windows,
             &WindowTarget {
-                terminal_cwd: Some("projects/codex-desktop-linux".to_string()),
+                terminal_cwd: Some("projects/hydex-desktop-linux".to_string()),
                 ..Default::default()
             },
         )
@@ -535,7 +535,7 @@ mod tests {
             "/dev/pts/1",
             201,
             "codex",
-            "/home/avifenesh/projects/codex-desktop-linux",
+            "/home/avifenesh/projects/hydex-desktop-linux",
         )];
 
         let error = resolve_window_target(
@@ -603,7 +603,7 @@ mod tests {
             "at": [10, 48],
             "size": [1900, 1022],
             "workspace": {"id": 1, "name": "1"},
-            "class": "codex-desktop",
+            "class": "hydex-desktop",
             "title": "Codex",
             "pid": 68986,
             "xwayland": false,
@@ -742,7 +742,7 @@ mod tests {
 
     #[test]
     fn hyprland_backend_can_exact_focus_targets() {
-        let mut window = window(2, "Codex", "codex-desktop", "codex-desktop");
+        let mut window = window(2, "Codex", "hydex-desktop", "hydex-desktop");
         window.backend = HYPRLAND_BACKEND.to_string();
 
         ensure_backend_can_focus_target(
@@ -757,7 +757,7 @@ mod tests {
 
     #[test]
     fn kwin_backend_can_exact_focus_targets() {
-        let mut window = window(2, "Codex", "codex-desktop", "codex-desktop");
+        let mut window = window(2, "Codex", "hydex-desktop", "hydex-desktop");
         window.backend = KWIN_BACKEND.to_string();
 
         ensure_backend_can_focus_target(

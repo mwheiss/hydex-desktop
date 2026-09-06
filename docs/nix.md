@@ -19,8 +19,8 @@ the official ELF and native-module payload stays byte-for-byte intact. Optional
 ASAR features remain disabled unless explicitly selected.
 
 ```bash
-nix run github:ilysenko/codex-desktop-linux
-nix build .#codex-desktop
+nix run github:ilysenko/hydex-desktop
+nix build .#hydex-desktop
 ```
 
 Supported systems are `x86_64-linux` and `aarch64-linux`. The flake maps these
@@ -32,19 +32,19 @@ upstream native modules.
 The main package outputs are:
 
 ```text
-codex-desktop
-codex-desktop-computer-use-ui
-codex-desktop-remote-mobile-control
-codex-desktop-computer-use-ui-remote-mobile-control
+hydex-desktop
+hydex-desktop-computer-use-ui
+hydex-desktop-remote-mobile-control
+hydex-desktop-computer-use-ui-remote-mobile-control
 ```
 
-The default app runs `codex-desktop`. Normal users should prefer the immutable
+The default app runs `hydex-desktop`. Normal users should prefer the immutable
 package output. `.#installer` is an audited source-staging tool for development
 and packaging workflows; it is not a mutable updater for a Nix store package.
 
 ```bash
-nix run github:ilysenko/codex-desktop-linux#codex-desktop
-nix build .#codex-desktop-computer-use-ui
+nix run github:ilysenko/hydex-desktop#hydex-desktop
+nix build .#hydex-desktop-computer-use-ui
 ```
 
 ## Features
@@ -83,14 +83,14 @@ Add the flake input and import its module:
 
 ```nix
 {
-  inputs.codex-desktop-linux.url =
-    "github:ilysenko/codex-desktop-linux";
+  inputs.hydex-desktop.url =
+    "github:ilysenko/hydex-desktop";
 
-  outputs = { self, nixpkgs, home-manager, codex-desktop-linux, ... }: {
+  outputs = { self, nixpkgs, home-manager, hydex-desktop, ... }: {
     homeConfigurations.igor = home-manager.lib.homeManagerConfiguration {
       pkgs = nixpkgs.legacyPackages.x86_64-linux;
       modules = [
-        codex-desktop-linux.homeManagerModules.default
+        hydex-desktop.homeManagerModules.default
         {
           programs.codexDesktopLinux = {
             enable = true;
@@ -109,7 +109,7 @@ The NixOS module uses the same option namespace:
 
 ```nix
 {
-  imports = [ inputs.codex-desktop-linux.nixosModules.default ];
+  imports = [ inputs.hydex-desktop.nixosModules.default ];
 
   programs.codexDesktopLinux = {
     enable = true;
@@ -214,7 +214,7 @@ nix flake check
 nix build .#checks.$(nix eval --impure --raw --expr builtins.currentSystem).nix-runtime
 ```
 
-Nix outputs keep the **ChatGPT Community** desktop identity and shared upstream
+Nix outputs keep the **Hydex** desktop identity and shared upstream
 `Codex` user profile. Do not run the Nix and official applications
 concurrently.
 
@@ -223,11 +223,11 @@ flake input or lock file and rebuild through your normal Nix/Home Manager/NixOS
 workflow, for example:
 
 ```bash
-nix flake update codex-desktop-linux
+nix flake update hydex-desktop
 sudo nixos-rebuild switch --flake .#your-host
 # or: home-manager switch --flake .#your-user
 ```
 
-An unlocked `nix run github:ilysenko/codex-desktop-linux` follows the current
+An unlocked `nix run github:ilysenko/hydex-desktop` follows the current
 repository revision. A configuration with a lock file continues to use its
 pinned revision until that input is updated.

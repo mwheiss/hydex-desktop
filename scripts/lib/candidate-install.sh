@@ -129,7 +129,7 @@ promote_candidate_install() {
     INSTALL_DIR="$final_dir"
     if declare -F install_target_is_stopped >/dev/null 2>&1; then
         if ! install_target_is_stopped; then
-            warn "ChatGPT Community is still running from $final_dir (pid $RUNNING_INSTALL_TARGET_PID); accepted candidate was not promoted"
+            warn "Hydex is still running from $final_dir (pid $RUNNING_INSTALL_TARGET_PID); accepted candidate was not promoted"
             INSTALL_DIR="$previous_install_dir"
             flock -u "$promotion_lock_fd"
             exec {promotion_lock_fd}>&-

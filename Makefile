@@ -5,7 +5,7 @@ APP_DIR ?= $(CURDIR)/codex-app
 NEXT_APP_DIR ?= $(CURDIR)/codex-app-next
 REBUILD_REPORT_DIR ?= $(CURDIR)/dist-next/rebuild
 UPSTREAM_DEB ?=
-PACKAGE_NAME := codex-desktop
+PACKAGE_NAME := hydex-desktop
 PACKAGE_FORMAT_DETECTOR := $(CURDIR)/scripts/lib/detect-package-format.sh
 PACKAGE_WITH_UPDATER ?= $(if $(filter ebuild,$(shell "$(PACKAGE_FORMAT_DETECTOR)")),0,1)
 MAX_BUILD_THREADS ?= 0
@@ -32,7 +32,7 @@ endef
 .PHONY: help check test ci-pr ci-all build-updater maybe-build-updater build-native-feature-helpers update rebuild rebuild-install inspect-upstream build-app build-app-fresh setup-native guided-install bootstrap-native install-native update-native rebuild-next run-app deb rpm rpm-rhel7 rpm-rhel9 pacman gentoo appimage package install install-rhel7 install-rhel9 service-enable service-status clean-dist clean-state
 
 help:
-	@printf '\nChatGPT Community from the official OpenAI Linux package\n\n'
+	@printf '\nHydex from the official OpenAI Linux package\n\n'
 	@printf '  %-20s %s\n' 'make build-app' 'Build codex-app/ from the signed stable index'
 	@printf '  %-20s %s\n' 'make rebuild' 'Build a side-by-side candidate'
 	@printf '  %-20s %s\n' 'make rebuild-install' 'Build and transactionally replace codex-app/'
