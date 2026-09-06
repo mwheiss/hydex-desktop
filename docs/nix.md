@@ -61,6 +61,12 @@ programs.codexDesktopLinux = {
 Feature IDs are validated against `nix/linux-features.nix`. The two convenience
 booleans remain available for existing configurations:
 
+`persistent-app-server` and `hydex-offload` are native-package integrations and
+are intentionally unavailable as Nix feature IDs. The first relies on mutable
+per-user service install/removal lifecycle, while the second requires an exact
+external Hydex runtime. Nix keeps its existing declarative shared-socket
+topology and immutable runtime selection.
+
 ```nix
 programs.codexDesktopLinux = {
   enable = true;
