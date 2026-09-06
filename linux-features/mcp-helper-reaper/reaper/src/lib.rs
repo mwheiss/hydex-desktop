@@ -858,9 +858,9 @@ mod tests {
     fn keeps_replaced_app_generation_helper_under_live_codex_parent() {
         let mut processes = BTreeMap::new();
         let old_app =
-            "/home/linuxbrew/.linuxbrew/Caskroom/codex-desktop/old/share/codex-desktop/app";
+            "/home/linuxbrew/.linuxbrew/Caskroom/hydex-desktop/old/share/hydex-desktop/app";
         let new_app =
-            "/home/linuxbrew/.linuxbrew/Caskroom/codex-desktop/new/share/codex-desktop/app";
+            "/home/linuxbrew/.linuxbrew/Caskroom/hydex-desktop/new/share/hydex-desktop/app";
         let old_helper = format!("{old_app}/resources/mcp-helper");
         let new_helper = format!("{new_app}/resources/mcp-helper");
         processes.insert(100, proc(100, 1, 10, &["codex", "resume"], "/repo"));
@@ -873,7 +873,7 @@ mod tests {
     #[test]
     fn keeps_browser_use_node_repl_helpers_under_live_codex_parent() {
         let mut processes = BTreeMap::new();
-        let app_dir = "/opt/codex-desktop";
+        let app_dir = "/opt/hydex-desktop";
         let wrapped_node_repl = format!("{app_dir}/resources/node_repl.codex-linux-original");
         let direct_node_repl = format!("{app_dir}/resources/node_repl");
         processes.insert(100, proc(100, 1, 10, &["codex", "app-server"], "/repo"));
