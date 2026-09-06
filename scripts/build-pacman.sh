@@ -155,7 +155,7 @@ main() {
 		-e "s/__ARCH__/$arch_replacement/g" \
 		"$PKGBUILD_TEMPLATE" >"$build_root/PKGBUILD"
 	local cli_package_metadata
-	cli_package_metadata="$(pacman_codex_cli_package_metadata "$staging_root")"
+	cli_package_metadata="$(codex_cli_package_metadata pacman "$staging_root")"
 	replace_literal_file_token \
 		"$build_root/PKGBUILD" \
 		"__CODEX_CLI_PACKAGE_METADATA__" \

@@ -539,7 +539,7 @@ function writeDesktopAppServerRemoteControlMarker(appDir) {
   fs.writeFileSync(marker, "version=1\nowner=desktop\n");
 }
 
-test("remote mobile control feature stays disabled until listed in features.json", () => {
+test("explicit empty features.json disables default remote mobile control", () => {
   withTempFeatureRoot([], (root) => {
     assert.deepEqual(loadLinuxFeaturePatchDescriptors({ featuresRoot: root }), []);
     assert.deepEqual(enabledLinuxFeatureStageHooks({ featuresRoot: root }), []);
