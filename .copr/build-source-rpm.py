@@ -160,6 +160,8 @@ def main() -> int:
                 "_rpmformat 4",
                 "--define",
                 "_source_payload w9.gzdio",
+                "--target",
+                "x86_64",
                 "-bs",
                 str(spec_path),
             ],
