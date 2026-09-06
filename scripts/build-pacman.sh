@@ -7,13 +7,13 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_DIR="${APP_DIR_OVERRIDE:-$REPO_DIR/codex-app}"
 DIST_DIR="${DIST_DIR_OVERRIDE:-$REPO_DIR/dist}"
 PKGBUILD_TEMPLATE="$REPO_DIR/packaging/linux/PKGBUILD.template"
-INSTALL_HOOKS="$REPO_DIR/packaging/linux/codex-desktop.install"
-DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-desktop.desktop"
+INSTALL_HOOKS="$REPO_DIR/packaging/linux/hydex-desktop.install"
+DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/hydex-desktop.desktop"
 SERVICE_TEMPLATE="$REPO_DIR/packaging/linux/codex-update-manager.service"
 USER_SERVICE_HELPER_TEMPLATE="$REPO_DIR/packaging/linux/codex-update-manager-user-service.sh"
 PACKAGED_RUNTIME_TEMPLATE="$REPO_DIR/packaging/linux/codex-packaged-runtime.sh"
 
-PACKAGE_NAME="${PACKAGE_NAME:-codex-desktop}"
+PACKAGE_NAME="${PACKAGE_NAME:-hydex-desktop}"
 PACKAGE_VERSION="${PACKAGE_VERSION:-$(date -u +%Y.%m.%d.%H%M%S)}"
 ICON_SOURCE="$(resolve_package_icon_source)"
 MAX_BUILD_THREADS="${MAX_BUILD_THREADS:-0}"
@@ -160,6 +160,10 @@ main() {
 		"$build_root/PKGBUILD" \
 		"__CODEX_CLI_PACKAGE_METADATA__" \
 		"$cli_package_metadata"
+	replace_literal_file_token \
+		"$build_root/PKGBUILD" \
+		"__DESKTOP_PACKAGE_TRANSITION_METADATA__" \
+		"$(desktop_package_transition_metadata pacman)"
 	if ! package_with_updater_enabled; then
 		sed -i \
 			-e "/'polkit'/d" \
@@ -186,8 +190,8 @@ main() {
 		"__LINUX_FEATURE_DEPENDENCIES__" \
 		"$feature_dependency_lines"
 	if package_with_updater_enabled; then
-		sed -e "s|/opt/codex-desktop|/opt/$PACKAGE_NAME|g" \
-			-e "s|codex_desktop_repair_system_package_shadow_entries codex-desktop|codex_desktop_repair_system_package_shadow_entries $PACKAGE_NAME|g" \
+		sed -e "s|/opt/hydex-desktop|/opt/$PACKAGE_NAME|g" \
+			-e "s|codex_desktop_repair_system_package_shadow_entries hydex-desktop|codex_desktop_repair_system_package_shadow_entries $PACKAGE_NAME|g" \
 			"$INSTALL_HOOKS" >"$build_root/${PACKAGE_NAME}.install"
 	else
 		write_no_updater_pacman_install_hooks "$build_root/${PACKAGE_NAME}.install"

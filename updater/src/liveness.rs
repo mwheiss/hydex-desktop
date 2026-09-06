@@ -57,7 +57,7 @@ mod tests {
         let mut config = crate::config::RuntimeConfig::default_with_paths(
             &crate::config::RuntimePaths::detect()?,
         );
-        config.app_executable_path = PathBuf::from("/opt/codex-desktop/ChatGPT");
+        config.app_executable_path = PathBuf::from("/opt/hydex-desktop/ChatGPT");
 
         assert!(!process_matches(
             std::process::id(),

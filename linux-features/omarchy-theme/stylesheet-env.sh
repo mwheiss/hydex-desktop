@@ -1,7 +1,7 @@
 #!/bin/bash
 set -Eeuo pipefail
 
-stylesheet="${CODEX_LINUX_OMARCHY_STYLESHEET:-${HOME}/.config/omarchy/current/theme/codex-desktop.css}"
+stylesheet="${CODEX_LINUX_OMARCHY_STYLESHEET:-${HOME}/.config/omarchy/current/theme/hydex-desktop.css}"
 uri="$(python3 - "$stylesheet" <<'PY'
 from pathlib import Path
 import sys

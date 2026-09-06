@@ -5,7 +5,7 @@ set -f
 home_dir="${HOME:-}"
 [ -n "$home_dir" ] || exit 0
 
-app_id="${CODEX_LINUX_APP_ID:-${CODEX_APP_ID:-codex-desktop}}"
+app_id="${CODEX_LINUX_APP_ID:-${CODEX_APP_ID:-hydex-desktop}}"
 case "$app_id" in
     *[!A-Za-z0-9._-]*|'') exit 0 ;;
 esac
@@ -162,7 +162,7 @@ desktop_source_matches_identity() {
             StartupWMClass=*) [ "${line#*=}" = "$app_id" ] || return 1 ;;
             X-GNOME-WMClass=*) [ "${line#*=}" = "$app_id" ] || return 1 ;;
             Exec=*)
-                if [ "$app_id" != "codex-desktop" ] && [[ "$line" != *"$app_id"* ]]; then
+                if [ "$app_id" != "hydex-desktop" ] && [[ "$line" != *"$app_id"* ]]; then
                     return 1
                 fi
                 ;;
