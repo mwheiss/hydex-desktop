@@ -58,6 +58,6 @@ active/candidate pair or delete either workflow's recovery journal.
 An old root-owned `codex-app.backup-*` is disposable only after verifying it is
 not the active tree or the updater's recorded rollback artifact.
 
-Package manager output under `/opt/codex-desktop` is installed state, not a
+Package manager output under `/opt/hydex-desktop` is installed state, not a
 development source tree. Fix templates in the repository, rebuild a package,
 and reinstall rather than modifying `/opt` in place.

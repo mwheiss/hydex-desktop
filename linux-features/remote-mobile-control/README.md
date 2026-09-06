@@ -25,14 +25,14 @@ For the Nix flake build, use the declarative app variant instead because the
 git-ignored `features.json` file is not part of the flake source:
 
 ```bash
-nix run .#codex-desktop-remote-mobile-control
+nix run .#hydex-desktop-remote-mobile-control
 ```
 
 Feature-specific Nix outputs are additive. To combine this feature with the
 Computer Use UI opt-in:
 
 ```bash
-nix run .#codex-desktop-computer-use-ui-remote-mobile-control
+nix run .#hydex-desktop-computer-use-ui-remote-mobile-control
 ```
 
 ## Gentoo local ebuild
@@ -89,7 +89,7 @@ What it changes:
   RPCs through its browser service and owns backend eligibility and preferences;
   the retired client allowlist workaround is no longer staged.
 - Persists the private key material at
-  `~/.config/codex-desktop/remote-control-device-keys/remote-control-device-keys-v1.json`
+  `~/.config/hydex-desktop/remote-control-device-keys/remote-control-device-keys-v1.json`
   with `0600` file permissions inside a dedicated `0700` directory. Updates are
   serialized with a safely resolved `flock`/`sh` helper, including migrations
   triggered by reading or signing a key. A replacement fsyncs its temporary
@@ -224,7 +224,7 @@ On NixOS, prefer the flake's Home Manager module instead of the launcher hook:
 ```nix
 {
   imports = [
-    inputs.codex-desktop-linux.homeManagerModules.default
+    inputs.hydex-desktop.homeManagerModules.default
   ];
 
   programs.codexDesktopLinux = {
