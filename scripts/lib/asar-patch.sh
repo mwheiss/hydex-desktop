@@ -4,6 +4,8 @@
 # Sourced by install.sh. Do not run directly.
 # shellcheck shell=bash
 
+ASAR_NPM_PACKAGE="@electron/asar@3.2.13"
+
 print_patch_report_summary() {
     local patch_report="$1"
     [ -f "$patch_report" ] || return 0
@@ -111,7 +113,7 @@ NODE
             "npx is required to patch app.asar with enabled feature descriptors, but was not found on PATH." \
             "Install npm (Debian/Ubuntu: sudo apt install npm) or make the version-manager Node bin directory" \
             "visible to this shell, then retry."
-        asar_command=(npx --yes @electron/asar)
+        asar_command=(npx --yes "$ASAR_NPM_PACKAGE")
     fi
 
     upstream_sha="$(sha256sum "$app_asar" | awk '{print $1}')"
