@@ -217,6 +217,7 @@ Nix 用户应从 profile、Home Manager 配置或 NixOS module 中删除该包�
 | `mcp-helper-reaper` | 安全清理孤立 MCP helper | [文档](linux-features/mcp-helper-reaper/README.md) |
 | `node-repl-reaper` | 清理 owner 退出后泄漏的 Browser Use `node_repl` | [文档](linux-features/node-repl-reaper/README.md) |
 | `omarchy-theme` | 加载当前 Omarchy 主题生成的 CSS | [文档](linux-features/omarchy-theme/README.md) |
+| `persistent-app-server` | 运行持久的 systemd 用户 app-server，并让 Desktop 通过代理连接 | [文档](linux-features/persistent-app-server/README.md) |
 | `persistent-status-panel` | 在线程切换和重启后保留 `/status` panel | [文档](linux-features/persistent-status-panel/README.md) |
 | `pet-overlay` | Linux avatar overlay 定位和 compositor hints | [文档](linux-features/pet-overlay/README.md) |
 | `project-group-last-updated-sort` | 对 project group 和 task 应用 Last updated 排序 | [文档](linux-features/project-group-last-updated-sort/README.md) |
