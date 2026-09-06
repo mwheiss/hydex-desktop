@@ -1,5 +1,7 @@
 SERVICE_HELPER="/opt/codex-desktop/update-builder/packaging/linux/codex-update-manager-user-service.sh"
 DESKTOP_ENTRY_DOCTOR="/opt/codex-desktop/.codex-linux/codex-desktop-entry-doctor.sh"
+PERSISTENT_APP_DIR="/opt/codex-desktop"
+PERSISTENT_SERVICE_HELPER="$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/package-lifecycle.sh"
 if [ -f "$SERVICE_HELPER" ]; then
     # shellcheck source=/opt/codex-desktop/update-builder/packaging/linux/codex-update-manager-user-service.sh
     . "$SERVICE_HELPER"
@@ -7,6 +9,9 @@ fi
 if [ -f "$DESKTOP_ENTRY_DOCTOR" ]; then
     # shellcheck source=/opt/codex-desktop/.codex-linux/codex-desktop-entry-doctor.sh
     . "$DESKTOP_ENTRY_DOCTOR"
+fi
+if [ -f "$PERSISTENT_SERVICE_HELPER" ]; then
+    . "$PERSISTENT_SERVICE_HELPER"
 fi
 
 codex_desktop_post_transaction_common() {
@@ -37,6 +42,9 @@ post_upgrade() {
 }
 
 pre_remove() {
+    if [ -f "$PERSISTENT_SERVICE_HELPER" ]; then
+        codex_persistent_remove_all_users || true
+    fi
     if [ -f "$SERVICE_HELPER" ]; then
         codex_cleanup_user_service stop || true
         codex_cleanup_user_service disable || true
