@@ -9,8 +9,8 @@ extension carry its JSONL stdio protocol over the service's Unix WebSocket.
 ```text
 systemd --user
     +-- packaged codex app-server --remote-control --listen unix://
-            +-- Desktop -> packaged codex app-server proxy --sock ...
-            +-- VS Code -> packaged JSONL/WebSocket Unix adapter
+            +-- Desktop -> packaged JSONL/WebSocket Unix adapter
+            +-- VS Code -> the same packaged adapter
             +-- terminal -> explicit attachment to the same socket
             +-- phone -> Remote Control
 ```
@@ -152,6 +152,7 @@ The launcher emits settings from that configuration:
 
 ```text
 CODEX_HOME=<saved Codex home>
+CODEX_CLI_PATH=<installation>/.codex-linux/features/persistent-app-server/codex-vscode-proxy
 CODEX_REMOTE_CONTROL_APP_SERVER_MODE=proxy
 CODEX_REMOTE_CONTROL_APP_SERVER_PROXY_SOCKET=<saved Codex home>/app-server-control/app-server-control.sock
 CODEX_REMOTE_CONTROL_DAEMON_AUTOSTART_DISABLED=1
@@ -160,6 +161,12 @@ CODEX_REMOTE_CONTROL_DAEMON_AUTOSTART_DISABLED=1
 Missing configuration aborts launch rather than spawning a private server. The
 last flag disables fallback daemon startup, not phone access. Local attachment
 uses the Unix socket, not the internet relay.
+
+Desktop still constructs its normal `app-server proxy --sock` command in proxy
+mode, but `CODEX_CLI_PATH` routes that stdio child through the packaged adapter.
+The adapter validates the exact configured socket and permits only configuration
+overrides around that command before translating JSONL messages into Unix
+WebSocket frames. It never invokes the raw byte tunnel for a stdio client.
 
 The service uses `Type=simple`; its Python helper execs the packaged CLI:
 
