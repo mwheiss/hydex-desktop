@@ -70,7 +70,7 @@ install_apt() {
     run_privileged apt-get update -qq
     run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y \
         bash ca-certificates curl dpkg-dev g++ gcc git gnupg make \
-        pkg-config python3 rpm rpm2cpio tar unzip util-linux xz-utils
+        patchelf pkg-config python3 rpm rpm2cpio tar unzip util-linux xz-utils
     install_nodesource_apt
     run_privileged apt-get update -qq
     run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
@@ -78,18 +78,18 @@ install_apt() {
 
 install_dnf() {
     run_privileged dnf install -y bash ca-certificates curl dpkg gcc gcc-c++ git \
-        gnupg2 make nodejs npm python3 rpm-build tar unzip util-linux xz
+        gnupg2 make nodejs npm patchelf python3 rpm-build tar unzip util-linux xz
 }
 
 install_zypper() {
     run_privileged zypper --non-interactive install \
         bash ca-certificates curl dpkg gcc gcc-c++ git gpg2 make nodejs npm \
-        python3 rpm-build tar unzip util-linux xz
+        patchelf python3 rpm-build tar unzip util-linux xz
 }
 
 install_pacman() {
     local -a packages=(
-        base-devel ca-certificates curl dpkg git gnupg nodejs npm python
+        base-devel ca-certificates curl dpkg git gnupg nodejs npm patchelf python
         tar unzip util-linux xz zstd
     )
     local rust_package
