@@ -244,7 +244,9 @@ ChatGPT account rollout 和 server-side 功能仍由 OpenAI 控制。重新构�
 make setup-native
 ```
 
-也可以手动复制 gitignored 配置：
+全新的原生构建默认启用 `remote-mobile-control` 和
+`persistent-app-server`。也可以手动复制不启用任何扩展的示例到 gitignored
+配置；创建该文件后，本机将只启用其中明确列出的扩展：
 
 ```bash
 cp linux-features/features.example.json linux-features/features.json
