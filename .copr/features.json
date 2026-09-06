@@ -1,0 +1,7 @@
+{
+  "enabled": [
+    "remote-mobile-control",
+    "hydex-offload",
+    "persistent-app-server"
+  ]
+}
