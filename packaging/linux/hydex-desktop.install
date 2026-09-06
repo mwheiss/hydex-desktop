@@ -1,13 +1,13 @@
-SERVICE_HELPER="/opt/codex-desktop/update-builder/packaging/linux/codex-update-manager-user-service.sh"
-DESKTOP_ENTRY_DOCTOR="/opt/codex-desktop/.codex-linux/codex-desktop-entry-doctor.sh"
-PERSISTENT_APP_DIR="/opt/codex-desktop"
+SERVICE_HELPER="/opt/hydex-desktop/update-builder/packaging/linux/codex-update-manager-user-service.sh"
+DESKTOP_ENTRY_DOCTOR="/opt/hydex-desktop/.codex-linux/hydex-desktop-entry-doctor.sh"
+PERSISTENT_APP_DIR="/opt/hydex-desktop"
 PERSISTENT_SERVICE_HELPER="$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/package-lifecycle.sh"
 if [ -f "$SERVICE_HELPER" ]; then
-    # shellcheck source=/opt/codex-desktop/update-builder/packaging/linux/codex-update-manager-user-service.sh
+    # shellcheck source=/opt/hydex-desktop/update-builder/packaging/linux/codex-update-manager-user-service.sh
     . "$SERVICE_HELPER"
 fi
 if [ -f "$DESKTOP_ENTRY_DOCTOR" ]; then
-    # shellcheck source=/opt/codex-desktop/.codex-linux/codex-desktop-entry-doctor.sh
+    # shellcheck source=/opt/hydex-desktop/.codex-linux/hydex-desktop-entry-doctor.sh
     . "$DESKTOP_ENTRY_DOCTOR"
 fi
 if [ -f "$PERSISTENT_SERVICE_HELPER" ]; then
@@ -19,11 +19,11 @@ codex_desktop_post_transaction_common() {
         update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
     fi
     if [ -f "$DESKTOP_ENTRY_DOCTOR" ]; then
-        codex_desktop_repair_system_package_shadow_entries codex-desktop || true
+        codex_desktop_repair_system_package_shadow_entries hydex-desktop || true
     fi
     if command -v aa-enabled >/dev/null 2>&1 && command -v apparmor_parser >/dev/null 2>&1 &&
-       aa-enabled --quiet && [ -f /etc/apparmor.d/codex-desktop ]; then
-        apparmor_parser -r -W -T /etc/apparmor.d/codex-desktop >/dev/null 2>&1 || true
+       aa-enabled --quiet && [ -f /etc/apparmor.d/hydex-desktop ]; then
+        apparmor_parser -r -W -T /etc/apparmor.d/hydex-desktop >/dev/null 2>&1 || true
     fi
 }
 

@@ -4,7 +4,7 @@
 updates the custom distribution without transferring ownership to the official
 `chatgpt` package.
 
-It updates the `codex-desktop` package shown as **ChatGPT Community**. It does
+It updates the `hydex-desktop` package shown as **Hydex**. It does
 not install, remove, or update OpenAI's separate `chatgpt` package.
 
 ## Release discovery
@@ -108,7 +108,7 @@ journalctl --user -u codex-update-manager.service -f
 
 ## Manual-update packages
 
-To build `codex-desktop` without the service and update-builder:
+To build `hydex-desktop` without the service and update-builder:
 
 ```bash
 PACKAGE_WITH_UPDATER=0 make package
@@ -127,7 +127,7 @@ workflow and do not use this mutable package updater.
 ## Recovery
 
 If state says `WaitingForAppExit`, fully close both official **ChatGPT** and
-**ChatGPT Community**; the shared upstream process name/profile can otherwise
+**Hydex**; the shared upstream process name/profile can otherwise
 keep the guard active. If installation failed, fix the reported package-manager
 or polkit problem and run `install-ready`.
 

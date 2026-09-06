@@ -728,7 +728,7 @@ test("Linux feature package resources cannot target the packaged app directory",
     packageResources: [
       {
         source: "payload.txt",
-        target: "opt/codex-desktop/feature-owned.txt",
+        target: "opt/hydex-desktop/feature-owned.txt",
         mode: "0644",
         formats: ["deb"],
       },
@@ -736,7 +736,7 @@ test("Linux feature package resources cannot target the packaged app directory",
   });
   fs.writeFileSync(path.join(featureDir, "payload.txt"), "payload\n");
   const packageRoot = path.join(root, "package-root");
-  const appDir = path.join(packageRoot, "opt", "codex-desktop");
+  const appDir = path.join(packageRoot, "opt", "hydex-desktop");
   writeBuildInfoSnapshot(appDir, [id]);
 
   assert.throws(
@@ -764,7 +764,7 @@ test("Linux feature package resources cannot target an ancestor of the packaged 
   });
   fs.writeFileSync(path.join(featureDir, "payload.txt"), "payload\n");
   const packageRoot = path.join(root, "package-root");
-  const appDir = path.join(packageRoot, "opt", "codex-desktop");
+  const appDir = path.join(packageRoot, "opt", "hydex-desktop");
   const buildInfoPath = writeBuildInfoSnapshot(appDir, [id]);
 
   assert.throws(

@@ -56,7 +56,7 @@ def persistent_config_path():
         os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")),
         "configuration root",
     )
-    return config_root / "codex-desktop/persistent-app-server.json"
+    return config_root / "hydex-desktop/persistent-app-server.json"
 
 
 def read_config():

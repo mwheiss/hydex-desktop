@@ -4,10 +4,10 @@ use anyhow::Result;
 use notify_rust::Hint;
 use std::path::{Path, PathBuf};
 
-const APP_NAME: &str = "ChatGPT Community";
-const DESKTOP_ENTRY: &str = "codex-desktop";
-const PACKAGED_BUNDLE_ICON_PATH: &str = "/opt/codex-desktop/.codex-linux/codex-desktop.png";
-const SYSTEM_ICON_PATH: &str = "/usr/share/icons/hicolor/256x256/apps/codex-desktop.png";
+const APP_NAME: &str = "Hydex";
+const DESKTOP_ENTRY: &str = "hydex-desktop";
+const PACKAGED_BUNDLE_ICON_PATH: &str = "/opt/hydex-desktop/.codex-linux/hydex-desktop.png";
+const SYSTEM_ICON_PATH: &str = "/usr/share/icons/hicolor/256x256/apps/hydex-desktop.png";
 
 /// Sends a desktop notification through the host notification service.
 pub fn send(summary: &str, body: &str) -> Result<()> {
