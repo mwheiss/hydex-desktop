@@ -1,9 +1,9 @@
 # Native setup
 
-This guide covers a native `codex-desktop` installation built from OpenAI's
+This guide covers a native `hydex-desktop` installation built from OpenAI's
 official signed Linux package. The installed desktop entry is **ChatGPT
 Community**; the package, command, and installation directory remain
-`codex-desktop` and `/opt/codex-desktop`.
+`hydex-desktop` and `/opt/hydex-desktop`.
 
 ## Fast native install
 
@@ -11,8 +11,8 @@ On a supported Debian/Ubuntu, Fedora, openSUSE, Arch-derived, Gentoo, or compati
 distribution:
 
 ```bash
-git clone https://github.com/ilysenko/codex-desktop-linux.git
-cd codex-desktop-linux
+git clone https://github.com/mwheiss/hydex-desktop.git
+cd hydex-desktop
 make bootstrap-native
 ```
 
@@ -281,14 +281,14 @@ are explicitly confirmed.
 ## Verify the installation
 
 ```bash
-command -v codex-desktop
-codex-desktop --diagnose
+command -v hydex-desktop
+hydex-desktop --diagnose
 systemctl --user status codex-update-manager.service --no-pager
 ```
 
-The official `chatgpt` and Community `codex-desktop` packages can coexist. By
+The official `chatgpt` and Hydex `hydex-desktop` packages can coexist. By
 default both retain the upstream `Codex` user profile, so fully exit one before
-starting the other. Enable `community-profile-isolation` when Community needs a
+starting the other. Enable `community-profile-isolation` when Hydex needs a
 separate Codex state directory, Electron profile, and bundled-CLI child path.
 
 ## Uninstall

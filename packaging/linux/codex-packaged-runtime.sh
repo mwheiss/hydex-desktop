@@ -73,6 +73,6 @@ codex_packaged_runtime_trigger_update_check() {
 }
 
 codex_packaged_runtime_export_env() {
-    export CHROME_DESKTOP="codex-desktop.desktop"
-    export BAMF_DESKTOP_FILE_HINT="/usr/share/applications/codex-desktop.desktop"
+    export CHROME_DESKTOP="hydex-desktop.desktop"
+    export BAMF_DESKTOP_FILE_HINT="/usr/share/applications/hydex-desktop.desktop"
 }
