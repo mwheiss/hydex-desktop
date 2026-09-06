@@ -1,0 +1,3 @@
+# The user service owns the server; Desktop is only a proxy client.
+CODEX_REMOTE_CONTROL_APP_SERVER_MODE=proxy
+CODEX_REMOTE_CONTROL_DAEMON_AUTOSTART_DISABLED=1
