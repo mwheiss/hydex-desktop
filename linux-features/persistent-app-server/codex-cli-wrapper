@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+
+script_path="$(readlink -f -- "$0")"
+feature_dir="$(CDPATH= cd -- "$(dirname -- "$script_path")" && pwd)"
+app_dir="$(CDPATH= cd -- "$feature_dir/../../.." && pwd)"
+/usr/bin/python3 "$feature_dir/manage.py" ensure --app-dir "$app_dir" --no-linger
+exec "$app_dir/resources/codex" "$@"
