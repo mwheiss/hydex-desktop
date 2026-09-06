@@ -70,6 +70,13 @@ function linuxFeaturesConfigPath(featuresRoot, options = {}) {
   return path.join(featuresRoot, "features.example.json");
 }
 
+function useManifestFeatureDefaults(featuresRoot, options = {}) {
+  if (options.featuresConfigPath != null || process.env.CODEX_LINUX_FEATURES_CONFIG?.trim()) {
+    return false;
+  }
+  return !fs.existsSync(path.join(featuresRoot, "features.json"));
+}
+
 function readJsonFile(filePath, label, options = {}) {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -239,18 +246,20 @@ function normalizeLinuxFeatureSettings(value, sourcePath, options = {}) {
 
 function linuxFeaturesConfig(options = {}) {
   const { config, configPath } = readLinuxFeaturesConfig(options);
-  if (config == null) {
-    return { enabled: [], settings: {}, configPath };
-  }
+  const available = linuxFeatureManifestMap(options);
+  const defaultEnabled = useManifestFeatureDefaults(linuxFeaturesRoot(options), options)
+    ? [...available.values()]
+      .filter((feature) => feature.manifest.defaultEnabled)
+      .map((feature) => feature.id)
+    : [];
   const normalizedEnabled = normalizeEnabledFeatureIds(
-    config.enabled,
+    config?.enabled,
     configPath,
     { strict: options.strictConfig === true },
   );
-  const available = linuxFeatureManifestMap(options);
   return {
-    enabled: expandEnabledFeatureDependencies(normalizedEnabled, available),
-    settings: normalizeLinuxFeatureSettings(config.settings, configPath, {
+    enabled: expandEnabledFeatureDependencies([...defaultEnabled, ...normalizedEnabled], available),
+    settings: normalizeLinuxFeatureSettings(config?.settings, configPath, {
       strict: options.strictConfig === true,
     }),
     configPath,
@@ -334,10 +343,7 @@ function normalizeLinuxFeatureManifest(featuresRoot, candidate) {
   }
   if (Object.prototype.hasOwnProperty.call(manifest, "defaultEnabled") &&
       typeof manifest.defaultEnabled !== "boolean") {
-    throw new Error(`Linux feature '${id}' defaultEnabled must be a boolean (false when provided)`);
-  }
-  if (manifest.defaultEnabled === true) {
-    throw new Error(`Linux feature '${id}' must be disabled by default; defaultEnabled true is not allowed`);
+    throw new Error(`Linux feature '${id}' defaultEnabled must be a boolean`);
   }
   if (Object.prototype.hasOwnProperty.call(manifest, "internal") &&
       typeof manifest.internal !== "boolean") {
@@ -356,6 +362,9 @@ function normalizeLinuxFeatureManifest(featuresRoot, candidate) {
       }
     }
   }
+  if (manifest.nixSupported != null && typeof manifest.nixSupported !== "boolean") {
+    throw new Error(`Linux feature '${id}' nixSupported must be a boolean`);
+  }
 
   const relativeDir = path.relative(featuresRoot, candidate.dir);
   return {
@@ -368,8 +377,9 @@ function normalizeLinuxFeatureManifest(featuresRoot, candidate) {
     relativeDir,
     manifest: {
       ...manifest,
-      defaultEnabled: false,
+      defaultEnabled: manifest.defaultEnabled === true,
       internal: manifest.internal === true,
+      nixSupported: manifest.nixSupported !== false,
       requires: normalizeFeatureIdList(manifest.requires, "requires", id),
       conflicts: normalizeFeatureIdList(manifest.conflicts, "conflicts", id),
     },
@@ -1426,7 +1436,7 @@ function featuresJsonSummary(options = {}) {
     relativeDir: feature.relativeDir,
     requires: feature.manifest.requires,
     conflicts: feature.manifest.conflicts,
-    defaultEnabled: false,
+    defaultEnabled: feature.manifest.defaultEnabled,
     setup: feature.manifest.setup ?? null,
     cleanup: feature.manifest.cleanup ?? null,
     }));
