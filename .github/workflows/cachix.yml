@@ -25,7 +25,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
     env:
-      CACHIX_CACHE_NAME: codex-desktop-linux
+      CACHIX_CACHE_NAME: hydex-desktop
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
       NIX_CONFIG: experimental-features = nix-command flakes
     steps:
@@ -35,16 +35,16 @@ jobs:
       - uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
       - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
-          name: codex-desktop-linux
+          name: hydex-desktop
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
           skipPush: true
       - name: Build pinned official Linux package outputs
         run: |
           set -euo pipefail
           for output in \
-            .#codex-desktop \
-            .#codex-desktop-maximal-directory-watch \
-            .#codex-desktop-maximal-shallow-watch \
+            .#hydex-desktop \
+            .#hydex-desktop-maximal-directory-watch \
+            .#hydex-desktop-maximal-shallow-watch \
             .#checks.${{ matrix.system }}.modules \
             .#checks.${{ matrix.system }}.nix-runtime \
             .#checks.${{ matrix.system }}.nix-runtime-maximal-directory-watch \

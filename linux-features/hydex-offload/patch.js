@@ -1,9 +1,30 @@
 "use strict";
 
+const fs = require("node:fs");
+const path = require("node:path");
+
 const IDENT = "[A-Za-z_$][\\w$]*";
 const REQUEST_MARKER = "codexLinuxHydexOffloadRequest";
 const CONTROL_MARKER = "codexLinuxHydexOffloadControl";
 const NEXT_TURN_MARKER = "codexLinuxHydexOffloadNextTurn";
+const HYDEX_PRODUCT_NAME = "Hydex";
+
+function applyHydexProductNamePatch(extractedDir) {
+  const packagePath = path.join(extractedDir, "package.json");
+  const source = fs.readFileSync(packagePath, "utf8");
+  const value = JSON.parse(source);
+  if (value.productName === HYDEX_PRODUCT_NAME) {
+    return { changed: false, target: "package.json" };
+  }
+  if (value.productName !== "Codex") {
+    throw new Error(
+      `Expected Electron productName Codex, found ${JSON.stringify(value.productName)}`,
+    );
+  }
+  value.productName = HYDEX_PRODUCT_NAME;
+  fs.writeFileSync(packagePath, `${JSON.stringify(value, null, 2)}\n`);
+  return { changed: true, target: "package.json" };
+}
 
 function warn(message, patchName) {
   console.warn(`WARN: ${message} - skipping ${patchName}`);
@@ -245,6 +266,13 @@ function applyHydexComposerControlPatch(source) {
 
 const descriptors = [
   {
+    id: "hydex-desktop-product-name",
+    phase: "extracted-app:pre-webview",
+    order: 20_690,
+    ciPolicy: "optional",
+    apply: applyHydexProductNamePatch,
+  },
+  {
     id: "hydex-offload-request-bridge",
     phase: "webview-asset",
     order: 20700,
@@ -272,6 +300,7 @@ module.exports = {
   CONTROL_MARKER,
   NEXT_TURN_MARKER,
   REQUEST_MARKER,
+  applyHydexProductNamePatch,
   applyHydexComposerControlPatch,
   applyHydexRequestBridgePatch,
   descriptors,
