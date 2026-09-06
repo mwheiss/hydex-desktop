@@ -12,7 +12,7 @@ import tempfile
 
 FEATURE = "persistent-app-server"
 UNIT = "codex-remote-control.service"
-MARKER = "# Managed by codex-desktop-linux persistent-app-server v1\n"
+MARKER = "# Managed by hydex-desktop persistent-app-server v1\n"
 INCOMPATIBLE = {"shared-app-server-socket"}
 
 
@@ -32,7 +32,7 @@ def absolute(value):
 
 def config_path():
     root = absolute(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")))
-    return root / "codex-desktop" / (FEATURE + ".json")
+    return root / "hydex-desktop" / (FEATURE + ".json")
 
 
 def owned_file(path, *, private=False):
@@ -289,7 +289,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "action", choices=("install", "setup", "ensure", "ensure-env", "env", "serve", "remove"))
-    parser.add_argument("--app-dir", default="/opt/codex-desktop")
+    parser.add_argument("--app-dir", default="/opt/hydex-desktop")
     parser.add_argument("--config", type=Path)
     parser.add_argument("--no-linger", action="store_true", help="Start at login rather than enabling boot/logout persistence")
     args = parser.parse_args(argv)
@@ -302,8 +302,8 @@ def main(argv=None):
         repo = Path(__file__).resolve().parents[2]
         if not (repo / "Makefile").is_file() or not (repo / "linux-features/remote-mobile-control/feature.json").is_file():
             raise ValueError("The install command must run from the source checkout")
-        if absolute(args.app_dir) != Path("/opt/codex-desktop"):
-            raise ValueError("Native install uses /opt/codex-desktop; use setup for another existing installation")
+        if absolute(args.app_dir) != Path("/opt/hydex-desktop"):
+            raise ValueError("Native install uses /opt/hydex-desktop; use setup for another existing installation")
         # Fail before configuration/build changes if the actual mobile feature
         # can no longer operate independently in proxy mode.
         run(["node", str(Path(__file__).with_name("check-mobile.cjs")), str(repo)], timeout=60)

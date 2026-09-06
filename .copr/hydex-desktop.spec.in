@@ -7,12 +7,12 @@
 %global debug_package %{nil}
 %global __os_install_post %{nil}
 
-Name:           codex-desktop
+Name:           hydex-desktop
 Version:        @RPM_VERSION@
 Release:        @RPM_RELEASE@%{?dist}
-Summary:        ChatGPT Community built from a pinned GitHub release artifact
+Summary:        Hydex built from a pinned GitHub release artifact
 License:        @PACKAGE_LICENSE@
-URL:            https://github.com/mwheiss/codex-desktop-linux
+URL:            https://github.com/mwheiss/hydex-desktop
 Source0:        @SOURCE_ARCHIVE@
 Source1:        @UPSTREAM_DEB@
 Source2:        upstream-artifact.json
@@ -39,9 +39,9 @@ BuildRequires:  util-linux
 BuildRequires:  xz
 
 %description
-Build ChatGPT Community through the same signed-package downloader, feature
+Build Hydex through the same signed-package downloader, feature
 patcher, Hydex injection, compatibility-runtime, and native RPM pipeline used
-by codex-desktop-linux. The current COPR entry deliberately points at the
+by hydex-desktop. The current COPR entry deliberately points at the
 redistributable DUMMY GitHub artifact and is expected to fail when its
 synthetic ASAR reaches the real feature patchers.
 

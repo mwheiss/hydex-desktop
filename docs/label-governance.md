@@ -261,7 +261,7 @@ For a local read-only plan:
 
 ```bash
 GITHUB_TOKEN="$(gh auth token)" node scripts/ci/manage-labels.js \
-  --repo ilysenko/codex-desktop-linux
+  --repo ilysenko/hydex-desktop
 ```
 
 Keep tokens in the environment, not in command arguments. For an emergency
@@ -269,7 +269,7 @@ non-destructive restore, download a workflow snapshot and run:
 
 ```bash
 GITHUB_TOKEN="$(gh auth token)" node scripts/ci/manage-labels.js \
-  --repo ilysenko/codex-desktop-linux \
+  --repo ilysenko/hydex-desktop \
   --restore /path/to/repository-labels-before.json \
   --confirm RESTORE
 ```

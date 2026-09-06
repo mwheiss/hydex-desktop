@@ -30,8 +30,8 @@ impl Default for RuntimeConfig {
             auto_install_on_app_exit: true,
             notifications: true,
             workspace_root: PathBuf::new(),
-            builder_bundle_root: PathBuf::from("/opt/codex-desktop/update-builder"),
-            app_executable_path: PathBuf::from("/opt/codex-desktop/ChatGPT"),
+            builder_bundle_root: PathBuf::from("/opt/hydex-desktop/update-builder"),
+            app_executable_path: PathBuf::from("/opt/hydex-desktop/ChatGPT"),
             feature_config_path: None,
         }
     }
@@ -152,7 +152,7 @@ mod tests {
         assert!(config.repository_url.ends_with("/linux/deb"));
         assert_eq!(
             config.app_executable_path,
-            PathBuf::from("/opt/codex-desktop/ChatGPT")
+            PathBuf::from("/opt/hydex-desktop/ChatGPT")
         );
         Ok(())
     }

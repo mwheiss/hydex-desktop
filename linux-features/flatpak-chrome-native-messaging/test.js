@@ -238,7 +238,7 @@ test("relay preserves binary native-messaging bytes and rejects invalid authenti
     const state = JSON.parse(fs.readFileSync(fixture.stateFile, "utf8"));
     const manifest = JSON.parse(fs.readFileSync(fixture.manifestPath, "utf8"));
     assert.equal(manifest.name, HOST_NAME);
-    assert.equal(manifest.path, path.join(path.dirname(fixture.manifestPath), `${HOST_NAME}-codex-desktop-bridge`));
+    assert.equal(manifest.path, path.join(path.dirname(fixture.manifestPath), `${HOST_NAME}-hydex-desktop-bridge`));
     assert.deepEqual(manifest.allowed_origins, [ORIGIN]);
     assert.equal(fs.statSync(manifest.path).mode & 0o777, 0o700);
     assert.equal(fs.statSync(fixture.stateFile).mode & 0o777, 0o600);

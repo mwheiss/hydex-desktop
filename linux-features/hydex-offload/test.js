@@ -25,6 +25,7 @@ const {
   NEXT_TURN_MARKER,
   REQUEST_MARKER,
   applyHydexComposerControlPatch,
+  applyHydexProductNamePatch,
   applyHydexRequestBridgePatch,
   descriptors,
   matchesHydexComposerContract,
@@ -217,9 +218,47 @@ test("feature loader exposes both enforced webview surfaces", () => {
         descriptor.enforceWhenEnabled,
       ]),
       [
+        [
+          "feature:hydex-offload:hydex-desktop-product-name",
+          "extracted-app:pre-webview",
+          "optional",
+          true,
+        ],
         ["feature:hydex-offload:hydex-offload-request-bridge", "webview-asset", "optional", true],
         ["feature:hydex-offload:hydex-offload-composer-control", "webview-asset", "optional", true],
       ],
+    );
+  });
+});
+
+test("Hydex patcher changes only the visible Electron product name", () => {
+  withTempDir((root) => {
+    const packagePath = path.join(root, "package.json");
+    const original = {
+      name: "@openai/codex",
+      productName: "Codex",
+      version: "26.901.51231",
+      description: "Codex",
+    };
+    fs.writeFileSync(packagePath, `${JSON.stringify(original, null, 2)}\n`);
+
+    assert.deepEqual(applyHydexProductNamePatch(root), {
+      changed: true,
+      target: "package.json",
+    });
+    assert.deepEqual(JSON.parse(fs.readFileSync(packagePath, "utf8")), {
+      ...original,
+      productName: "Hydex",
+    });
+    assert.deepEqual(applyHydexProductNamePatch(root), {
+      changed: false,
+      target: "package.json",
+    });
+
+    fs.writeFileSync(packagePath, '{"productName":"Unexpected"}\n');
+    assert.throws(
+      () => applyHydexProductNamePatch(root),
+      /Expected Electron productName Codex/,
     );
   });
 });
@@ -281,14 +320,15 @@ test("descriptors target the semantic current bundle owners", () => {
   assert.deepEqual(
     descriptors.map((descriptor) => [descriptor.id, descriptor.phase]),
     [
+      ["hydex-desktop-product-name", "extracted-app:pre-webview"],
       ["hydex-offload-request-bridge", "webview-asset"],
       ["hydex-offload-composer-control", "webview-asset"],
     ],
   );
-  assert.equal(descriptors[0].pattern.test("app-initial-c8dbea294abe.js"), true);
-  assert.equal(descriptors[0].pattern.test("app-primary-7eef500906c5.js"), false);
-  assert.equal(descriptors[1].pattern.test("app-primary-7eef500906c5.js"), true);
-  assert.equal(descriptors[1].pattern.test("app-initial-c8dbea294abe.js"), false);
+  assert.equal(descriptors[1].pattern.test("app-initial-c8dbea294abe.js"), true);
+  assert.equal(descriptors[1].pattern.test("app-primary-7eef500906c5.js"), false);
+  assert.equal(descriptors[2].pattern.test("app-primary-7eef500906c5.js"), true);
+  assert.equal(descriptors[2].pattern.test("app-initial-c8dbea294abe.js"), false);
   assert.equal(matchesHydexRequestBridgeContract(requestBridgeFixture()), true);
   assert.equal(matchesHydexComposerContract(localComposerFixture()), true);
 });

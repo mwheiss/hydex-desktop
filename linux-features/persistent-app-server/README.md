@@ -79,7 +79,7 @@ provider and the explicit `codex-bin` package.
 The package installs a dedicated extension executable at:
 
 ```text
-/opt/codex-desktop/.codex-linux/features/persistent-app-server/codex-vscode-proxy
+/opt/hydex-desktop/.codex-linux/features/persistent-app-server/codex-vscode-proxy
 ```
 
 The patched Hydex extension discovers this path automatically on Linux and
@@ -127,12 +127,12 @@ it does not claim that graphical computer-use tools work without a GUI session.
 
 Source links:
 
-- https://github.com/mwheiss/codex-desktop-linux/blob/hydex/main/linux-features/remote-mobile-control/feature.json
-- https://github.com/mwheiss/codex-desktop-linux/blob/hydex/main/linux-features/remote-mobile-control/patch.js#L189-L294
-- https://github.com/mwheiss/codex-desktop-linux/blob/hydex/main/linux-features/remote-mobile-control/stage.sh
-- https://github.com/mwheiss/codex-desktop-linux/blob/hydex/main/linux-features/remote-mobile-control/cold-start-hook.sh#L54-L99
-- https://github.com/mwheiss/codex-desktop-linux/blob/hydex/main/linux-features/remote-mobile-control/test.js#L1074-L1100
-- https://github.com/mwheiss/codex-desktop-linux/blob/hydex/main/linux-features/shared-app-server-socket/patch.js#L53-L99
+- https://github.com/mwheiss/hydex-desktop/blob/hydex/main/linux-features/remote-mobile-control/feature.json
+- https://github.com/mwheiss/hydex-desktop/blob/hydex/main/linux-features/remote-mobile-control/patch.js#L189-L294
+- https://github.com/mwheiss/hydex-desktop/blob/hydex/main/linux-features/remote-mobile-control/stage.sh
+- https://github.com/mwheiss/hydex-desktop/blob/hydex/main/linux-features/remote-mobile-control/cold-start-hook.sh#L54-L99
+- https://github.com/mwheiss/hydex-desktop/blob/hydex/main/linux-features/remote-mobile-control/test.js#L1074-L1100
+- https://github.com/mwheiss/hydex-desktop/blob/hydex/main/linux-features/shared-app-server-socket/patch.js#L53-L99
 
 `check-mobile.cjs` makes this reproducible on the real checkout. It copies only
 that checkout's mobile feature into a temporary directory, loads its actual
@@ -155,7 +155,7 @@ throwaway tree, with service-manager operations stubbed.
 ## Runtime configuration and ownership
 
 Initial setup saves the installation path, absolute `CODEX_HOME`, home directory
-and PATH in `~/.config/codex-desktop/persistent-app-server.json` (0600).
+and PATH in `~/.config/hydex-desktop/persistent-app-server.json` (0600).
 `XDG_CONFIG_HOME` is respected. Reinstalling preserves the established settings.
 The user unit is `~/.config/systemd/user/codex-remote-control.service`.
 
@@ -184,7 +184,7 @@ never invokes the raw byte tunnel for a stdio client.
 The service uses `Type=simple`; its Python helper execs the packaged CLI:
 
 ```text
-/opt/codex-desktop/resources/codex -c features.code_mode_host=true app-server --remote-control --listen unix://
+/opt/hydex-desktop/resources/codex -c features.code_mode_host=true app-server --remote-control --listen unix://
 ```
 
 Systemd tracks the foreground server, not a detached starter. The packaged
@@ -211,8 +211,8 @@ Authentication and phone pairing are still required. For the default Codex home,
 the compatible packaged CLI provides:
 
 ```fish
-/opt/codex-desktop/resources/codex remote-control pair
-/opt/codex-desktop/resources/codex --remote unix://
+/opt/hydex-desktop/resources/codex remote-control pair
+/opt/hydex-desktop/resources/codex --remote unix://
 ```
 
 For a custom profile, supply `env CODEX_HOME=/your/path`. Manage this server via

@@ -1,6 +1,6 @@
 # Raspberry Pi 5
 
-ChatGPT Community has been validated on a 16 GB Raspberry Pi 5. The existing
+Hydex has been validated on a 16 GB Raspberry Pi 5. The existing
 upstream ARM64 support built and ran without a Pi-specific source patch.
 
 This is a historical field-test record. Current builds still resolve the latest
@@ -38,8 +38,8 @@ recommended for the native build.
 The repository's normal Debian-family setup path should be used:
 
 ```bash
-git clone https://github.com/ilysenko/codex-desktop-linux.git
-cd codex-desktop-linux
+git clone https://github.com/mwheiss/hydex-desktop.git
+cd hydex-desktop
 PACKAGE_WITH_UPDATER=0 MAX_BUILD_THREADS=4 make bootstrap-native
 ```
 
@@ -56,7 +56,7 @@ PACKAGE_WITH_UPDATER=0 MAX_BUILD_THREADS=4 make build-app-fresh
 PACKAGE_WITH_UPDATER=0 MAX_BUILD_THREADS=4 make deb
 ```
 
-Install the generated `codex-desktop_*.deb` from `dist/` with the normal Debian
+Install the generated `hydex-desktop_*.deb` from `dist/` with the normal Debian
 package manager. The source application is the official signed OpenAI ARM64
 Linux `.deb`, extracted directly without executing maintainer scripts.
 
@@ -67,7 +67,7 @@ console-only boot must have its existing display manager enabled before the
 desktop launcher can be tested. The validated system used LightDM automatic
 login with the Raspberry Pi Labwc session.
 
-After installation, start **ChatGPT Community** from the desktop menu. The
+After installation, start **Hydex** from the desktop menu. The
 official ARM64 package already contains the matching Codex CLI and platform
 runtime.
 
@@ -159,7 +159,7 @@ Include the following when reporting a Raspberry Pi problem:
 - repository commit and upstream app version
 - exact build command
 - package format
-- relevant output from `~/.cache/codex-desktop/launcher.log`
+- relevant output from `~/.cache/hydex-desktop/launcher.log`
 
 Keep generated applications and packages out of pull requests. Documentation,
 diagnostics, tests, and fixes should target the repository sources.

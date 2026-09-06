@@ -2,7 +2,7 @@
 set -eu
 
 runtime_root="${XDG_RUNTIME_DIR:-${CODEX_LINUX_APP_STATE_DIR:?}}"
-runtime_dir="$runtime_root/${CODEX_LINUX_APP_ID:-codex-desktop}/app-server-bridge"
+runtime_dir="$runtime_root/${CODEX_LINUX_APP_ID:-hydex-desktop}/app-server-bridge"
 socket_path="${CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET:-$runtime_dir/app-server.sock}"
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"

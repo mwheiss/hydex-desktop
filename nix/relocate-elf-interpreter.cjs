@@ -350,7 +350,7 @@ function relocateBuffer(buffer, expectedInterpreter) {
 function relocateFile(elfPath, expectedInterpreter) {
   const original = fs.readFileSync(elfPath);
   const patched = relocateBuffer(original, expectedInterpreter);
-  const temporaryPath = `${elfPath}.codex-desktop-${process.pid}.tmp`;
+  const temporaryPath = `${elfPath}.hydex-desktop-${process.pid}.tmp`;
   const mode = fs.statSync(elfPath).mode;
   try {
     fs.writeFileSync(temporaryPath, patched, { mode });

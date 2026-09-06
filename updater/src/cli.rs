@@ -4,7 +4,7 @@ use std::path::PathBuf;
 #[derive(Debug, Parser)]
 #[command(
     name = "codex-update-manager",
-    about = "Signed Linux-package updater for codex-desktop"
+    about = "Signed Linux-package updater for hydex-desktop"
 )]
 pub struct Cli {
     #[command(subcommand)]

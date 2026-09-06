@@ -1,7 +1,7 @@
 {
   "id": "ui-tweaks",
   "title": "UI Tweaks",
-  "description": "Optional UI customization patches for ChatGPT Community.",
+  "description": "Optional UI customization patches for Hydex.",
   "defaultEnabled": false,
   "entrypoints": {
     "patchDescriptors": "./patch.js",

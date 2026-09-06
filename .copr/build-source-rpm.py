@@ -31,7 +31,7 @@ def sha256(path: Path) -> str:
 
 
 def download(url: str, destination: Path, expected: str) -> None:
-    request = urllib.request.Request(url, headers={"User-Agent": "codex-desktop-copr/1"})
+    request = urllib.request.Request(url, headers={"User-Agent": "hydex-desktop-copr/1"})
     with (
         urllib.request.urlopen(request, timeout=120) as response,
         destination.open("wb") as output,
@@ -95,7 +95,7 @@ def main() -> int:
         else "Proprietary and LGPLv2+ and GPLv3+ with exceptions and ASL 2.0"
     )
     commit = run(["git", "rev-parse", "HEAD"], repo).stdout.strip()
-    source_root = f"codex-desktop-linux-{commit[:12]}"
+    source_root = f"hydex-desktop-{commit[:12]}"
     source_archive = f"{source_root}.tar.gz"
     upstream_deb = urllib.parse.unquote(
         Path(urllib.parse.urlparse(manifest["url"]).path).name
@@ -105,7 +105,7 @@ def main() -> int:
 
     outdir = args.outdir.resolve()
     outdir.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="codex-desktop-copr-") as temp:
+    with tempfile.TemporaryDirectory(prefix="hydex-desktop-copr-") as temp:
         topdir = Path(temp)
         make_topdir(topdir)
         sources = topdir / "SOURCES"
@@ -136,7 +136,7 @@ def main() -> int:
         shutil.copy2(copr_dir / "dpkg-deb", sources)
 
         spec_text = render(
-            (copr_dir / "codex-desktop.spec.in").read_text(),
+            (copr_dir / "hydex-desktop.spec.in").read_text(),
             {
                 "@RPM_VERSION@": rpm_version,
                 "@RPM_RELEASE@": rpm_release,
@@ -147,7 +147,7 @@ def main() -> int:
                 "@HYDEX_ARCHIVE@": hydex_archive,
             },
         )
-        spec_path = topdir / "SPECS/codex-desktop.spec"
+        spec_path = topdir / "SPECS/hydex-desktop.spec"
         spec_path.write_text(spec_text)
         run(
             [

@@ -24,13 +24,13 @@ bash -n install.sh launcher/start.sh.template scripts/install-deps.sh \
   tests/install_deps_pacman_rust_matrix.sh
 bash -n scripts/lib/*.sh scripts/build-deb.sh scripts/build-rpm.sh scripts/build-pacman.sh scripts/build-appimage.sh
 
-assert_contains packaging/linux/codex-desktop.desktop '^Name=ChatGPT Community$'
-assert_contains packaging/linux/codex-desktop.desktop '^Comment=Community Linux distribution based on OpenAI ChatGPT$'
-assert_contains install.sh 'CODEX_APP_DISPLAY_NAME:-ChatGPT Community'
+assert_contains packaging/linux/hydex-desktop.desktop '^Name=Hydex$'
+assert_contains packaging/linux/hydex-desktop.desktop '^Comment=Community Linux distribution based on OpenAI ChatGPT$'
+assert_contains install.sh 'CODEX_APP_DISPLAY_NAME:-Hydex'
 assert_contains install.sh 'cp .*ICON_SOURCE.*CODEX_APP_ID'
 assert_contains install.sh 'cp .*ICON_SOURCE.*resources/icon-chatgpt.png'
-assert_contains scripts/lib/package-common.sh 'PACKAGE_DISPLAY_NAME:-ChatGPT Community'
-assert_contains scripts/build-appimage.sh 'PACKAGE_DISPLAY_NAME:-ChatGPT Community'
+assert_contains scripts/lib/package-common.sh 'PACKAGE_DISPLAY_NAME:-Hydex'
+assert_contains scripts/build-appimage.sh 'PACKAGE_DISPLAY_NAME:-Hydex'
 assert_contains install.sh 'upstream-linux-package.sh'
 assert_contains install.sh 'CODEX_TARGET_ARCH'
 assert_contains launcher/start.sh.template '/ChatGPT'
@@ -87,7 +87,7 @@ smoke_parse_args_accepts_matching_env_positional
 smoke_parse_args_rejects_conflicting_paths
 assert_absent launcher/start.sh.template 'local content server'
 assert_contains packaging/linux/control 'official Linux runtime'
-assert_contains packaging/linux/codex-desktop.spec 'official runtime'
+assert_contains packaging/linux/hydex-desktop.spec 'official runtime'
 assert_contains flake.nix 'systemd util-linux xdg-utils'
 assert_contains packaging/linux/codex-packaged-runtime.sh 'codex-update-manager check-now'
 assert_absent packaging/linux/codex-packaged-runtime.sh '--if-stale'
@@ -100,10 +100,10 @@ assert_contains scripts/lib/install-helpers.sh '^    if \[ -z "\$\{CODEX_ASAR_BI
 
 selector_fixture="$(mktemp -d)"
 trap 'rm -rf -- "$selector_fixture"' EXIT
-touch -t 202608120900 "$selector_fixture/codex-desktop_2026.08.12.community_amd64.deb"
-touch -t 202608121000 "$selector_fixture/codex-desktop_2026.08.12.100000_amd64.deb"
-selected_package="$(scripts/select-latest-package.sh "$selector_fixture/codex-desktop_*.deb")"
-[ "$selected_package" = "$selector_fixture/codex-desktop_2026.08.12.100000_amd64.deb" ] ||
+touch -t 202608120900 "$selector_fixture/hydex-desktop_2026.08.12.community_amd64.deb"
+touch -t 202608121000 "$selector_fixture/hydex-desktop_2026.08.12.100000_amd64.deb"
+selected_package="$(scripts/select-latest-package.sh "$selector_fixture/hydex-desktop_*.deb")"
+[ "$selected_package" = "$selector_fixture/hydex-desktop_2026.08.12.100000_amd64.deb" ] ||
     fail "package selector did not choose the newest artifact: $selected_package"
 
 SCRIPT_DIR="$REPO_DIR"

@@ -79,7 +79,7 @@ test("omarchy-theme exposes optional patches, resources, and hooks when enabled"
       plan.resources.map((resource) => [resource.id, resource.target, resource.mode]),
       [[
         "omarchy-theme",
-        ".codex-linux/features/omarchy-theme/codex-desktop.css.tpl",
+        ".codex-linux/features/omarchy-theme/hydex-desktop.css.tpl",
         0o644,
       ]],
     );
@@ -199,17 +199,17 @@ test("prelaunch hook installs the template, refreshes missing CSS, and preserves
     const featuresDir = path.join(tempDir, "features");
     const stagedDir = path.join(featuresDir, "omarchy-theme");
     const omarchyHome = path.join(home, ".config", "omarchy");
-    const target = path.join(omarchyHome, "themed", "codex-desktop.css.tpl");
-    const generated = path.join(omarchyHome, "current", "theme", "codex-desktop.css");
+    const target = path.join(omarchyHome, "themed", "hydex-desktop.css.tpl");
+    const generated = path.join(omarchyHome, "current", "theme", "hydex-desktop.css");
     const binDir = path.join(tempDir, "bin");
     const callLog = path.join(tempDir, "omarchy.log");
     fs.mkdirSync(stagedDir, { recursive: true });
     fs.mkdirSync(binDir, { recursive: true });
-    fs.copyFileSync(path.join(FEATURE_DIR, "codex-desktop.css.tpl"), path.join(stagedDir, "codex-desktop.css.tpl"));
+    fs.copyFileSync(path.join(FEATURE_DIR, "hydex-desktop.css.tpl"), path.join(stagedDir, "hydex-desktop.css.tpl"));
     const fakeOmarchy = path.join(binDir, "omarchy");
     fs.writeFileSync(
       fakeOmarchy,
-      `#!${BASH}\nset -e\nprintf '%s\\n' "$*" >> "$OMARCHY_TEST_LOG"\nmkdir -p "$HOME/.config/omarchy/current/theme"\nprintf 'generated' > "$HOME/.config/omarchy/current/theme/codex-desktop.css"\n`,
+      `#!${BASH}\nset -e\nprintf '%s\\n' "$*" >> "$OMARCHY_TEST_LOG"\nmkdir -p "$HOME/.config/omarchy/current/theme"\nprintf 'generated' > "$HOME/.config/omarchy/current/theme/hydex-desktop.css"\n`,
     );
     fs.chmodSync(fakeOmarchy, 0o755);
 
@@ -225,7 +225,7 @@ test("prelaunch hook installs the template, refreshes missing CSS, and preserves
       encoding: "utf8",
     });
     assert.equal(first.status, 0, first.stderr);
-    assert.equal(fs.readFileSync(target, "utf8"), fs.readFileSync(path.join(FEATURE_DIR, "codex-desktop.css.tpl"), "utf8"));
+    assert.equal(fs.readFileSync(target, "utf8"), fs.readFileSync(path.join(FEATURE_DIR, "hydex-desktop.css.tpl"), "utf8"));
     assert.equal(fs.readFileSync(generated, "utf8"), "generated");
     assert.equal(fs.readFileSync(callLog, "utf8"), "theme refresh\n");
 

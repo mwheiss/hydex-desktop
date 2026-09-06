@@ -1,6 +1,6 @@
 # Directory-Only Working-Tree Watch
 
-This opt-in Linux feature replaces ChatGPT Community's recursive working-tree
+This opt-in Linux feature replaces Hydex's recursive working-tree
 `fs.watch` call with [Watchbound](https://www.npmjs.com/package/watchbound).
 Watchbound owns recursive inotify topology, process-wide native-watch
 allocation, bounded delivery, coverage reporting, reconciliation, root
@@ -183,7 +183,7 @@ Completely exit an existing app instance before launching from a terminal,
 because the existing single-instance process owns its logs:
 
 ```bash
-/opt/codex-desktop/start.sh 2>&1 | rg --line-buffered \
+/opt/hydex-desktop/start.sh 2>&1 | rg --line-buffered \
   'directory-only[ -]working-tree[ -]watch|Watchbound|Parcel'
 ```
 

@@ -9,11 +9,11 @@ Categories=Development;
 MimeType=x-scheme-handler/codex;x-scheme-handler/codex-browser-sidebar;
 Keywords=codex;openai;ai;coding;
 StartupNotify=true
-StartupWMClass=codex-desktop
-X-GNOME-WMClass=codex-desktop
+StartupWMClass=hydex-desktop
+X-GNOME-WMClass=hydex-desktop
 X-AppImage-Version=__VERSION__
 Actions=new-window;
 
 [Desktop Action new-window]
 Name=New Window
-Exec=env CHROME_DESKTOP=codex-desktop.desktop CODEX_MULTI_LAUNCH=1 AppRun --new-instance
+Exec=env CHROME_DESKTOP=hydex-desktop.desktop CODEX_MULTI_LAUNCH=1 AppRun --new-instance
