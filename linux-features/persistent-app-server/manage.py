@@ -17,7 +17,9 @@ INCOMPATIBLE = {"shared-app-server-socket"}
 
 
 def run(args, *, check=True, capture=False, timeout=30, **kwargs):
-    return subprocess.run(args, check=check, text=True, capture_output=capture,
+    if capture:
+        kwargs.update(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return subprocess.run(args, check=check, universal_newlines=True,
                           timeout=timeout, **kwargs)
 
 
@@ -226,6 +228,25 @@ def setup(app_dir, *, linger=True):
     print("Pairing, authentication and Remote Control availability still need a live check.")
 
 
+def ensure_setup(app_dir):
+    path = config_path()
+    if not os.path.lexists(path):
+        setup(app_dir, linger=False)
+        return read_config(path)
+    config = read_config(path)
+    unit = Path(config["unit_path"])
+    active = check_foreign_owner(config, unit)
+    if active:
+        desired = unit_text(config, path)
+        if unit.read_text() != desired:
+            atomic_write(unit, desired, 0o644)
+            run(["systemctl", "--user", "daemon-reload"])
+    else:
+        setup(app_dir, linger=False)
+        config = read_config(path)
+    return config
+
+
 def emit_environment(config):
     app_dir = os.environ.get("CODEX_LINUX_APP_DIR")
     if app_dir and absolute(app_dir) != Path(config["app_dir"]):
@@ -266,7 +287,8 @@ def remove(path):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("install", "setup", "env", "serve", "remove"))
+    parser.add_argument(
+        "action", choices=("install", "setup", "ensure", "ensure-env", "env", "serve", "remove"))
     parser.add_argument("--app-dir", default="/opt/codex-desktop")
     parser.add_argument("--config", type=Path)
     parser.add_argument("--no-linger", action="store_true", help="Start at login rather than enabling boot/logout persistence")
@@ -290,6 +312,10 @@ def main(argv=None):
         setup(args.app_dir, linger=not args.no_linger)
     elif args.action == "setup":
         setup(args.app_dir, linger=not args.no_linger)
+    elif args.action == "ensure":
+        ensure_setup(args.app_dir)
+    elif args.action == "ensure-env":
+        emit_environment(ensure_setup(args.app_dir))
     elif args.action == "env":
         emit_environment(read_config(path))
     elif args.action == "serve":
