@@ -4,6 +4,8 @@
 # Sourced by install.sh. Do not run directly.
 # shellcheck shell=bash
 
+ASAR_NPM_PACKAGE="@electron/asar@3.2.13"
+
 print_patch_report_summary() {
     local patch_report="$1"
     [ -f "$patch_report" ] || return 0
@@ -97,9 +99,9 @@ resolve_asar_command() {
         "visible to this shell, then retry."
 
     local asar_cli
-    asar_cli="$(npx --yes --package=@electron/asar -- sh -c 'command -v asar' 2>/dev/null | tail -n 1)"
+    asar_cli="$(npx --yes --package="$ASAR_NPM_PACKAGE" -- sh -c 'command -v asar' 2>/dev/null | tail -n 1)"
     [ -n "$asar_cli" ] && [ -x "$asar_cli" ] || error \
-        "Could not resolve the @electron/asar CLI through npx." \
+        "Could not resolve the $ASAR_NPM_PACKAGE CLI through npx." \
         "Set CODEX_ASAR_BIN to an existing asar executable, then retry." \
         "Resolved path: ${asar_cli:-<none>}"
     printf '%s\n' "$asar_cli"
