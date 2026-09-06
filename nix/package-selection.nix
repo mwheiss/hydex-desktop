@@ -15,7 +15,7 @@ in
     if cfg.package != null then
       cfg.package
     else
-      flakePackages.codex-desktop.override {
+      flakePackages.hydex-desktop.override {
         enableComputerUseUi = cfg.computerUseUi.enable;
         linuxFeatureIds = normalizedFeatureIds;
       };

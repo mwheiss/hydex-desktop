@@ -15,7 +15,7 @@ const AUTH_TIMEOUT_MS = 2000;
 const MAX_CLIENTS = 8;
 const START_TIMEOUT_MS = 5000;
 const OWNER_POLL_MS = 500;
-const BRIDGE_WRAPPER_NAME = `${HOST_NAME}-codex-desktop-bridge`;
+const BRIDGE_WRAPPER_NAME = `${HOST_NAME}-hydex-desktop-bridge`;
 
 function parseArgs(argv) {
   const command = argv[0];
@@ -118,7 +118,7 @@ function loadExtensionRegistry(appDir) {
 function bridgeManifest(wrapperPath, origins) {
   return {
     name: HOST_NAME,
-    description: "ChatGPT Community Flatpak Chrome bridge",
+    description: "Hydex Flatpak Chrome bridge",
     path: wrapperPath,
     type: "stdio",
     allowed_origins: origins,
@@ -169,7 +169,7 @@ function assertManifestCanBeReplaced(options, origins) {
 
 function wrapperSource(port, token) {
   return `#!/usr/bin/bash
-# Managed by ChatGPT Community feature flatpak-chrome-native-messaging.
+# Managed by Hydex feature flatpak-chrome-native-messaging.
 set -u
 reader_pid=
 writer_pid=
