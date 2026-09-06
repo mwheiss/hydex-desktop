@@ -2,7 +2,7 @@
   "id": "remote-mobile-control",
   "title": "Experimental Remote Mobile Control",
   "description": "Opt-in Linux adaptation for experimental Remote host and outbound-control flows.",
-  "defaultEnabled": false,
+  "defaultEnabled": true,
   "entrypoints": {
     "patchDescriptors": "./patch.js",
     "stageHook": "./stage.sh"
