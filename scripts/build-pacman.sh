@@ -154,6 +154,12 @@ main() {
 		-e "s|__STAGING_DIR__|$staging_dir|g" \
 		-e "s/__ARCH__/$arch_replacement/g" \
 		"$PKGBUILD_TEMPLATE" >"$build_root/PKGBUILD"
+	local cli_package_metadata
+	cli_package_metadata="$(pacman_codex_cli_package_metadata "$staging_root")"
+	replace_literal_file_token \
+		"$build_root/PKGBUILD" \
+		"__CODEX_CLI_PACKAGE_METADATA__" \
+		"$cli_package_metadata"
 	if ! package_with_updater_enabled; then
 		sed -i \
 			-e "/'polkit'/d" \
