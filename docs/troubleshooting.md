@@ -17,8 +17,8 @@ disk space. An explicit package must match host architecture and be named
 ## The app does not launch
 
 ```bash
-/opt/codex-desktop/start.sh --diagnose
-/opt/codex-desktop/ChatGPT --version
+/opt/hydex-desktop/start.sh --diagnose
+/opt/hydex-desktop/ChatGPT --version
 journalctl --user -u codex-update-manager.service --no-pager
 ```
 
@@ -34,7 +34,7 @@ pgrep -a -f '(/ChatGPT|/chatgpt)' || true
 ```
 
 Do not start the underlying `ChatGPT` binary directly for normal use. The
-`codex-desktop` wrapper supplies the correct desktop identity and enabled
+`hydex-desktop` wrapper supplies the correct desktop identity and enabled
 feature hooks.
 
 ## Persistent Electron flags and native Wayland
@@ -42,7 +42,7 @@ feature hooks.
 The launcher reads shared Electron flags from
 `${XDG_CONFIG_HOME:-$HOME/.config}/electron-flags.conf` and Community-specific
 flags from
-`${XDG_CONFIG_HOME:-$HOME/.config}/codex-desktop/electron-flags.conf`, in that
+`${XDG_CONFIG_HOME:-$HOME/.config}/hydex-desktop/electron-flags.conf`, in that
 order. Put one complete argument on each line; blank lines and lines beginning
 with `#` are ignored. App-specific flags are followed by enabled feature flags
 and explicit command-line arguments, so a later explicit argument can override
@@ -68,9 +68,9 @@ wrapper sets `x11` so its `NIXOS_OZONE_WL` opt-in stays authoritative. To pin a
 backend for every launch without editing a generated desktop entry:
 
 ```bash
-mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/codex-desktop"
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/hydex-desktop"
 printf '%s\n' '--ozone-platform=x11' > \
-  "${XDG_CONFIG_HOME:-$HOME/.config}/codex-desktop/electron-flags.conf"
+  "${XDG_CONFIG_HOME:-$HOME/.config}/hydex-desktop/electron-flags.conf"
 ```
 
 Restart every running official and Community process after changing the file.
@@ -80,7 +80,7 @@ arguments.
 ## Chromium sandbox or AppArmor
 
 Prefer a native package, which installs an AppArmor profile adapted to
-`/opt/codex-desktop/ChatGPT`. AppImage intentionally refuses to disable the
+`/opt/hydex-desktop/ChatGPT`. AppImage intentionally refuses to disable the
 sandbox automatically. Enable unprivileged user namespaces according to your
 distribution policy or use the native package.
 
@@ -91,12 +91,12 @@ packaging error by globally disabling Chromium sandboxing.
 ## Duplicate or stale desktop entries
 
 The official package should appear as **ChatGPT**. This project should appear
-as **ChatGPT Community** with a blue `C` mark. Confirm the selected entry:
+as **Hydex** with a blue `C` mark. Confirm the selected entry:
 
 ```bash
 grep -H '^Name=' \
   /usr/share/applications/chatgpt.desktop \
-  /usr/share/applications/codex-desktop.desktop 2>/dev/null || true
+  /usr/share/applications/hydex-desktop.desktop 2>/dev/null || true
 ```
 
 After upgrading from an older package, refresh the desktop database or log out
@@ -106,11 +106,11 @@ desktop file to work around a shell cache.
 ## Official and custom apps interfere
 
 Both use the upstream `Codex` profile. Fully exit the official `chatgpt` process
-before starting `codex-desktop`, and vice versa. Their packages and desktop
+before starting `hydex-desktop`, and vice versa. Their packages and desktop
 entries can coexist, but upstream single-instance locking prevents reliable
 parallel sessions.
 
-In the desktop menu, the custom build is **ChatGPT Community** with a blue `C`;
+In the desktop menu, the custom build is **Hydex** with a blue `C`;
 the unqualified **ChatGPT** entry is OpenAI's package.
 
 ## AppImage opens from Flatpak Chrome but the extension cannot connect
@@ -125,8 +125,8 @@ it before building the AppImage:
 }
 ```
 
-Fully exit ChatGPT Community and Chrome after installing the rebuilt AppImage.
-Start ChatGPT Community first, then reopen Chrome.
+Fully exit Hydex and Chrome after installing the rebuilt AppImage.
+Start Hydex first, then reopen Chrome.
 
 In [issue #1434](https://github.com/ilysenko/codex-desktop-linux/issues/1434),
 **Open the app** launches Community, while the extension reports **Native
@@ -177,7 +177,7 @@ permission from the private `.plugin-appserver` runtime directory, which the
 Chrome host rejects as an untrusted parent path.
 
 If Browser was already loaded before that migration ran, fully exit every
-ChatGPT process, fully exit Chrome/Chromium, start **ChatGPT Community**, and
+ChatGPT process, fully exit Chrome/Chromium, start **Hydex**, and
 then reopen the browser. Arbitrary plugin caches and user-authored plugins are
 never rewritten.
 

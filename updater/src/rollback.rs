@@ -182,7 +182,7 @@ async fn run_with_launcher(
     launcher_program: &Path,
 ) -> Result<()> {
     if liveness::is_app_running(config)? {
-        println!("ChatGPT Community is running. Close it before rollback.");
+        println!("Hydex is running. Close it before rollback.");
         return Ok(());
     }
     let package = match state.artifact_paths.rollback_package_path.clone() {
@@ -251,7 +251,7 @@ async fn run_with_launcher(
     apply_successful_rollback(state, package, install::installed_package_version());
     state.error_message = None;
     state.save_updater(&paths.state_file)?;
-    println!("Rolled back codex-desktop to {}.", state.installed_version);
+    println!("Rolled back hydex-desktop to {}.", state.installed_version);
     Ok(())
 }
 

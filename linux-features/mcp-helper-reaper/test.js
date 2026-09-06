@@ -262,8 +262,8 @@ test("staged lifecycle hooks reach the reaper through the launcher", async () =>
   const codexHome = path.join(tempDir, "codex-home");
   const launcher = fs
     .readFileSync(LAUNCHER_TEMPLATE, "utf8")
-    .replaceAll("__CODEX_LINUX_APP_ID__", "codex-desktop")
-    .replaceAll("__CODEX_LINUX_APP_DISPLAY_NAME__", "ChatGPT Community");
+    .replaceAll("__CODEX_LINUX_APP_ID__", "hydex-desktop")
+    .replaceAll("__CODEX_LINUX_APP_DISPLAY_NAME__", "Hydex");
 
   fs.mkdirSync(workDir, { recursive: true });
   writeExecutable(
@@ -325,7 +325,7 @@ exit 7
   assert.match(calls, /^cold-start\t.*--all-codex-parents/m);
   assert.match(calls, /^after-exit\t.*--all-codex-parents/m);
   assert.deepEqual(fs.readFileSync(appArgs, "utf8").trim().split("\n"), [
-    "--class=codex-desktop",
+    "--class=hydex-desktop",
     "codex://thread/123",
   ]);
   assert.match(fs.readFileSync(path.join(codexHome, "hooks.json"), "utf8"), /codex-mcp-helper-reaper-session/);

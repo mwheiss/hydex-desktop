@@ -1097,8 +1097,8 @@ mod adapter_tests {
             {
               "uuid": "{b4dfacf8-a559-43c9-8b1f-ecd5cfd78359}",
               "caption": "Codex",
-              "desktopFile": "codex-desktop",
-              "resourceClass": "codex-desktop",
+              "desktopFile": "hydex-desktop",
+              "resourceClass": "hydex-desktop",
               "resourceName": "codex",
               "pid": 68986,
               "x": 10,
@@ -1126,8 +1126,8 @@ mod adapter_tests {
         assert_eq!(windows.len(), 1);
         assert_eq!(windows[0].window_id, kwin_window_id_from_uuid(uuid));
         assert_eq!(windows[0].title.as_deref(), Some("Codex"));
-        assert_eq!(windows[0].app_id.as_deref(), Some("codex-desktop"));
-        assert_eq!(windows[0].wm_class.as_deref(), Some("codex-desktop"));
+        assert_eq!(windows[0].app_id.as_deref(), Some("hydex-desktop"));
+        assert_eq!(windows[0].wm_class.as_deref(), Some("hydex-desktop"));
         assert_eq!(windows[0].pid, Some(68986));
         assert_eq!(windows[0].bounds.as_ref().unwrap().x, Some(10));
         assert_eq!(windows[0].bounds.as_ref().unwrap().height, 800);

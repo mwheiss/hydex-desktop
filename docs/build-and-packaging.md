@@ -111,7 +111,7 @@ make rpm-rhel7
 
 The RHEL 9 result is one RPM. RHEL 7's RPM 4.11/cpio implementation cannot
 consume the complete multi-gigabyte payload as one archive, so that target
-produces `codex-desktop` plus a version-locked `codex-desktop-cli-runtime` RPM;
+produces `hydex-desktop` plus a version-locked `hydex-desktop-cli-runtime` RPM;
 install both in the same `yum install` transaction, or use `make install-rhel7`.
 The exact mutual dependency also makes package managers remove the pair
 together instead of leaving the large CLI payload orphaned.
@@ -137,15 +137,15 @@ wizard, `make install-native` performs build/package/install, and
 same installation flow.
 
 Shared payload logic lives in `scripts/lib/package-common.sh`. Native packages
-install to `/opt/codex-desktop`, provide `/usr/bin/codex-desktop`, install a
-separate **ChatGPT Community** desktop entry and community-marked icon, and may
+install to `/opt/hydex-desktop`, provide `/usr/bin/hydex-desktop`, install a
+separate **Hydex** desktop entry and community-marked icon, and may
 include the updater service/update-builder.
 Their dependency declarations correspond to libraries required by the official
 ELF runtime. They do not install OpenAI's repository configuration.
 
 The deb package uses the upstream dependency baseline. RPM and pacman templates
 map those library capabilities to their distribution names. Native packages
-adapt the upstream AppArmor policy to `/opt/codex-desktop/ChatGPT`.
+adapt the upstream AppArmor policy to `/opt/hydex-desktop/ChatGPT`.
 
 AppImage uses the official bundled `codex` and does not add `--no-sandbox`.
 Systems that prohibit unprivileged user namespaces receive a diagnostic instead
@@ -240,6 +240,6 @@ Inspect the final packages for the `ChatGPT` ELF, byte identity of clean
 and absence of upstream package-manager configuration.
 
 Package inspection should also confirm the payload architecture matches the
-builder (`amd64` or `arm64`), the desktop entry says **ChatGPT Community**, and
+builder (`amd64` or `arm64`), the desktop entry says **Hydex**, and
 the package neither installs nor depends on OpenAI's APT source or maintainer
 scripts.
