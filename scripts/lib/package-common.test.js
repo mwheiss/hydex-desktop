@@ -71,30 +71,56 @@ test("package metadata rejects architectures without an official package", (t) =
   assert.match(result.stderr, /expected amd64 or arm64/);
 });
 
-test("persistent pacman package replaces the standalone Codex CLI provider", (t) => {
+test("persistent native packages replace the standalone Codex CLI provider", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-package-cli-provider-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const binDir = path.join(root, "usr/bin");
   fs.mkdirSync(binDir, { recursive: true });
-  fs.symlinkSync("/opt/codex-desktop/resources/codex", path.join(binDir, "codex"));
+  fs.symlinkSync(
+    "/opt/codex-desktop/.codex-linux/features/persistent-app-server/codex-cli-wrapper",
+    path.join(binDir, "codex"),
+  );
   fs.symlinkSync(
     "/opt/codex-desktop/resources/codex-code-mode-host",
     path.join(binDir, "codex-code-mode-host"),
   );
 
-  const metadata = runPackageCommon(
-    `PACKAGE_NAME=codex-desktop pacman_codex_cli_package_metadata ${JSON.stringify(root)}`,
+  const pacman = runPackageCommon(
+    `PACKAGE_NAME=codex-desktop codex_cli_package_metadata pacman ${JSON.stringify(root)}`,
     root,
   );
-  assert.match(metadata, /provides=\('codex' 'openai-codex'\)/);
-  assert.match(metadata, /conflicts=\('hydex-bin' 'codex' 'codex-bin' 'openai-codex'/);
-  assert.match(metadata, /replaces=\('hydex-bin'/);
-  assert.doesNotMatch(metadata, /replaces=.*'codex-bin'/);
+  assert.match(pacman, /provides=\('codex' 'openai-codex'\)/);
+  assert.match(pacman, /conflicts=\('hydex' 'hydex-bin' 'codex' 'codex-bin' 'openai-codex'/);
+  assert.match(pacman, /replaces=\('hydex-bin'/);
+  assert.doesNotMatch(pacman, /replaces=.*'codex-bin'/);
+
+  const deb = runPackageCommon(
+    `PACKAGE_NAME=codex-desktop codex_cli_package_metadata deb ${JSON.stringify(root)}`,
+    root,
+  );
+  assert.match(deb, /^Provides: codex, openai-codex$/m);
+  assert.match(deb, /^Conflicts: hydex, hydex-bin, codex, codex-bin, openai-codex,/m);
+  assert.match(deb, /^Replaces: hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin$/m);
+
+  const rpm = runPackageCommon(
+    `PACKAGE_NAME=codex-desktop codex_cli_package_metadata rpm ${JSON.stringify(root)}`,
+    root,
+  );
+  assert.match(rpm, /^Provides:\s+codex$/m);
+  assert.match(rpm, /^Conflicts:\s+hydex, hydex-bin, codex, codex-bin, openai-codex,/m);
+  assert.match(rpm, /^Obsoletes:\s+hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin$/m);
+  assert.equal(
+    runPackageCommon(
+      `PACKAGE_NAME=codex-desktop codex_cli_package_files rpm ${JSON.stringify(root)}`,
+      root,
+    ),
+    "/usr/bin/codex\n/usr/bin/codex-code-mode-host\n",
+  );
 
   fs.unlinkSync(path.join(binDir, "codex-code-mode-host"));
   assert.throws(
     () => runPackageCommon(
-      `PACKAGE_NAME=codex-desktop pacman_codex_cli_package_metadata ${JSON.stringify(root)}`,
+      `PACKAGE_NAME=codex-desktop codex_cli_package_metadata pacman ${JSON.stringify(root)}`,
       root,
     ),
     /incomplete or unexpected/,
@@ -148,6 +174,56 @@ test("RPM packaging preserves validated prebuilt payload binaries", () => {
   ]) {
     assert.match(rpm, new RegExp(`^%global ${macro} %\\{nil\\}$`, "m"));
   }
+});
+
+test("RHEL compatibility RPMs pin a private runtime and split the EL7 payload", () => {
+  const manifest = JSON.parse(fs.readFileSync(
+    path.join(repoRoot, "packaging/rhel-compat/runtime-packages.json"),
+    "utf8",
+  ));
+  assert.equal(manifest.schemaVersion, 1);
+  assert.equal(manifest.architecture, "amd64");
+  assert.match(manifest.rhel7CupsSource.url, /^https:\/\/github\.com\/OpenPrinting\/cups\/releases\/download\//);
+  assert.match(manifest.rhel7CupsSource.sha256, /^[0-9a-f]{64}$/);
+  assert.match(manifest.rhel7CupsSource.buildImage, /@sha256:[0-9a-f]{64}$/);
+  assert.deepEqual(manifest.packages.map((item) => item.name), [
+    "libc6",
+    "libcups2",
+    "gcc-12-base",
+    "libgcc-s1",
+    "libstdc++6",
+  ]);
+  for (const item of manifest.packages) {
+    assert.match(item.url, /^https:\/\//);
+    assert.match(item.sha256, /^[0-9a-f]{64}$/);
+  }
+
+  const builder = fs.readFileSync(
+    path.join(repoRoot, "scripts/build-rhel-compat-rpm.sh"),
+    "utf8",
+  );
+  assert.match(builder, /PACKAGE_WITH_UPDATER=0/);
+  assert.match(builder, /--proto '=https'/);
+  assert.match(builder, /elf-runtime\.cjs" fix/);
+  assert.match(builder, /--force-rpath true/);
+  assert.match(builder, /--with-components=libcups\b/);
+  assert.doesNotMatch(builder, /LD_LIBRARY_PATH=/);
+  assert.ok(
+    builder.indexOf('elf-runtime.cjs" fix') <
+      builder.indexOf('rhel-compat\/lib\/' ),
+    "application ELF fixups must run before the private loader is copied into the app",
+  );
+  assert.match(builder, /rm -f -- "\$retained"/);
+  assert.match(builder, /rpmlib\\\(\(LargeFiles\|PayloadIsZstd\)\\\)/);
+
+  const spec = fs.readFileSync(
+    path.join(repoRoot, "packaging/linux/codex-desktop.spec"),
+    "utf8",
+  );
+  assert.match(spec, /%package cli-runtime/);
+  assert.match(spec, /%exclude \/opt\/__PACKAGE_NAME__\/resources\/codex/);
+  assert.match(spec, /__PACKAGE_NAME__-cli-runtime = %\{version\}-%\{release\}/);
+  assert.match(spec, /Requires:\s+__PACKAGE_NAME__ = %\{version\}-%\{release\}/);
 });
 
 test("update-builder copies staged native feature artifacts without Cargo workspaces", (t) => {
