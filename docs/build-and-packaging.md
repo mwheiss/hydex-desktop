@@ -79,8 +79,9 @@ Useful diagnostics:
 
 ## Baseline ASAR invariant
 
-`linux-features/features.example.json` contains no enabled features. For that
-configuration, the installer copies `resources/app.asar` directly and compares
+`linux-features/features.example.json` is the explicit feature-free
+configuration even when tracked manifests define fresh-build defaults. With
+that file selected explicitly, the installer copies `resources/app.asar` directly and compares
 its SHA-256 with the package payload. No ASAR extraction tool runs.
 
 If a selected feature contains patch descriptors, the installer patches a
@@ -97,6 +98,38 @@ make rpm
 make pacman
 make appimage
 ```
+
+RHEL compatibility builds use a pinned private Ubuntu 22.04 glibc 2.35 runtime
+for the application payload only. They never replace the system glibc and omit
+the host-built update manager, whose ABI would otherwise depend on the build
+machine. Build them from an already validated `codex-app/` with:
+
+```bash
+make rpm-rhel9 MAX_BUILD_THREADS=8
+make rpm-rhel7
+```
+
+The RHEL 9 result is one RPM. RHEL 7's RPM 4.11/cpio implementation cannot
+consume the complete multi-gigabyte payload as one archive, so that target
+produces `codex-desktop` plus a version-locked `codex-desktop-cli-runtime` RPM;
+install both in the same `yum install` transaction, or use `make install-rhel7`.
+The exact mutual dependency also makes package managers remove the pair
+together instead of leaving the large CLI payload orphaned.
+Use `make install-rhel9` for the single-package target. Compatibility builds keep
+the normal persistent app-server/VS Code adapter behavior, but are updated by
+installing freshly built RPMs rather than by the in-app updater.
+
+The compatibility runtime is x86_64-only. Clean-container checks can prove RPM
+4.11 extraction and userspace loader behavior, but they share the build host's
+kernel; an actual RHEL 7 desktop remains the acceptance gate for Chromium
+sandbox, GPU, keyring, and display integration on its 3.10-era kernel.
+
+RHEL 7 also receives the full client ABI from pinned OpenPrinting CUPS source,
+compiled in a digest-pinned CentOS 7 image. That private library disables TLS,
+DNS-SD, GSSAPI, D-Bus, and PAM integrations to avoid importing a second modern
+desktop/TLS closure. Local CUPS printing remains available, but secure network
+printing and automatic printer discovery from the app are not guaranteed on
+this compatibility target.
 
 For an installed native build, `make setup-native` is only the optional-feature
 wizard, `make install-native` performs build/package/install, and

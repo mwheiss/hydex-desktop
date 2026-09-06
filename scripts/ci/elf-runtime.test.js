@@ -369,6 +369,28 @@ test("the amd64 CUA Node fixup adds RUNPATH before changing PT_INTERP", () => {
   );
 });
 
+test("portable runtime fixups can force a transitive RPATH", () => {
+  assert.deepEqual(
+    buildPatchelfInvocations(
+      {
+        strategy: "patchelf",
+        setInterpreter: true,
+        addRpath: true,
+      },
+      "/opt/codex/lib/ld-linux-x86-64.so.2",
+      "/opt/codex/lib",
+      true,
+    ),
+    [[
+      "--set-interpreter",
+      "/opt/codex/lib/ld-linux-x86-64.so.2",
+      "--force-rpath",
+      "--add-rpath",
+      "/opt/codex/lib",
+    ]],
+  );
+});
+
 test("post-fix audit enforces the Nix interpreter and runtime search path", () => {
   withTemporaryDirectory((root) => {
     const manifest = loadManifest();
