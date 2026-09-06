@@ -3,6 +3,7 @@
   "title": "Hydex Offload Control",
   "description": "Injects a matching Hydex CLI and adds Auto, On, and Off local model offload controls to local Codex and Work composers.",
   "defaultEnabled": false,
+  "nixSupported": false,
   "entrypoints": {
     "patchDescriptors": "./patch.js",
     "stageHook": "./stage.sh"
