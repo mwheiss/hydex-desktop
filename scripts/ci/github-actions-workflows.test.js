@@ -200,6 +200,13 @@ test("Nix pin refresh is watchdog-dispatched and campaign-bound", () => {
   assert.match(workflow, /dispatch_if_missing ci\.yml/);
   assert.match(workflow, /dispatch_if_missing upstream-build-app\.yml/);
   assert.match(workflow, /Official-Linux-Release-ID:/);
+  assert.match(workflow, /node - \.copr\/upstream-artifact\.json/);
+  assert.match(workflow, /releases\/download\/official-linux-/);
+  assert.match(workflow, /sha256: process\.env\.EXPECTED_AMD64_SHA256/);
+  assert.match(
+    workflow,
+    /git add \.copr\/upstream-artifact\.json nix\/upstream-linux-packages\.json/,
+  );
   assert.match(workflow, /nix build \.#checks\.x86_64-linux\.nix-runtime --no-link/);
   assert.match(workflow, /--force-with-lease=refs\/heads\/\$branch:\$remote_head/);
   assert.match(workflow, /git rev-parse 'FETCH_HEAD\^\{tree\}'/);
