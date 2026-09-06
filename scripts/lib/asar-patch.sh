@@ -4,6 +4,8 @@
 # Sourced by install.sh. Do not run directly.
 # shellcheck shell=bash
 
+ASAR_NPM_PACKAGE="@electron/asar@3.2.13"
+
 print_patch_report_summary() {
     local patch_report="$1"
     [ -f "$patch_report" ] || return 0
@@ -100,7 +102,7 @@ NODE
 
     upstream_sha="$(sha256sum "$app_asar" | awk '{print $1}')"
     info "Extracting a temporary app.asar copy for $descriptor_count active descriptor(s)"
-    npx --yes @electron/asar extract "$app_asar" "$WORK_DIR/app-extracted"
+    npx --yes "$ASAR_NPM_PACKAGE" extract "$app_asar" "$WORK_DIR/app-extracted"
     if [ -d "$resources_dir/app.asar.unpacked" ]; then
         cp -a "$resources_dir/app.asar.unpacked/." "$WORK_DIR/app-extracted/"
     fi
@@ -120,7 +122,7 @@ NODE
     fi
 
     (cd "$WORK_DIR/app-extracted" && find . -type f -printf '%P\n' | LC_ALL=C sort) > "$WORK_DIR/app.asar.ordering"
-    npx --yes @electron/asar pack \
+    npx --yes "$ASAR_NPM_PACKAGE" pack \
         "$WORK_DIR/app-extracted" \
         "$WORK_DIR/app.asar" \
         --ordering "$WORK_DIR/app.asar.ordering" \
