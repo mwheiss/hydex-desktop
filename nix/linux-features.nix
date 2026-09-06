@@ -13,13 +13,16 @@ let
       else throw "Linux feature directory '${name}' contains mismatched id '${manifest.id}'")
     featureDirectories;
   manifestIds = map (manifest: manifest.id) manifests;
+  nixFeatureIds = map (manifest: manifest.id) (
+    lib.filter (manifest: manifest.nixSupported or true) manifests
+  );
   internalFeatureIds = lib.sort builtins.lessThan (
     map (manifest: manifest.id) (lib.filter (manifest: manifest.internal or false) manifests)
   );
   supportedFeatureIds =
     if builtins.length manifestIds == builtins.length (lib.unique manifestIds)
     then lib.filter (featureId: !(lib.elem featureId internalFeatureIds))
-      (lib.sort builtins.lessThan manifestIds)
+      (lib.sort builtins.lessThan nixFeatureIds)
     else throw "Duplicate Linux feature IDs were discovered";
   manifestById = lib.listToAttrs (map (manifest: {
     name = manifest.id;
