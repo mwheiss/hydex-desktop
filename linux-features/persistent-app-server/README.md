@@ -45,32 +45,34 @@ Run as your ordinary user, not with `sudo`. The final command:
    installs the current user's service, enables lingering, and enables/starts
    `codex-remote-control.service`. It never restarts an already active service.
 
-The manifest remains opt-in as required by the feature framework. The install
-command makes it your standard local selection; menu launches need no exports.
-Use `install --no-linger` for login-only startup. Lingering enables boot startup
-and persistence after logout; the helper requests authorization only if needed.
+The feature and `remote-mobile-control` are tracked defaults for fresh native
+builds. Creating a local `linux-features/features.json` makes the selection
+explicit and can opt out. The source install command remains useful when you
+want setup plus lingering in one step. Use `install --no-linger` for login-only
+startup. Lingering enables boot startup and persistence after logout.
 
-This is a user install wrapper, not a root package-manager post-install script.
-A bare package transaction does not select an account and enroll its service.
-For an already installed feature-enabled native package, run once as its user:
+Native package installation never enrolls user accounts. The first Desktop,
+packaged `codex`, or packaged adapter invocation performs idempotent setup for
+that user before continuing. Automatic first-use setup is login-scoped and
+never prompts for lingering; enable lingering separately when boot/logout
+persistence is required:
 
 ```fish
-python3 /opt/codex-desktop/.codex-linux/features/persistent-app-server/manage.py setup
+loginctl enable-linger (id -un)
 ```
 
-Existing user setup survives subsequent package upgrades. No service action is
-performed by the Desktop launch or exit hooks.
+Existing user setup survives subsequent package upgrades. A later Desktop,
+packaged `codex`, or adapter call starts an inactive service if needed, but
+never restarts an active server.
 
-On pacman systems, selecting this feature also makes the Desktop package the
-system Codex CLI provider. It owns `/usr/bin/codex` and
+On pacman, Debian, and RPM systems, selecting this feature also makes the
+Desktop package the system Codex CLI provider. It owns `/usr/bin/codex` and
 `/usr/bin/codex-code-mode-host` as links to its version-matched packaged
-runtime, provides `codex` and `openai-codex`, and replaces/conflicts with
-`hydex-bin` and the supported `openai-codex` package variants. Installing the
-Desktop package therefore replaces the standalone Hydex CLI package in the
-same transaction. It also conflicts with the virtual `codex` provider and the
-explicit `codex-bin` package. The generic `codex` and `openai-codex` conflicts
-cover other packages that provide either CLI identity without automatically
-replacing intentionally different builds.
+runtime, provides `codex` and `openai-codex`, and replaces/conflicts with the
+native `hydex`/`hydex-bin` identities and supported `openai-codex` variants.
+Installing the Desktop package therefore replaces the standalone Hydex CLI
+package in the same transaction. It also conflicts with the virtual `codex`
+provider and the explicit `codex-bin` package.
 
 ## VS Code attachment
 
@@ -80,13 +82,22 @@ The package installs a dedicated extension executable at:
 /opt/codex-desktop/.codex-linux/features/persistent-app-server/codex-vscode-proxy
 ```
 
-Set `hydex.cliExecutable` (or `chatgpt.cliExecutable` for the corresponding
-official extension) to that path and reload the editor after the service is
-running. The wrapper forwards normal CLI probes such as `--version`, converts
+The patched Hydex extension discovers this path automatically on Linux and
+falls back to its bundled Hydex runtime when the Desktop package is absent. An
+exact stale `hydex.cliExecutable` value for this adapter is treated the same as
+unset. The corresponding official extension still requires an explicit
+`chatgpt.cliExecutable` setting. The wrapper forwards normal CLI probes such as `--version`, converts
 the current extension's exact stdio app-server launch into masked WebSocket text
 frames on the private Unix socket, and fails closed if a future extension
 changes that launch contract. Frames and handshake headers are hard-capped. It
 never starts a second app-server.
+
+Desktop supplies a per-launch `mcp_servers.codex_app` stdio definition for its
+app tools and browser pipe. The wrapper parses that exact launch override,
+materializes only the environment variables explicitly named by it, and merges
+the complete transport into `thread/start`, `thread/resume`, and `thread/fork`
+configuration. This preserves Desktop's dynamic MCP transport without adding it
+to the global service configuration or exposing it to VS Code-only clients.
 
 ## Dependency audit: why shared-app-server-socket is not needed
 
@@ -166,7 +177,9 @@ Desktop still constructs its normal `app-server proxy --sock` command in proxy
 mode, but `CODEX_CLI_PATH` routes that stdio child through the packaged adapter.
 The adapter validates the exact configured socket and permits only configuration
 overrides around that command before translating JSONL messages into Unix
-WebSocket frames. It never invokes the raw byte tunnel for a stdio client.
+WebSocket frames. Desktop's dynamic `codex_app` transport is carried as a
+thread-scoped override; unrelated request configuration remains unchanged. It
+never invokes the raw byte tunnel for a stdio client.
 
 The service uses `Type=simple`; its Python helper execs the packaged CLI:
 
@@ -217,23 +230,32 @@ tasks finish, load the upgraded binary with:
 systemctl --user restart codex-remote-control.service
 ```
 
-VS Code must be configured to use the packaged proxy executable described
-above. This feature does not change thread writer/approval rules, explicit cancellation,
+The patched Hydex VSIX discovers the packaged proxy as described above. This
+feature does not change thread writer/approval rules, explicit cancellation,
 account eligibility, suspend, server crashes, or GUI/keyring requirements.
 Desktop-injected process-start settings cannot retroactively configure an
 already running server. Native systemd installations are supported; AppImage
 mounts and independently managed Nix services are not adopted by this helper.
+The AppImage builder refuses an app containing this default feature; select the
+explicit feature-free configuration before building AppImage.
 
 ## Remove
 
-After finishing tasks, remove this feature's service before uninstalling its app:
+Native package removal stops active copies and scans normal local home
+directories. It removes only marker-validated service/configuration files and
+only an exact packaged-adapter value from strict-JSON Code, Code - OSS, or
+VSCodium user/profile settings. JSON-with-comments files and foreign or unsafe
+state are preserved with a warning. Codex data, credentials, unrelated editor
+settings, and lingering are preserved.
+
+For a source/manual installation, remove the current user's service explicitly:
 
 ```fish
 python3 linux-features/persistent-app-server/manage.py remove
 ```
 
-Then disable `persistent-app-server` and rebuild normally. Removal preserves
-Codex data, credentials and lingering (other user services may need it).
+Then create an explicit local feature selection without
+`persistent-app-server` and rebuild normally.
 
 ## Validation boundary
 
