@@ -319,8 +319,8 @@ mod tests {
         WindowInfo {
             window_id: 1,
             title: Some("Codex".to_string()),
-            app_id: Some("codex-desktop".to_string()),
-            wm_class: Some("codex-desktop".to_string()),
+            app_id: Some("hydex-desktop".to_string()),
+            wm_class: Some("hydex-desktop".to_string()),
             pid: Some(1234),
             bounds: Some(WindowBounds {
                 x: Some(0),

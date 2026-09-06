@@ -12,7 +12,7 @@ may be backfilled by the next milestone commit).
 - [x] Only signed stable OpenAI APT metadata is trusted for unattended builds.
 - [x] Only `amd64` and `arm64` are supported.
 - [x] A clean build preserves upstream `resources/app.asar` byte-for-byte.
-- [x] The output remains `codex-desktop` under `/opt/codex-desktop` and does not
+- [x] The output remains `hydex-desktop` under `/opt/hydex-desktop` and does not
   install the upstream APT source, key, or maintainer scripts.
 - [x] All optional features are disabled in committed configuration.
 - [x] Known retired feature IDs are ignored; arbitrary unknown IDs fail.
@@ -30,7 +30,7 @@ may be backfilled by the next milestone commit).
 | 4 | Signed-package updater and state migration | complete | 48 Rust tests; Clippy; signed metadata-only probe; updater-enabled deb payload | `47f6d69d` |
 | 5 | Nix and signed-package CI/watchdog | complete | flake evaluation + Nix package check; signed full amd64/arm64 package verification; cross-arch clean ASAR equality | `eaf34e8e` |
 | 6 | Documentation and final repository cleanup | complete | uninterrupted `CI_SKIP_PULL=1 ./scripts/ci-local.sh all`; forbidden-reference scan; `git diff --check` | `916a8337` |
-| 7 | Community identity and legacy bundled-plugin handoff | complete | distinct ChatGPT Community desktop/icon; Browser and Chrome official clients connect after cache migration; newest native package is selected for installation | `43e2cb2b`, `ec281e0a`, `f1699543` |
+| 7 | Community identity and legacy bundled-plugin handoff | complete | distinct Hydex desktop/icon; Browser and Chrome official clients connect after cache migration; newest native package is selected for installation | `43e2cb2b`, `ec281e0a`, `f1699543` |
 | 8 | Documentation, optional-feature, and package-contract re-audit | complete | 29 retained manifests default-off; four nonfunctional/redundant IDs retired; prebuilt native artifacts in update-builder; raw-official feature, package metadata/architecture, Node/Rust/smoke checks | this commit |
 
 ## Build, package, updater, CI, and documentation checklist
@@ -58,8 +58,8 @@ may be backfilled by the next milestone commit).
 - [x] Keep declarative env/prelaunch/electronArgs/launcher/coldStart/afterExit hooks.
 - [x] Pass URI/CLI arguments through unchanged; wait only for after-exit hooks.
 - [x] Remove custom single-instance/warm-start/webview/process supervision.
-- [x] Preserve `codex-desktop` identity and `/opt/codex-desktop` layout.
-- [x] Retarget AppArmor to `/opt/codex-desktop/ChatGPT` for system packages.
+- [x] Preserve `hydex-desktop` identity and `/opt/hydex-desktop` layout.
+- [x] Retarget AppArmor to `/opt/hydex-desktop/ChatGPT` for system packages.
 - [x] Do not automatically add `--no-sandbox` to AppImage.
 - [x] Align dependency mappings for deb/RPM/pacman and inspect every payload.
 
@@ -85,10 +85,10 @@ may be backfilled by the next milestone commit).
 
 - [x] Rewrite README, architecture, build/package, native setup, updater, Nix,
   troubleshooting, feature architecture, validation playbook, and `AGENTS.md`.
-- [x] Explain official `chatgpt` versus custom `codex-desktop` coexistence.
+- [x] Explain official `chatgpt` versus custom `hydex-desktop` coexistence.
 - [x] Explain shared `Codex` profile and concurrent-launch restriction.
-- [x] Name the custom desktop **ChatGPT Community** while retaining the
-  `codex-desktop` package/bin/path identity.
+- [x] Name the custom desktop **Hydex** while retaining the
+  `hydex-desktop` package/bin/path identity.
 - [x] Document the narrow Browser/Chrome legacy-cache migration and safe manual
   recovery without deleting arbitrary or user-authored plugins.
 - [x] Document feature retirement and zero default ASAR patches.

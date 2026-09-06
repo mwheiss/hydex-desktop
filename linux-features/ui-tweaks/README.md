@@ -1,6 +1,6 @@
 # UI Tweaks
 
-`ui-tweaks` is an optional Linux feature for small ChatGPT Community UI
+`ui-tweaks` is an optional Linux feature for small Hydex UI
 customizations. It is disabled by default and is intended as a shared place for
 future visual tweaks that are useful to some Linux users but should not affect
 the baseline app.
