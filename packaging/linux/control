@@ -4,10 +4,11 @@ Section: utils
 Priority: optional
 Architecture: __ARCH__
 __CODEX_CLI_PACKAGE_METADATA__
-Maintainer: ChatGPT Community for Linux Maintainers
+__DESKTOP_PACKAGE_TRANSITION_METADATA__
+Maintainer: Hydex for Linux Maintainers
 Depends: __UPSTREAM_DEPENDENCIES__, __UPDATER_DEPENDENCIES____LINUX_FEATURE_DEPENDENCIES__
 Recommends: __UPSTREAM_RECOMMENDS__
 Suggests: __UPSTREAM_SUGGESTS__
-Description: ChatGPT Community for Linux
- Custom codex-desktop distribution built from OpenAI's signed official Linux package.
+Description: Hydex for Linux
+ Custom hydex-desktop distribution built from OpenAI's signed official Linux package.
  The complete official Linux runtime, Codex CLI, rg, and code-mode host are bundled.

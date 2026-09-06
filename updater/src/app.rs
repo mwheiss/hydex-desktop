@@ -227,7 +227,7 @@ async fn check(config: &RuntimeConfig, state: &mut PersistedState, paths: &Runti
     }
 
     if config.notifications {
-        let _ = notify::send("codex-desktop update ready", &format!("Version {} has been rebuilt from OpenAI's signed Linux package.", metadata.version));
+        let _ = notify::send("hydex-desktop update ready", &format!("Version {} has been rebuilt from OpenAI's signed Linux package.", metadata.version));
     }
     install_ready_locked(config, state, paths, false).await
 }
@@ -289,7 +289,7 @@ async fn install_ready_locked(
         state.waiting_for_app_exit_auto_install =
             !state.install_after_app_exit_requested && config.auto_install_on_app_exit;
         state.save_updater(&paths.state_file)?;
-        println!("Update is ready; close ChatGPT Community to install it.");
+        println!("Update is ready; close Hydex to install it.");
         return Ok(());
     }
     if !explicit_retry && auth_retry_blocked {
@@ -355,7 +355,7 @@ async fn install_ready_locked(
     state.save_updater(&paths.state_file)?;
     let _ = cache_cleanup::prune(&paths.cache_dir, state);
     if config.notifications {
-        let _ = notify::send("codex-desktop updated", &format!("Installed {}.", state.installed_version));
+        let _ = notify::send("hydex-desktop updated", &format!("Installed {}.", state.installed_version));
     }
     Ok(())
 }

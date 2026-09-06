@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Guided, conservative setup helper for native ChatGPT Community builds.
+# Guided, conservative setup helper for native Hydex builds.
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 FEATURES_ROOT="${CODEX_LINUX_FEATURES_ROOT:-$REPO_DIR/linux-features}"
-PACKAGE_NAME="${PACKAGE_NAME:-codex-desktop}"
+PACKAGE_NAME="${PACKAGE_NAME:-hydex-desktop}"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib/linux-target-detect.sh"
 SETUP_ERROR_REPORTED=0
@@ -379,10 +379,10 @@ settings_file_path() {
         printf '%s\n' "$CODEX_LINUX_SETTINGS_FILE"
     else
         local config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
-        local app_id="${CODEX_LINUX_APP_ID:-${CODEX_APP_ID:-codex-desktop}}"
+        local app_id="${CODEX_LINUX_APP_ID:-${CODEX_APP_ID:-hydex-desktop}}"
         case "$app_id" in
             */*|*[!A-Za-z0-9._-]*|"."|".."|"")
-                app_id="codex-desktop"
+                app_id="hydex-desktop"
                 ;;
         esac
         printf '%s\n' "$config_home/$app_id/settings.json"
@@ -416,7 +416,7 @@ read_aloud_python_path() {
         value="$(json_setting_value "codex-linux-read-aloud-kokoro-python")"
     fi
     if [ -z "$value" ]; then
-        value="${XDG_DATA_HOME:-$HOME/.local/share}/codex-desktop/read-aloud/kokoro-venv/bin/python"
+        value="${XDG_DATA_HOME:-$HOME/.local/share}/hydex-desktop/read-aloud/kokoro-venv/bin/python"
     fi
     printf '%s\n' "$value"
 }
@@ -552,7 +552,7 @@ print_system_summary() {
         atomic_host="yes"
     fi
 
-    info "ChatGPT Community guided setup"
+    info "Hydex guided setup"
     info "Repository: $REPO_DIR"
     info "Distro: ID=${OS_RELEASE_ID:-unknown} ID_LIKE=${OS_RELEASE_ID_LIKE:-unknown} VERSION_ID=${OS_RELEASE_VERSION_ID:-unknown}"
     info "Package manager: $(detect_package_manager)"
@@ -867,7 +867,7 @@ else:
     print("[setup] Available Linux features: none found")
 
 if apply_changes and (enable or disable):
-    print("[setup] Feature changes apply after rebuilding and reinstalling ChatGPT Community.")
+    print("[setup] Feature changes apply after rebuilding and reinstalling Hydex.")
 PY
     then
         SETUP_ERROR_REPORTED=1
@@ -895,7 +895,7 @@ print_safe_disable_guidance() {
 
     if list_includes_id "$disable_raw" "remote-mobile-control"; then
         local config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
-        local key_file="$config_home/codex-desktop/remote-control-device-keys/remote-control-device-keys-v1.json"
+        local key_file="$config_home/hydex-desktop/remote-control-device-keys/remote-control-device-keys-v1.json"
         info "Remote mobile control opt-out: Not deleting $key_file."
         info "Revoke paired devices from Codex Settings/Connections or ChatGPT before deleting local keys manually."
     fi
@@ -903,7 +903,7 @@ print_safe_disable_guidance() {
     if list_includes_id "$disable_raw" "read-aloud" ||
         list_includes_id "$disable_raw" "read-aloud-mcp"; then
         local data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
-        local read_aloud_data="$data_home/codex-desktop/read-aloud"
+        local read_aloud_data="$data_home/hydex-desktop/read-aloud"
         local read_aloud_model
         local read_aloud_voices
         local read_aloud_cache="$HOME/.codex/plugins/cache/openai-bundled/read-aloud"
@@ -945,7 +945,7 @@ cleanup_path_is_safe() {
             ;;
     esac
     case "$path" in
-        "$config_home"/codex-desktop/*|"$data_home"/codex-desktop/read-aloud|"$data_home"/codex-desktop/read-aloud/*|"$data_home"/kokoro/kokoro-v1.0.onnx|"$data_home"/kokoro/voices-v1.0.bin|"$HOME"/.codex/plugins/cache/openai-bundled/read-aloud|"$HOME"/.codex/plugins/cache/openai-bundled/read-aloud/*)
+        "$config_home"/hydex-desktop/*|"$data_home"/hydex-desktop/read-aloud|"$data_home"/hydex-desktop/read-aloud/*|"$data_home"/kokoro/kokoro-v1.0.onnx|"$data_home"/kokoro/voices-v1.0.bin|"$HOME"/.codex/plugins/cache/openai-bundled/read-aloud|"$HOME"/.codex/plugins/cache/openai-bundled/read-aloud/*)
             return 0
             ;;
     esac
@@ -1018,7 +1018,7 @@ run_feature_cleanup() {
 
     if list_includes_id "$cleanup_raw" "remote-mobile-control"; then
         local config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
-        local key_file="$config_home/codex-desktop/remote-control-device-keys/remote-control-device-keys-v1.json"
+        local key_file="$config_home/hydex-desktop/remote-control-device-keys/remote-control-device-keys-v1.json"
         info "Remote mobile control cleanup: revoke paired devices in Codex Settings/Connections or ChatGPT before deleting local keys."
         confirm_and_delete_path "$key_file"
     fi
@@ -1026,7 +1026,7 @@ run_feature_cleanup() {
     if list_includes_id "$cleanup_raw" "read-aloud" ||
         list_includes_id "$cleanup_raw" "read-aloud-mcp"; then
         local data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
-        local read_aloud_data="$data_home/codex-desktop/read-aloud"
+        local read_aloud_data="$data_home/hydex-desktop/read-aloud"
         local read_aloud_model
         local read_aloud_voices
         local read_aloud_cache="$HOME/.codex/plugins/cache/openai-bundled/read-aloud"
@@ -1175,7 +1175,7 @@ prompt_for_feature_changes_gui() {
             rows+=("$id" "${title_of[$id]}")
         done
         selected="$(zenity --list --checklist \
-            --title="ChatGPT Community features" \
+            --title="Hydex features" \
             --text="Select the optional Linux features to enable for the next build." \
             --column="Enable" --column="Feature" --column="Description" \
             --print-column=2 --separator=$'\n' \
