@@ -1,8 +1,13 @@
 Name:           __PACKAGE_NAME__
 Version:        __RPM_VERSION__
 Release:        __RPM_RELEASE__%{?dist}
+%global codex_rhel_compat __RPM_COMPAT_MAJOR__
 Summary:        ChatGPT Community for Linux
+%if 0%{codex_rhel_compat}
+License:        Proprietary and LGPLv2+ and GPLv3+ with exceptions and ASL 2.0
+%else
 License:        Proprietary
+%endif
 ExclusiveArch:  __ARCH__
 %global __requires_exclude_from ^/opt/__PACKAGE_NAME__/.*$
 %global __provides_exclude_from ^/opt/__PACKAGE_NAME__/.*$
@@ -17,6 +22,8 @@ ExclusiveArch:  __ARCH__
 %ifarch x86_64 aarch64
 %global codex_elf_suffix ()(64bit)
 %endif
+
+__CODEX_CLI_PACKAGE_METADATA__
 
 %if __PACKAGE_WITH_UPDATER__
 Requires:       polkit, curl, dpkg, nodejs, xdg-utils
@@ -33,7 +40,10 @@ Requires:       libatk-1.0.so.0%{codex_elf_suffix}, libatspi.so.0%{codex_elf_suf
 Requires:       libdbus-1.so.3%{codex_elf_suffix}, libexpat.so.1%{codex_elf_suffix}, libgdk_pixbuf-2.0.so.0%{codex_elf_suffix}
 Requires:       libglib-2.0.so.0%{codex_elf_suffix}, libgtk-3.so.0%{codex_elf_suffix}, libnotify.so.4%{codex_elf_suffix}
 Requires:       libdrm.so.2%{codex_elf_suffix}, libnspr4.so%{codex_elf_suffix}, libnss3.so%{codex_elf_suffix}
-Requires:       libpango-1.0.so.0%{codex_elf_suffix}, libssl.so.3%{codex_elf_suffix}, libstdc++.so.6%{codex_elf_suffix}
+Requires:       libpango-1.0.so.0%{codex_elf_suffix}, libstdc++.so.6%{codex_elf_suffix}
+%if ! 0%{codex_rhel_compat}
+Requires:       libssl.so.3%{codex_elf_suffix}
+%endif
 Requires:       libudev.so.1%{codex_elf_suffix}, libusb-1.0.so.0%{codex_elf_suffix}, libX11.so.6%{codex_elf_suffix}
 Requires:       libX11-xcb.so.1%{codex_elf_suffix}, libxcb.so.1%{codex_elf_suffix}, libxcb-dri3.so.0%{codex_elf_suffix}
 Requires:       libXcomposite.so.1%{codex_elf_suffix}, libXdamage.so.1%{codex_elf_suffix}
@@ -41,6 +51,20 @@ Requires:       libXext.so.6%{codex_elf_suffix}, libXfixes.so.3%{codex_elf_suffi
 Requires:       libXrandr.so.2%{codex_elf_suffix}, libgbm.so.1%{codex_elf_suffix}, libGL.so.1%{codex_elf_suffix}
 Requires:       libgraphite2.so.3%{codex_elf_suffix}, xz, __LINUX_FEATURE_DEPENDENCIES__
 Recommends:     zenity, kdialog
+%if 0%{codex_rhel_compat} == 7
+Requires:       __PACKAGE_NAME__-cli-runtime = %{version}-%{release}
+%endif
+
+%if 0%{codex_rhel_compat} == 7
+%package cli-runtime
+Summary:        Version-matched Hydex CLI runtime for ChatGPT Community
+License:        Proprietary
+Requires:       __PACKAGE_NAME__ = %{version}-%{release}
+
+%description cli-runtime
+Static version-matched Hydex CLI split out so RPM 4.11 can unpack each RHEL 7
+payload below its legacy cpio size boundary.
+%endif
 
 %description
 Custom codex-desktop distribution built from OpenAI's signed official Linux package.
@@ -58,9 +82,13 @@ cp -a "__RPM_STAGING_DIR__/." "%{buildroot}/"
 
 %files
 %defattr(-,root,root,-)
+%if 0%{codex_rhel_compat} == 7
+%exclude /opt/__PACKAGE_NAME__/resources/codex
+%endif
 /opt/__PACKAGE_NAME__/
 /etc/apparmor.d/__PACKAGE_NAME__
 /usr/bin/__PACKAGE_NAME__
+__CODEX_CLI_PACKAGE_FILES__
 %if __PACKAGE_WITH_UPDATER__
 /usr/bin/codex-update-manager
 /usr/lib/systemd/user/codex-update-manager.service
@@ -70,6 +98,12 @@ cp -a "__RPM_STAGING_DIR__/." "%{buildroot}/"
 __LINUX_FEATURE_FILES__
 %if __PACKAGE_WITH_UPDATER__
 /usr/share/polkit-1/actions/com.github.ilysenko.codex-desktop-linux.update.policy
+%endif
+
+%if 0%{codex_rhel_compat} == 7
+%files cli-runtime
+%defattr(-,root,root,-)
+/opt/__PACKAGE_NAME__/resources/codex
 %endif
 
 %post
@@ -106,6 +140,12 @@ fi
 
 %if __PACKAGE_WITH_UPDATER__
 %preun
+PERSISTENT_APP_DIR=/opt/__PACKAGE_NAME__
+PERSISTENT_SERVICE_HELPER=$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/package-lifecycle.sh
+if [ $1 -eq 0 ] && [ -f "$PERSISTENT_SERVICE_HELPER" ]; then
+    . "$PERSISTENT_SERVICE_HELPER"
+    codex_persistent_remove_all_users || true
+fi
 SERVICE_HELPER=/opt/__PACKAGE_NAME__/update-builder/packaging/linux/codex-update-manager-user-service.sh
 [ -f "$SERVICE_HELPER" ] && . "$SERVICE_HELPER"
 if [ $1 -eq 0 ] && [ -f "$SERVICE_HELPER" ]; then
@@ -114,6 +154,12 @@ if [ $1 -eq 0 ] && [ -f "$SERVICE_HELPER" ]; then
 fi
 %else
 %preun
+PERSISTENT_APP_DIR=/opt/__PACKAGE_NAME__
+PERSISTENT_SERVICE_HELPER=$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/package-lifecycle.sh
+if [ $1 -eq 0 ] && [ -f "$PERSISTENT_SERVICE_HELPER" ]; then
+    . "$PERSISTENT_SERVICE_HELPER"
+    codex_persistent_remove_all_users || true
+fi
 CLEANUP_HELPER=/opt/__PACKAGE_NAME__/.codex-linux/codex-no-updater-transition-cleanup.sh
 if [ -f "$CLEANUP_HELPER" ]; then
     . "$CLEANUP_HELPER"

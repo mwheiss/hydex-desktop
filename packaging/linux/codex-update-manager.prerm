@@ -1,6 +1,17 @@
 #!/bin/sh
 set -eu
 
+PERSISTENT_APP_DIR="/opt/codex-desktop"
+PERSISTENT_SERVICE_HELPER="$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/package-lifecycle.sh"
+case "${1:-}" in
+    remove|purge|deconfigure)
+        if [ -f "$PERSISTENT_SERVICE_HELPER" ]; then
+            . "$PERSISTENT_SERVICE_HELPER"
+            codex_persistent_remove_all_users || true
+        fi
+        ;;
+esac
+
 SERVICE_NAME="codex-update-manager.service"
 
 for runtime_dir in /run/user/*; do
