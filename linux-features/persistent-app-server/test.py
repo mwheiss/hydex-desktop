@@ -63,6 +63,8 @@ class Tests(unittest.TestCase):
         shutil.copyfile(HERE / "manage.py", self.feature / "manage.py")
         shutil.copyfile(HERE / "vscode-proxy.py", self.feature / "codex-vscode-proxy")
         (self.feature / "codex-vscode-proxy").chmod(0o755)
+        shutil.copyfile(HERE / "codex-cli-wrapper", self.feature / "codex-cli-wrapper")
+        (self.feature / "codex-cli-wrapper").chmod(0o755)
         self.cli = self.app / "resources/codex"
         self.cli.parent.mkdir()
         self.cli.write_text("#!/bin/sh\nexit 0\n")
@@ -98,14 +100,14 @@ class Tests(unittest.TestCase):
     def test_manifest_uses_existing_transport_and_requires_mobile(self):
         value = json.loads((HERE / "feature.json").read_text())
         self.assertEqual(value["requires"], ["remote-mobile-control"])
-        self.assertFalse(value["defaultEnabled"])
+        self.assertTrue(value["defaultEnabled"])
         self.assertEqual(set(value["conflicts"]), m.INCOMPATIBLE)
         self.assertNotIn("entrypoints", value)
         self.assertNotIn("afterExit", value["runtimeHooks"])
         self.assertEqual(value["packageHooks"], [{
-            "source": "package-pacman.sh", "formats": ["pacman"]}])
+            "source": "package-native.sh", "formats": ["deb", "rpm", "pacman"]}])
 
-    def test_pacman_package_hook_links_the_packaged_cli(self):
+    def test_native_package_hook_links_the_packaged_cli(self):
         package_root = self.root / "package"
         package_app = package_root / "opt/codex-desktop"
         resources = package_app / "resources"
@@ -114,29 +116,102 @@ class Tests(unittest.TestCase):
             path = resources / executable
             path.write_text("#!/bin/sh\nexit 0\n")
             path.chmod(0o755)
+        feature_dir = package_app / ".codex-linux/features/persistent-app-server"
+        feature_dir.mkdir(parents=True)
+        wrapper = feature_dir / "codex-cli-wrapper"
+        wrapper.write_text("#!/bin/sh\nexit 0\n")
+        wrapper.chmod(0o755)
         (package_root / "usr/bin").mkdir(parents=True)
-        subprocess.run(["bash", str(HERE / "package-pacman.sh")], check=True, env={
+        subprocess.run(["bash", str(HERE / "package-native.sh")], check=True, env={
             **os.environ,
             "PACKAGE_ROOT": str(package_root),
             "PACKAGE_APP_DIR": str(package_app),
             "PACKAGE_NAME": "codex-desktop",
         })
-        self.assertEqual(os.readlink(package_root / "usr/bin/codex"),
-                         "/opt/codex-desktop/resources/codex")
+        self.assertEqual(
+            os.readlink(package_root / "usr/bin/codex"),
+            "/opt/codex-desktop/.codex-linux/features/persistent-app-server/codex-cli-wrapper",
+        )
         self.assertEqual(os.readlink(package_root / "usr/bin/codex-code-mode-host"),
                          "/opt/codex-desktop/resources/codex-code-mode-host")
+
+    def test_packaged_cli_first_call_ensures_service_then_preserves_cli_arguments(self):
+        manager_log = self.root / "manager.log"
+        cli_log = self.root / "cli.log"
+        self.feature.joinpath("manage.py").write_text(
+            "#!/usr/bin/python3\nimport os,sys\nopen(os.environ['MANAGER_LOG'],'w').write('\\n'.join(sys.argv[1:]))\n")
+        self.cli.write_text(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CLI_LOG\"\n")
+        cli_link = self.root / "bin/codex"
+        cli_link.parent.mkdir()
+        cli_link.symlink_to(self.feature / "codex-cli-wrapper")
+        result = subprocess.run(
+            [str(cli_link), "resume", "--all"],
+            check=False,
+            env={**os.environ, "MANAGER_LOG": str(manager_log), "CLI_LOG": str(cli_log)},
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(manager_log.read_text().splitlines(), [
+            "ensure", "--app-dir", str(self.app), "--no-linger",
+        ])
+        self.assertEqual(cli_log.read_text().splitlines(), ["resume", "--all"])
 
     def test_client_adapter_attaches_vscode_and_desktop_launches(self):
         config = self.install()
         socket_path = m.socket_path(config)
         socket_path.parent.mkdir(parents=True)
+        desktop_override = (
+            'mcp_servers.codex_app={"command"="/bin/cat","args"=["--serve"],'
+            '"env_vars"=["CODEX_APP_TOOLS_PIPE_PATH"],"enabled"=true,'
+            '"tools"={"read_thread"={"approval_mode"="prompt"}}}'
+        )
         invocations = [
-            ["-c", "features.code_mode_host=true", "app-server",
-             "--analytics-default-enabled"],
-            ["-c", "features.code_mode_host=true", "app-server", "proxy", "--sock",
-             str(socket_path), "-c", 'mcp_servers.codex_app={"enabled"=true}'],
+            (
+                ["-c", "features.code_mode_host=true", "app-server",
+                 "--analytics-default-enabled"],
+                {"method": "initialize", "id": 0, "params": {}},
+                {"method": "initialize", "id": 0, "params": {}},
+            ),
+            (
+                ["-c", "features.code_mode_host=true", "app-server", "proxy", "--sock",
+                 str(socket_path), "-c", desktop_override],
+                {
+                    "method": "thread/resume",
+                    "id": 1,
+                    "params": {
+                        "threadId": "thread-1",
+                        "config": {
+                            "mcp_servers.codex_app.enabled_tools": ["read_thread"],
+                            "model_context_window": 1234,
+                        },
+                    },
+                },
+                {
+                    "method": "thread/resume",
+                    "id": 1,
+                    "params": {
+                        "threadId": "thread-1",
+                        "config": {
+                            "mcp_servers.codex_app": {
+                                "command": "/bin/cat",
+                                "args": ["--serve"],
+                                "env_vars": ["CODEX_APP_TOOLS_PIPE_PATH"],
+                                "env": {
+                                    "CODEX_APP_TOOLS_PIPE_PATH": "/tmp/codex-app-tools.sock",
+                                },
+                                "enabled": True,
+                                "enabled_tools": ["read_thread"],
+                                "tools": {
+                                    "read_thread": {"approval_mode": "prompt"},
+                                },
+                            },
+                            "model_context_window": 1234,
+                        },
+                    },
+                },
+            ),
         ]
-        for invocation in invocations:
+        for invocation, request_message, expected_message in invocations:
             with self.subTest(invocation=invocation):
                 if socket_path.exists():
                     socket_path.unlink()
@@ -176,9 +251,10 @@ class Tests(unittest.TestCase):
                             payload = bytearray()
                             while len(payload) < length:
                                 payload.extend(connection.recv(length - len(payload)))
-                            received.append(bytes(
+                            decoded = bytes(
                                 value ^ mask[index % 4]
-                                for index, value in enumerate(payload)))
+                                for index, value in enumerate(payload))
+                            received.append(json.loads(decoded))
                             response = b'{"id":0,"result":{"ok":true}}'
                             connection.sendall(bytes((0x81, len(response))) + response)
                             connection.sendall(bytes((0x88, 0)))
@@ -189,17 +265,79 @@ class Tests(unittest.TestCase):
                 result = subprocess.run(
                     [sys.executable, str(HERE / "vscode-proxy.py"), *invocation],
                     check=False,
-                    input='{"method":"initialize","id":0,"params":{}}\n',
+                    input=json.dumps(request_message) + "\n",
                     text=True,
                     capture_output=True,
-                    env=os.environ,
+                    env={
+                        **os.environ,
+                        "CODEX_APP_TOOLS_PIPE_PATH": "/tmp/codex-app-tools.sock",
+                        "UNLISTED_SECRET": "must-not-be-forwarded",
+                    },
                 )
                 thread.join(timeout=5)
                 self.assertFalse(thread.is_alive())
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(
-                    received, [b'{"method":"initialize","id":0,"params":{}}'])
+                self.assertEqual(received, [expected_message])
                 self.assertEqual(result.stdout.strip(), '{"id":0,"result":{"ok":true}}')
+
+    def test_desktop_mcp_transport_is_injected_into_all_thread_creation_requests(self):
+        proxy_spec = importlib.util.spec_from_file_location(
+            "persistent_server_proxy", HERE / "vscode-proxy.py")
+        proxy = importlib.util.module_from_spec(proxy_spec)
+        proxy_spec.loader.exec_module(proxy)
+        base = {"command": "/bin/cat", "enabled": True}
+        for method in proxy.THREAD_CONFIG_METHODS:
+            with self.subTest(method=method):
+                request = {"method": method, "id": 1, "params": {}}
+                rewritten = json.loads(proxy.inject_desktop_mcp_config(
+                    json.dumps(request).encode(), base))
+                self.assertEqual(
+                    rewritten["params"]["config"][proxy.DESKTOP_MCP_CONFIG_KEY],
+                    base,
+                )
+
+    def test_desktop_mcp_transport_materializes_only_declared_environment(self):
+        proxy_spec = importlib.util.spec_from_file_location(
+            "persistent_server_proxy_environment", HERE / "vscode-proxy.py")
+        proxy = importlib.util.module_from_spec(proxy_spec)
+        proxy_spec.loader.exec_module(proxy)
+        override = (
+            'mcp_servers.codex_app={"command"="/bin/cat",'
+            '"env"={"PATH"="/configured"},'
+            '"env_vars"=["PATH","CODEX_APP_TOOLS_PIPE_PATH"]}'
+        )
+        with patch.dict(os.environ, {
+            "PATH": "/process",
+            "CODEX_APP_TOOLS_PIPE_PATH": "/tmp/desktop.sock",
+            "UNLISTED_SECRET": "must-not-be-forwarded",
+        }):
+            config = proxy.desktop_mcp_config(["-c", override])
+        self.assertEqual(config["env"], {
+            "PATH": "/configured",
+            "CODEX_APP_TOOLS_PIPE_PATH": "/tmp/desktop.sock",
+        })
+
+    def test_desktop_mcp_parser_is_python36_compatible_and_fail_closed(self):
+        proxy_spec = importlib.util.spec_from_file_location(
+            "persistent_server_proxy_parser", HERE / "vscode-proxy.py")
+        proxy = importlib.util.module_from_spec(proxy_spec)
+        proxy_spec.loader.exec_module(proxy)
+        self.assertEqual(
+            proxy.parse_generated_inline_table(
+                '{command="/bin/tool",args=["a", "b"],enabled=true,'
+                'tools={run={approval_mode="prompt"}},timeout=10}'
+            ),
+            {
+                "command": "/bin/tool",
+                "args": ["a", "b"],
+                "enabled": True,
+                "tools": {"run": {"approval_mode": "prompt"}},
+                "timeout": 10,
+            },
+        )
+        for invalid in ("command=\"/bin/tool\"", "{'command'='/bin/tool'}", "{a.b=1}"):
+            with self.assertRaises((ValueError, json.JSONDecodeError)):
+                proxy.parse_generated_inline_table(invalid)
 
     def test_vscode_proxy_forwards_cli_probes_and_rejects_unknown_server_launches(self):
         self.install()
@@ -377,6 +515,25 @@ class Tests(unittest.TestCase):
         self.assertIn("env CODEX_REMOTE_CONTROL_APP_SERVER_PROXY_SOCKET=" + str(m.socket_path(config)), lines)
         self.assertEqual(self.system.calls, [])
 
+    def test_first_launch_sets_up_login_scoped_service(self):
+        with patch.object(m, "setup") as setup:
+            config = {
+                "codex_home": str(self.home / ".codex"),
+                "app_dir": str(self.app),
+                "unit_path": str(self.home / ".config/systemd/user/codex-remote-control.service"),
+            }
+            with patch.object(m, "read_config", return_value=config), \
+                    patch.object(m, "check_foreign_owner", return_value=False):
+                self.assertEqual(m.ensure_setup(self.app), config)
+        setup.assert_called_once_with(self.app, linger=False)
+
+    def test_first_launch_does_not_restart_active_service(self):
+        config = self.install()
+        with patch.object(m, "setup") as setup, \
+                patch.object(m, "check_foreign_owner", return_value=True):
+            self.assertEqual(m.ensure_setup(self.app), config)
+        setup.assert_not_called()
+
     def test_another_installation_cannot_attach_accidentally(self):
         config = self.install()
         with patch.dict(os.environ, {"CODEX_LINUX_APP_DIR": str(self.root / "other")}):
@@ -415,6 +572,27 @@ class Tests(unittest.TestCase):
         self.assertFalse(Path(config["unit_path"]).exists())
         self.assertFalse(m.config_path().exists())
         self.assertFalse(any("loginctl" in v for v in self.system.calls))
+
+    def test_package_uninstall_cleanup_removes_only_owned_state_and_exact_editor_override(self):
+        config = self.install()
+        settings = self.home / ".config/Code/User/settings.json"
+        settings.parent.mkdir(parents=True)
+        settings.write_text(json.dumps({
+            "hydex.cliExecutable": str(self.feature / "codex-vscode-proxy"),
+            "editor.fontSize": 14,
+        }))
+        cleanup_spec = importlib.util.spec_from_file_location(
+            "persistent_server_cleanup", HERE / "uninstall-cleanup.py")
+        cleanup = importlib.util.module_from_spec(cleanup_spec)
+        cleanup_spec.loader.exec_module(cleanup)
+
+        cleanup.remove_service_state(self.home, os.getuid(), self.app)
+        cleanup.remove_editor_override(
+            self.home, os.getuid(), self.feature / "codex-vscode-proxy")
+
+        self.assertFalse(m.config_path().exists())
+        self.assertFalse(Path(config["unit_path"]).exists())
+        self.assertEqual(json.loads(settings.read_text()), {"editor.fontSize": 14})
 
     def test_generated_unit_passes_systemd_static_verification(self):
         tool = shutil.which("systemd-analyze")
