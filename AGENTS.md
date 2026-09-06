@@ -4,8 +4,8 @@
 
 This repository repackages OpenAI's signed official Linux `chatgpt` package as
 the independently named `codex-desktop` distribution. It preserves the
-official ELF/Electron payload and bundled tools, adds disabled-by-default Linux
-features, builds deb/RPM/pacman/AppImage/Nix outputs, and ships a Rust update
+official ELF/Electron payload and bundled tools, adds tracked-default and opt-in
+Linux features, builds deb/RPM/pacman/AppImage/Nix outputs, and ships a Rust update
 manager that rebuilds from the signed stable APT repository.
 
 ## Non-negotiable rules
@@ -23,8 +23,9 @@ manager that rebuilds from the signed stable APT repository.
   community icon; `ChatGPT` without the qualifier identifies the upstream app.
 - The default core patch registry is empty. A core patch requires a reproduced
   launch/work blocker and a required regression test.
-- Experimental or workflow-specific behavior belongs in `linux-features/` and
-  remains disabled in committed configuration.
+- Experimental or workflow-specific behavior belongs in `linux-features/`.
+  A tracked default requires an explicit opt-out, feature-free validation, and
+  maintained native-package lifecycle coverage.
 - Known retired feature IDs are ignored; arbitrary unknown IDs remain errors.
 - Do not edit generated output (`codex-app/`, `dist/`, candidates, `target/`).
 
