@@ -61,7 +61,7 @@ node --test linux-features/frameless-titlebar/test.js
 ```
 
 For a manual check, enable the feature as above, rebuild, fully quit every
-ChatGPT Community and official ChatGPT process, then launch the app:
+Hydex and official ChatGPT process, then launch the app:
 
 - The primary and Quick Chat windows should show no Electron-drawn titlebar
   overlay buttons (minimize/maximize/close in the top-right corner) and no menu

@@ -18,7 +18,7 @@ Enable it by copying `linux-features/features.example.json` to
 ```
 
 Then rerun `./install.sh` or the native package build flow. Fully quit every
-ChatGPT Community process before launching the rebuilt app. Depending on the
+Hydex process before launching the rebuilt app. Depending on the
 desktop shell, open the tray menu with the tray icon's context-menu click
 (usually right-click on Linux); a normal left click still opens the app.
 
