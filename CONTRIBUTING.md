@@ -1,4 +1,4 @@
-# Contributing to ChatGPT Community for Linux
+# Contributing to Hydex for Linux
 
 Keep only one pull request open at a time (two only for an explicit maintainer
 exception). Keep each change focused and stay engaged through review.
@@ -10,8 +10,8 @@ fallback shapes.
 
 OpenAI's signed Linux `.deb` is the only upstream. Do not reintroduce an
 alternate source format or reconstruct parts of the upstream runtime.
-**ChatGPT Community** is the desktop display name;
-`codex-desktop` remains the package, executable, and path identity.
+**Hydex** is the desktop display name;
+`hydex-desktop` remains the package, executable, and path identity.
 
 ## Ways to contribute
 
@@ -57,8 +57,8 @@ Primary source routing:
 ## Setup
 
 ```bash
-git clone https://github.com/ilysenko/codex-desktop-linux.git
-cd codex-desktop-linux
+git clone https://github.com/mwheiss/hydex-desktop.git
+cd hydex-desktop
 bash scripts/install-deps.sh
 ./install.sh
 ```

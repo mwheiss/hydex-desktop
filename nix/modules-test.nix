@@ -46,13 +46,13 @@ let
     ];
   };
 
-  fakeDesktop = pkgs.runCommand "codex-desktop-module-test" { } ''
-    mkdir -p "$out/bin" "$out/share/applications" "$out/opt/codex-desktop/resources"
-    printf '#!/bin/sh\nprintf "%%s\\n" "''${CODEX_CLI_PATH-}"\n' > "$out/bin/codex-desktop"
-    chmod +x "$out/bin/codex-desktop"
-    printf '#!/bin/sh\nexit 0\n' > "$out/opt/codex-desktop/resources/codex"
-    chmod +x "$out/opt/codex-desktop/resources/codex"
-    printf '[Desktop Entry]\nExec=%s/bin/codex-desktop\n' "$out" > "$out/share/applications/codex-desktop.desktop"
+  fakeDesktop = pkgs.runCommand "hydex-desktop-module-test" { } ''
+    mkdir -p "$out/bin" "$out/share/applications" "$out/opt/hydex-desktop/resources"
+    printf '#!/bin/sh\nprintf "%%s\\n" "''${CODEX_CLI_PATH-}"\n' > "$out/bin/hydex-desktop"
+    chmod +x "$out/bin/hydex-desktop"
+    printf '#!/bin/sh\nexit 0\n' > "$out/opt/hydex-desktop/resources/codex"
+    chmod +x "$out/opt/hydex-desktop/resources/codex"
+    printf '[Desktop Entry]\nExec=%s/bin/hydex-desktop\n' "$out" > "$out/share/applications/hydex-desktop.desktop"
   '';
   fakeBundledCli = import ./bundled-codex-cli.nix {
     inherit pkgs;
@@ -199,13 +199,13 @@ assert lib.assertMsg
 assert lib.assertMsg
   (assertionsFail (evalHome contextEnvironmentFileConfig) && assertionsFail (evalNixOS contextEnvironmentFileConfig))
   "a context-bearing environmentFile was accepted";
-pkgs.runCommand "codex-desktop-module-evaluation" { } ''
+pkgs.runCommand "hydex-desktop-module-evaluation" { } ''
   test -x ${fakeBundledCli}/bin/codex
-  test "$(${builtins.head bundledHome.home.packages}/bin/codex-desktop)" = "${fakeBundledCli}/bin/codex"
-  test "$(${builtins.head bundledNixOS.environment.systemPackages}/bin/codex-desktop)" = "${fakeBundledCli}/bin/codex"
-  test "$(${homeCliPackage}/bin/codex-desktop)" = "${fakeCli}/bin/codex"
-  test "$(CODEX_CLI_PATH=/explicit/codex ${homeCliPackage}/bin/codex-desktop)" = "/explicit/codex"
-  grep -F "Exec=${homeCliPackage}/bin/codex-desktop" \
-    ${homeCliPackage}/share/applications/codex-desktop.desktop
+  test "$(${builtins.head bundledHome.home.packages}/bin/hydex-desktop)" = "${fakeBundledCli}/bin/codex"
+  test "$(${builtins.head bundledNixOS.environment.systemPackages}/bin/hydex-desktop)" = "${fakeBundledCli}/bin/codex"
+  test "$(${homeCliPackage}/bin/hydex-desktop)" = "${fakeCli}/bin/codex"
+  test "$(CODEX_CLI_PATH=/explicit/codex ${homeCliPackage}/bin/hydex-desktop)" = "/explicit/codex"
+  grep -F "Exec=${homeCliPackage}/bin/hydex-desktop" \
+    ${homeCliPackage}/share/applications/hydex-desktop.desktop
   touch "$out"
 ''

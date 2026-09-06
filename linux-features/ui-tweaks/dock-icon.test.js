@@ -367,7 +367,7 @@ test("nested disable leaves no Dock payload", () => {
 function createDesktopSyncFixture() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dock-icon-desktop-"));
   const dataHome = path.join(tempDir, "data");
-  const sourceDesktop = path.join(tempDir, "codex-desktop.desktop");
+  const sourceDesktop = path.join(tempDir, "hydex-desktop.desktop");
   const firstIcon = path.join(tempDir, "first.png");
   const secondIcon = path.join(tempDir, "second.png");
   const binDir = path.join(tempDir, "bin");
@@ -375,7 +375,7 @@ function createDesktopSyncFixture() {
   fs.mkdirSync(binDir, { recursive: true });
   fs.writeFileSync(
     sourceDesktop,
-    "[Desktop Entry]\nName=ChatGPT Community\nExec=/usr/bin/codex-desktop %u\nIcon=codex-desktop\nStartupWMClass=codex-desktop\n",
+    "[Desktop Entry]\nName=Hydex\nExec=/usr/bin/hydex-desktop %u\nIcon=hydex-desktop\nStartupWMClass=hydex-desktop\n",
   );
   fs.writeFileSync(firstIcon, "first-icon");
   fs.writeFileSync(secondIcon, "second-icon");
@@ -390,7 +390,7 @@ function createDesktopSyncFixture() {
     dataHome,
     env: {
       ...process.env,
-      CODEX_LINUX_APP_ID: "codex-desktop",
+      CODEX_LINUX_APP_ID: "hydex-desktop",
       CODEX_LINUX_DESKTOP_FILE_SOURCE: sourceDesktop,
       CODEX_TEST_CALLS: callsPath,
       HOME: tempDir,
@@ -399,10 +399,10 @@ function createDesktopSyncFixture() {
       XDG_DATA_HOME: dataHome,
     },
     firstIcon,
-    managedDesktop: path.join(dataHome, "applications", "codex-desktop.desktop"),
+    managedDesktop: path.join(dataHome, "applications", "hydex-desktop.desktop"),
     managedIcon: (
       selection,
-      appId = "codex-desktop",
+      appId = "hydex-desktop",
       content = selection === "chatgpt" ? "first-icon" : "second-icon",
     ) =>
       path.join(
@@ -413,7 +413,7 @@ function createDesktopSyncFixture() {
         "apps",
         `${appId}-dock-${selection}-${crypto.createHash("sha256").update(content).digest("hex")}.png`,
       ),
-    legacyIcon: (selection, appId = "codex-desktop") =>
+    legacyIcon: (selection, appId = "hydex-desktop") =>
       path.join(dataHome, "icons", "hicolor", "256x256", "apps", `${appId}-dock-${selection}.png`),
     secondIcon,
     tempDir,
@@ -544,7 +544,7 @@ test("prelaunch cleanup preserves a legacy marker without full managed-state pro
       fixture.managedDesktop,
       [
         "[Desktop Entry]",
-        "Name=ChatGPT Community",
+        "Name=Hydex",
         `Icon=${legacyIcon}`,
         "X-Codex-Linux-Dock-Icon=1",
       ].join("\n"),
@@ -693,7 +693,7 @@ test("content-addressed icons recover interrupted sync and cleanup states", () =
     assert.equal(fs.existsSync(orphanChatgpt), true);
     assert.equal(fs.existsSync(orphanCodex), false);
 
-    const modifiedOrphan = fixture.managedIcon("codex-light", "codex-desktop", "owned-before-edit");
+    const modifiedOrphan = fixture.managedIcon("codex-light", "hydex-desktop", "owned-before-edit");
     fs.writeFileSync(modifiedOrphan, "user-modified");
     const preservedModifiedOrphan = runDesktopCleanup(appDir, fixture.env);
     assert.equal(preservedModifiedOrphan.status, 0, preservedModifiedOrphan.stderr);
@@ -763,16 +763,16 @@ test("AppImage synchronization writes persistent launch commands for the app and
   const fixture = createDesktopSyncFixture();
   try {
     const sourceDir = path.join(fixture.tempDir, "mounted AppDir");
-    const sourceDesktop = path.join(sourceDir, "codex-desktop.desktop");
+    const sourceDesktop = path.join(sourceDir, "hydex-desktop.desktop");
     const appImage = path.join(fixture.tempDir, 'ChatGPT $Community "nightly" 100%.AppImage');
     fs.mkdirSync(sourceDir, { recursive: true });
     fs.writeFileSync(appImage, "appimage");
     fs.chmodSync(appImage, 0o755);
     fs.writeFileSync(
       sourceDesktop,
-      fs.readFileSync(path.resolve(__dirname, "../../packaging/appimage/codex-desktop.desktop"), "utf8")
-        .replaceAll("__PACKAGE_NAME__", "codex-desktop")
-        .replaceAll("__PACKAGE_DISPLAY_NAME__", "ChatGPT Community")
+      fs.readFileSync(path.resolve(__dirname, "../../packaging/appimage/hydex-desktop.desktop"), "utf8")
+        .replaceAll("__PACKAGE_NAME__", "hydex-desktop")
+        .replaceAll("__PACKAGE_DISPLAY_NAME__", "Hydex")
         .replaceAll("__PACKAGE_COMMENT__", "Community package")
         .replaceAll("__VERSION__", "test"),
     );
@@ -795,7 +795,7 @@ test("AppImage synchronization writes persistent launch commands for the app and
     );
     assert.equal(
       managed.includes(
-        `Exec=env CHROME_DESKTOP=codex-desktop.desktop CODEX_MULTI_LAUNCH=1 "${desktopAppImage}" --new-instance\n`,
+        `Exec=env CHROME_DESKTOP=hydex-desktop.desktop CODEX_MULTI_LAUNCH=1 "${desktopAppImage}" --new-instance\n`,
       ),
       true,
     );
@@ -816,13 +816,13 @@ test("AppImage synchronization refuses to persist a launcher without a usable Ap
   const fixture = createDesktopSyncFixture();
   try {
     const sourceDir = path.join(fixture.tempDir, "mounted-AppDir");
-    const sourceDesktop = path.join(sourceDir, "codex-desktop.desktop");
+    const sourceDesktop = path.join(sourceDir, "hydex-desktop.desktop");
     fs.mkdirSync(sourceDir, { recursive: true });
     fs.writeFileSync(
       sourceDesktop,
-      fs.readFileSync(path.resolve(__dirname, "../../packaging/appimage/codex-desktop.desktop"), "utf8")
-        .replaceAll("__PACKAGE_NAME__", "codex-desktop")
-        .replaceAll("__PACKAGE_DISPLAY_NAME__", "ChatGPT Community")
+      fs.readFileSync(path.resolve(__dirname, "../../packaging/appimage/hydex-desktop.desktop"), "utf8")
+        .replaceAll("__PACKAGE_NAME__", "hydex-desktop")
+        .replaceAll("__PACKAGE_DISPLAY_NAME__", "Hydex")
         .replaceAll("__PACKAGE_COMMENT__", "Community package")
         .replaceAll("__VERSION__", "test"),
     );
@@ -877,7 +877,7 @@ test("desktop synchronization discovers side-by-side launchers after an incompat
       ].join("\n"),
     );
     delete fixture.env.CODEX_LINUX_DESKTOP_FILE_SOURCE;
-    fixture.env.BAMF_DESKTOP_FILE_HINT = path.join(fixture.tempDir, "codex-desktop.desktop");
+    fixture.env.BAMF_DESKTOP_FILE_HINT = path.join(fixture.tempDir, "hydex-desktop.desktop");
     fixture.env.CODEX_LINUX_APP_ID = appId;
     fixture.env.XDG_DATA_DIRS = dataDir;
 
@@ -903,25 +903,25 @@ test("desktop synchronization rejects every mismatched side-by-side identity fie
   const cases = [
     [
       "Exec",
-      "Exec=/usr/bin/codex-desktop %u",
+      "Exec=/usr/bin/hydex-desktop %u",
       `StartupWMClass=${appId}`,
       `X-GNOME-WMClass=${appId}`,
     ],
     [
       "StartupWMClass",
       validExec,
-      "StartupWMClass=codex-desktop",
+      "StartupWMClass=hydex-desktop",
       `X-GNOME-WMClass=${appId}`,
     ],
     [
       "X-GNOME-WMClass",
       validExec,
       `StartupWMClass=${appId}`,
-      "X-GNOME-WMClass=codex-desktop",
+      "X-GNOME-WMClass=hydex-desktop",
     ],
     [
       "CHROME_DESKTOP",
-      validExec.replace(`CHROME_DESKTOP=${appId}.desktop`, "CHROME_DESKTOP=codex-desktop.desktop"),
+      validExec.replace(`CHROME_DESKTOP=${appId}.desktop`, "CHROME_DESKTOP=hydex-desktop.desktop"),
       `StartupWMClass=${appId}`,
       `X-GNOME-WMClass=${appId}`,
     ],
@@ -929,14 +929,14 @@ test("desktop synchronization rejects every mismatched side-by-side identity fie
       "BAMF_DESKTOP_FILE_HINT",
       validExec.replace(
         `BAMF_DESKTOP_FILE_HINT=/usr/share/applications/${appId}.desktop`,
-        "BAMF_DESKTOP_FILE_HINT=/usr/share/applications/codex-desktop.desktop",
+        "BAMF_DESKTOP_FILE_HINT=/usr/share/applications/hydex-desktop.desktop",
       ),
       `StartupWMClass=${appId}`,
       `X-GNOME-WMClass=${appId}`,
     ],
     [
       "CODEX_APP_ID",
-      validExec.replace(`CODEX_APP_ID=${appId}`, "CODEX_APP_ID=codex-desktop"),
+      validExec.replace(`CODEX_APP_ID=${appId}`, "CODEX_APP_ID=hydex-desktop"),
       `StartupWMClass=${appId}`,
       `X-GNOME-WMClass=${appId}`,
     ],

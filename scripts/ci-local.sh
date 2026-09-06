@@ -6,7 +6,7 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 DEFAULT_CI_PACKAGE_VERSION="2026.04.28.000000+local"
 CI_PACKAGE_VERSION="${CI_PACKAGE_VERSION:-$DEFAULT_CI_PACKAGE_VERSION}"
-CI_CACHE_DIR="${CI_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/codex-desktop-linux-ci}"
+CI_CACHE_DIR="${CI_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/hydex-desktop-ci}"
 
 IMAGE_UBUNTU_24="${CI_IMAGE_UBUNTU_24:-docker.io/library/ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b}"
 IMAGE_UBUNTU_22="${CI_IMAGE_UBUNTU_22:-docker.io/library/ubuntu:22.04@sha256:962f6cadeae0ea6284001009daa4cc9a8c37e75d1f5191cf0eb83fe565b63dd7}"
