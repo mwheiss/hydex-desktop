@@ -37,17 +37,17 @@ let
       paths = [ base ];
       nativeBuildInputs = [ pkgs.makeWrapper ];
       postBuild = ''
-        if [ -e "$out/bin/codex-desktop" ]; then
-          rm -f "$out/bin/codex-desktop"
-          makeWrapper "${base}/bin/codex-desktop" "$out/bin/codex-desktop" \
+        if [ -e "$out/bin/hydex-desktop" ]; then
+          rm -f "$out/bin/hydex-desktop"
+          makeWrapper "${base}/bin/hydex-desktop" "$out/bin/hydex-desktop" \
             --set-default CODEX_CLI_PATH "${codexCliPath}"
         fi
-        desktopFile="$out/share/applications/codex-desktop.desktop"
+        desktopFile="$out/share/applications/hydex-desktop.desktop"
         if [ -e "$desktopFile" ]; then
           target="$(readlink -f "$desktopFile")"
           rm -f "$desktopFile"
           substitute "$target" "$desktopFile" \
-            --replace-fail "${base}/bin/codex-desktop" "$out/bin/codex-desktop"
+            --replace-fail "${base}/bin/hydex-desktop" "$out/bin/hydex-desktop"
         fi
       '';
       meta = base.meta or { };
@@ -73,7 +73,7 @@ let
     (lib.filterAttrs (_name: value: value != null) remoteEnvironment);
 in {
   options.programs.codexDesktopLinux = {
-    enable = lib.mkEnableOption "codex-desktop based on OpenAI's official Linux package";
+    enable = lib.mkEnableOption "hydex-desktop based on OpenAI's official Linux package";
     package = lib.mkOption { type = lib.types.nullOr lib.types.package; default = null; };
     cliPackage = lib.mkOption {
       type = lib.types.nullOr lib.types.package;

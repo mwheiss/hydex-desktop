@@ -1,6 +1,6 @@
 # Omarchy Theme
 
-Optional integration that makes ChatGPT Community follow the active
+Optional integration that makes Hydex follow the active
 [Omarchy](https://omarchy.org/) color palette. It is disabled by default.
 
 The feature:
@@ -8,7 +8,7 @@ The feature:
 - installs an Omarchy `themed/` template in the user's configuration on first
   launch without overwriting an existing customized template;
 - asks `omarchy theme refresh` to generate
-  `~/.config/omarchy/current/theme/codex-desktop.css` when needed;
+  `~/.config/omarchy/current/theme/hydex-desktop.css` when needed;
 - publishes the generated file URI through a launcher hook;
 - injects a guarded renderer stylesheet loader that refreshes the CSS every five
   seconds and when the window regains focus.
@@ -25,14 +25,14 @@ Add the feature to the gitignored `linux-features/features.json`:
 }
 ```
 
-Then rebuild ChatGPT Community with `./install.sh`, `make install-native`, or the
+Then rebuild Hydex with `./install.sh`, `make install-native`, or the
 corresponding AppImage/Nix workflow. The generated app must be rebuilt after
 changing feature selection.
 
 On first launch the prelaunch hook installs:
 
 ```text
-~/.config/omarchy/themed/codex-desktop.css.tpl
+~/.config/omarchy/themed/hydex-desktop.css.tpl
 ```
 
 If Omarchy cannot be refreshed automatically, run:

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install-time detection of an already-running ChatGPT Community instance.
+# Install-time detection of an already-running Hydex instance.
 #
 # Sourced by install.sh. Do not run directly.
 # shellcheck shell=bash
@@ -70,7 +70,7 @@ find_running_install_target_pid() {
 
 assert_install_target_not_running() {
     if ! install_target_is_stopped; then
-        error "ChatGPT Community is currently running from $INSTALL_DIR (pid $RUNNING_INSTALL_TARGET_PID).
+        error "Hydex is currently running from $INSTALL_DIR (pid $RUNNING_INSTALL_TARGET_PID).
 Close that app before rebuilding this install directory, or build into a separate path:
   CODEX_INSTALL_DIR=/tmp/codex-app-build ./install.sh
 

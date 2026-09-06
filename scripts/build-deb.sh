@@ -8,7 +8,7 @@ APP_DIR="${APP_DIR_OVERRIDE:-$REPO_DIR/codex-app}"
 PKG_ROOT="${PKG_ROOT_OVERRIDE:-$REPO_DIR/dist/deb-root}"
 DIST_DIR="${DIST_DIR_OVERRIDE:-$REPO_DIR/dist}"
 CONTROL_TEMPLATE="$REPO_DIR/packaging/linux/control"
-DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-desktop.desktop"
+DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/hydex-desktop.desktop"
 SERVICE_TEMPLATE="$REPO_DIR/packaging/linux/codex-update-manager.service"
 USER_SERVICE_HELPER_TEMPLATE="$REPO_DIR/packaging/linux/codex-update-manager-user-service.sh"
 PRERM_TEMPLATE="$REPO_DIR/packaging/linux/codex-update-manager.prerm"
@@ -16,7 +16,7 @@ POSTRM_TEMPLATE="$REPO_DIR/packaging/linux/codex-update-manager.postrm"
 POSTINST_TEMPLATE="$REPO_DIR/packaging/linux/codex-update-manager.postinst"
 PACKAGED_RUNTIME_TEMPLATE="$REPO_DIR/packaging/linux/codex-packaged-runtime.sh"
 
-PACKAGE_NAME="${PACKAGE_NAME:-codex-desktop}"
+PACKAGE_NAME="${PACKAGE_NAME:-hydex-desktop}"
 PACKAGE_VERSION="${PACKAGE_VERSION:-$(date -u +%Y.%m.%d.%H%M%S)}"
 ICON_SOURCE="$(resolve_package_icon_source)"
 MAX_BUILD_THREADS="${MAX_BUILD_THREADS:-0}"
@@ -109,6 +109,10 @@ main() {
     else
         sed -i '/^__CODEX_CLI_PACKAGE_METADATA__$/d' "$PKG_ROOT/DEBIAN/control"
     fi
+    replace_literal_file_token \
+        "$PKG_ROOT/DEBIAN/control" \
+        "__DESKTOP_PACKAGE_TRANSITION_METADATA__" \
+        "$(desktop_package_transition_metadata deb)"
     if [ -n "$upstream_recommends" ]; then
         replace_literal_file_token "$PKG_ROOT/DEBIAN/control" "__UPSTREAM_RECOMMENDS__" "$upstream_recommends"
     else
@@ -145,8 +149,8 @@ CONTROL
     chmod 0644 "$PKG_ROOT/DEBIAN/control"
     if package_with_updater_enabled; then
         sed \
-            -e "s|/opt/codex-desktop|/opt/$PACKAGE_NAME|g" \
-            -e "s|codex_desktop_repair_system_package_shadow_entries codex-desktop|codex_desktop_repair_system_package_shadow_entries $PACKAGE_NAME|g" \
+            -e "s|/opt/hydex-desktop|/opt/$PACKAGE_NAME|g" \
+            -e "s|codex_desktop_repair_system_package_shadow_entries hydex-desktop|codex_desktop_repair_system_package_shadow_entries $PACKAGE_NAME|g" \
             "$POSTINST_TEMPLATE" > "$PKG_ROOT/DEBIAN/postinst"
         cp "$PRERM_TEMPLATE" "$PKG_ROOT/DEBIAN/prerm"
         cp "$POSTRM_TEMPLATE" "$PKG_ROOT/DEBIAN/postrm"

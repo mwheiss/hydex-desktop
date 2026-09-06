@@ -5,13 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_DIR="${APP_DIR_OVERRIDE:-$REPO_DIR/codex-app}"
 DIST_DIR="${DIST_DIR_OVERRIDE:-$REPO_DIR/dist}"
-SPEC_TEMPLATE="$REPO_DIR/packaging/linux/codex-desktop.spec"
-DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-desktop.desktop"
+SPEC_TEMPLATE="$REPO_DIR/packaging/linux/hydex-desktop.spec"
+DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/hydex-desktop.desktop"
 SERVICE_TEMPLATE="$REPO_DIR/packaging/linux/codex-update-manager.service"
 USER_SERVICE_HELPER_TEMPLATE="$REPO_DIR/packaging/linux/codex-update-manager-user-service.sh"
 PACKAGED_RUNTIME_TEMPLATE="$REPO_DIR/packaging/linux/codex-packaged-runtime.sh"
 
-PACKAGE_NAME="${PACKAGE_NAME:-codex-desktop}"
+PACKAGE_NAME="${PACKAGE_NAME:-hydex-desktop}"
 PACKAGE_VERSION="${PACKAGE_VERSION:-$(date -u +%Y.%m.%d.%H%M%S)}"
 MAX_BUILD_THREADS="${MAX_BUILD_THREADS:-0}"
 RPM_BINARY_PAYLOAD="${RPM_BINARY_PAYLOAD:-}"
@@ -123,7 +123,7 @@ SCRIPT
     restore_linux_feature_payload_permissions "$staging_root"
     restore_linux_feature_package_resource_permissions "$staging_root" "rpm"
 
-    local spec_file="$build_root/codex-desktop.spec"
+    local spec_file="$build_root/hydex-desktop.spec"
     sed \
         -e "s/__PACKAGE_NAME__/$PACKAGE_NAME/g" \
         -e "s/__RPM_VERSION__/$rpm_ver/g" \
@@ -161,6 +161,10 @@ SCRIPT
         "$spec_file" \
         "__CODEX_CLI_PACKAGE_METADATA__" \
         "$cli_package_metadata"
+    replace_literal_file_token \
+        "$spec_file" \
+        "__DESKTOP_PACKAGE_TRANSITION_METADATA__" \
+        "$(desktop_package_transition_metadata rpm)"
     replace_literal_file_token \
         "$spec_file" \
         "__CODEX_CLI_PACKAGE_FILES__" \

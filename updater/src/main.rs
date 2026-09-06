@@ -1,4 +1,4 @@
-//! Binary entrypoint for the local ChatGPT Community update manager.
+//! Binary entrypoint for the local Hydex update manager.
 
 mod app;
 mod builder;
