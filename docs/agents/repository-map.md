@@ -8,7 +8,7 @@
 | ASAR engine | `scripts/patches/`, `scripts/patch-linux-window-ui.js`, `patch-report.js` |
 | Linux features | `linux-features/<id>/feature.json`, adjacent README/resources/hooks |
 | Shared packaging | `scripts/lib/package-common.sh` |
-| Package formats | `scripts/build-deb.sh`, `build-rpm.sh`, `build-pacman.sh`, `build-appimage.sh` |
+| Package formats | `scripts/build-deb.sh`, `build-rpm.sh`, `build-rhel-compat-rpm.sh`, `build-pacman.sh`, `build-appimage.sh` |
 | Native runtime hooks | `packaging/linux/` |
 | AppImage runtime | `packaging/appimage/` |
 | Updater | `updater/src/`, `packaging/update-builder/` |
@@ -41,8 +41,9 @@ Generated output includes `codex-app/`, `codex-app.backup-*`, candidates,
 
 ## Important contracts
 
-- `linux-features/features.example.json` is the committed feature-free
-  baseline; `features.json` is local state.
+- `linux-features/features.example.json` is the committed explicit feature-free
+  baseline; manifest defaults apply only without a local selection, and
+  `features.json` is machine-local state.
 - `packaging/update-builder/` is only the template for a minimal rebuild bundle.
   Shared packaging code decides which enabled descriptors, resources, plugin
   templates, and prebuilt helpers enter the final bundle.
