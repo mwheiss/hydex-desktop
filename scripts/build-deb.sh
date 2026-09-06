@@ -99,6 +99,16 @@ main() {
         -e "s/__ARCH__/$arch/g" \
         "$CONTROL_TEMPLATE" > "$PKG_ROOT/DEBIAN/control"
     replace_literal_file_token "$PKG_ROOT/DEBIAN/control" "__UPSTREAM_DEPENDENCIES__" "$upstream_depends"
+    local cli_package_metadata
+    cli_package_metadata="$(codex_cli_package_metadata deb "$PKG_ROOT")"
+    if [ -n "$cli_package_metadata" ]; then
+        replace_literal_file_token \
+            "$PKG_ROOT/DEBIAN/control" \
+            "__CODEX_CLI_PACKAGE_METADATA__" \
+            "$cli_package_metadata"
+    else
+        sed -i '/^__CODEX_CLI_PACKAGE_METADATA__$/d' "$PKG_ROOT/DEBIAN/control"
+    fi
     if [ -n "$upstream_recommends" ]; then
         replace_literal_file_token "$PKG_ROOT/DEBIAN/control" "__UPSTREAM_RECOMMENDS__" "$upstream_recommends"
     else
