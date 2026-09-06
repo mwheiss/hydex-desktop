@@ -18,7 +18,10 @@ Source1:        @UPSTREAM_DEB@
 Source2:        upstream-artifact.json
 Source3:        dpkg-deb
 Source4:        @HYDEX_ARCHIVE@
-BuildArch:      x86_64
+# This is only the orchestration wrapper. The nested native package builder
+# validates and emits the pinned x86_64 Desktop payload in the selected COPR
+# chroot, while keeping SRPM generation portable across COPR source builders.
+BuildArch:      noarch
 
 BuildRequires:  bash
 BuildRequires:  binutils
