@@ -71,6 +71,17 @@ test("package metadata rejects architectures without an official package", (t) =
   assert.match(result.stderr, /expected amd64 or arm64/);
 });
 
+test("native package icon defaults to the staged upstream icon", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "hydex-package-icon-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const appDir = path.join(root, "app");
+  const icon = path.join(appDir, "resources/icon-chatgpt.png");
+  fs.mkdirSync(path.dirname(icon), { recursive: true });
+  fs.writeFileSync(icon, "upstream-icon");
+
+  assert.equal(runPackageCommon("resolve_package_icon_source", appDir), icon + "\n");
+});
+
 test("persistent native packages replace the standalone Codex CLI provider", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-package-cli-provider-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -91,11 +102,12 @@ test("persistent native packages replace the standalone Codex CLI provider", (t)
   );
   assert.match(
     pacman,
-    /provides=\('codex' 'openai-codex' 'hydex' 'codex-code-mode-host' 'hydex-code-mode-host'\)/,
+    /provides=\('chatgpt' 'codex' 'openai-codex' 'hydex' 'codex-code-mode-host' 'hydex-code-mode-host' 'codex-desktop'\)/,
   );
-  assert.match(pacman, /conflicts=\('hydex' 'hydex-bin' 'codex' 'codex-bin' 'openai-codex'/);
+  assert.match(pacman, /conflicts=\('chatgpt' 'hydex' 'hydex-bin' 'codex' 'codex-bin' 'openai-codex'/);
   assert.match(pacman, /replaces=\('hydex-bin'/);
   assert.doesNotMatch(pacman, /replaces=.*'codex-bin'/);
+  assert.match(pacman, /replaces=.*'codex-desktop'/);
 
   const deb = runPackageCommon(
     `PACKAGE_NAME=hydex-desktop codex_cli_package_metadata deb ${JSON.stringify(root)}`,
@@ -103,21 +115,24 @@ test("persistent native packages replace the standalone Codex CLI provider", (t)
   );
   assert.match(
     deb,
-    /^Provides: codex, openai-codex, hydex, codex-code-mode-host, hydex-code-mode-host$/m,
+    /^Provides: chatgpt, codex, openai-codex, hydex, codex-code-mode-host, hydex-code-mode-host, codex-desktop$/m,
   );
-  assert.match(deb, /^Conflicts: hydex, hydex-bin, codex, codex-bin, openai-codex,/m);
-  assert.match(deb, /^Replaces: hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin$/m);
+  assert.match(deb, /^Conflicts: chatgpt, hydex, hydex-bin, codex, codex-bin, openai-codex,/m);
+  assert.match(deb, /^Breaks: codex-desktop$/m);
+  assert.match(deb, /^Replaces: hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin, codex-desktop$/m);
 
   const rpm = runPackageCommon(
     `PACKAGE_NAME=hydex-desktop codex_cli_package_metadata rpm ${JSON.stringify(root)}`,
     root,
   );
+  assert.match(rpm, /^Provides:\s+chatgpt$/m);
   assert.match(rpm, /^Provides:\s+codex$/m);
   assert.match(rpm, /^Provides:\s+hydex$/m);
   assert.match(rpm, /^Provides:\s+codex-code-mode-host$/m);
   assert.match(rpm, /^Provides:\s+hydex-code-mode-host$/m);
-  assert.match(rpm, /^Conflicts:\s+hydex, hydex-bin, codex, codex-bin, openai-codex,/m);
-  assert.match(rpm, /^Obsoletes:\s+hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin$/m);
+  assert.match(rpm, /^Provides:\s+codex-desktop$/m);
+  assert.match(rpm, /^Conflicts:\s+chatgpt, hydex, hydex-bin, codex, codex-bin, openai-codex,.*codex-desktop$/m);
+  assert.match(rpm, /^Obsoletes:\s+hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin, codex-desktop$/m);
   assert.equal(
     runPackageCommon(
       `PACKAGE_NAME=hydex-desktop codex_cli_package_files rpm ${JSON.stringify(root)}`,
@@ -163,6 +178,7 @@ test("Hydex native packages expose both Codex and Hydex command names", (t) => {
 
   assert.deepEqual(
     Object.fromEntries([
+      "chatgpt",
       "codex",
       "codex-code-mode-host",
       "codex-desktop",
@@ -171,6 +187,7 @@ test("Hydex native packages expose both Codex and Hydex command names", (t) => {
       "hydex-update-manager",
     ].map((name) => [name, fs.readlinkSync(path.join(binDir, name))])),
     {
+      chatgpt: "hydex-desktop",
       codex: "/opt/hydex-desktop/resources/codex",
       "codex-code-mode-host": "/opt/hydex-desktop/resources/codex-code-mode-host",
       "codex-desktop": "hydex-desktop",
@@ -181,31 +198,26 @@ test("Hydex native packages expose both Codex and Hydex command names", (t) => {
   );
 });
 
-test("Hydex Desktop replaces the retired external package identity", () => {
+test("desktop transition metadata is consolidated into provider metadata", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "hydex-package-transition-"));
   try {
     const pacman = runPackageCommon(
       "PACKAGE_NAME=hydex-desktop desktop_package_transition_metadata pacman",
       root,
     );
-    assert.match(pacman, /provides\+=\('codex-desktop'\)/);
-    assert.match(pacman, /conflicts\+=\('codex-desktop'\)/);
-    assert.match(pacman, /replaces\+=\('codex-desktop'\)/);
+    assert.equal(pacman, "");
 
     const deb = runPackageCommon(
       "PACKAGE_NAME=hydex-desktop desktop_package_transition_metadata deb",
       root,
     );
-    assert.match(deb, /^Breaks: codex-desktop$/m);
-    assert.match(deb, /^Replaces: codex-desktop$/m);
+    assert.equal(deb, "");
 
     const rpm = runPackageCommon(
       "PACKAGE_NAME=hydex-desktop desktop_package_transition_metadata rpm",
       root,
     );
-    assert.match(rpm, /^Provides:\s+codex-desktop$/m);
-    assert.match(rpm, /^Conflicts:\s+codex-desktop$/m);
-    assert.match(rpm, /^Obsoletes:\s+codex-desktop$/m);
+    assert.equal(rpm, "");
 
     assert.equal(
       runPackageCommon(
@@ -217,6 +229,21 @@ test("Hydex Desktop replaces the retired external package identity", () => {
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("native desktop entries preserve upstream metadata and expose Hydex identity", () => {
+  const template = fs.readFileSync(
+    path.join(repoRoot, "packaging/linux/hydex-desktop.desktop"),
+    "utf8",
+  );
+  assert.match(template, /^Name=Hydex Desktop$/m);
+  assert.match(template, /^Comment=Hydex fork of Codex Desktop$/m);
+  assert.match(template, /^GenericName=Coding agent$/m);
+  assert.match(template, /^Icon=hydex-desktop$/m);
+
+  const common = fs.readFileSync(path.join(repoRoot, "scripts/lib/package-common.sh"), "utf8");
+  assert.match(common, /cp "\$upstream_desktop" "\$root\/usr\/share\/applications\/chatgpt\.desktop"/);
+  assert.match(common, /cp "\$upstream_icon" "\$root\/usr\/share\/icons\/hicolor\/256x256\/apps\/chatgpt\.png"/);
 });
 
 test("Debian package control inherits dependency fields from upstream", () => {

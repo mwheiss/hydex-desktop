@@ -7,7 +7,17 @@ const IDENT = "[A-Za-z_$][\\w$]*";
 const REQUEST_MARKER = "codexLinuxHydexOffloadRequest";
 const CONTROL_MARKER = "codexLinuxHydexOffloadControl";
 const NEXT_TURN_MARKER = "codexLinuxHydexOffloadNextTurn";
+const PRODUCT_MODE_LABEL_MARKER = "codexLinuxHydexProductModeLabel";
+const PRODUCT_MODE_LOCALE_LABEL_MARKER = "codexLinuxHydexProductModeLocaleLabel";
 const HYDEX_PRODUCT_NAME = "Hydex";
+const PRODUCT_MODE_LABEL_SOURCE =
+  "id:`sidebarElectron.productMode.codex`,defaultMessage:`Codex`";
+const PRODUCT_MODE_LABEL_PATCHED =
+  `id:\`sidebarElectron.productMode.codex\`,defaultMessage:\`Hydex\`/*${PRODUCT_MODE_LABEL_MARKER}*/`;
+const PRODUCT_MODE_LOCALE_KEY = '"sidebarElectron.productMode.codex":';
+const PRODUCT_MODE_LOCALE_PATCHED =
+  `${PRODUCT_MODE_LOCALE_KEY}\`Hydex\`/*${PRODUCT_MODE_LOCALE_LABEL_MARKER}*/`;
+const PRODUCT_MODE_LOCALE_MARKER_COMMENT = `/*${PRODUCT_MODE_LOCALE_LABEL_MARKER}*/`;
 
 function applyHydexProductNamePatch(extractedDir) {
   const packagePath = path.join(extractedDir, "package.json");
@@ -24,6 +34,94 @@ function applyHydexProductNamePatch(extractedDir) {
   value.productName = HYDEX_PRODUCT_NAME;
   fs.writeFileSync(packagePath, `${JSON.stringify(value, null, 2)}\n`);
   return { changed: true, target: "package.json" };
+}
+
+function exactCount(source, needle) {
+  return source.split(needle).length - 1;
+}
+
+function productModeLabelContract(source) {
+  return {
+    original: exactCount(source, PRODUCT_MODE_LABEL_SOURCE),
+    patched: exactCount(source, PRODUCT_MODE_LABEL_PATCHED),
+  };
+}
+
+function matchesHydexProductModeLabelContract(source) {
+  const { original, patched } = productModeLabelContract(source);
+  return (original === 1 && patched === 0) || (original === 0 && patched === 1);
+}
+
+function applyHydexProductModeLabelPatch(source) {
+  const { original, patched } = productModeLabelContract(source);
+  if (original === 0 && patched === 1) return source;
+  if (original !== 1 || patched !== 0) {
+    warn(
+      `Expected one current Codex product-mode label, found ${original} original and ${patched} patched`,
+      "Hydex product-mode label patch",
+    );
+    return source;
+  }
+  return source.replace(PRODUCT_MODE_LABEL_SOURCE, PRODUCT_MODE_LABEL_PATCHED);
+}
+
+function applyHydexProductModeLocalePatch(extractedDir) {
+  const assetsDir = path.join(extractedDir, "webview", "assets");
+  const matches = [];
+  for (const entry of fs.readdirSync(assetsDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".js")) continue;
+    const assetPath = path.join(assetsDir, entry.name);
+    const source = fs.readFileSync(assetPath, "utf8");
+    const keyCount = exactCount(source, PRODUCT_MODE_LOCALE_KEY);
+    if (keyCount === 0) continue;
+    const valueStart = source.indexOf(PRODUCT_MODE_LOCALE_KEY) + PRODUCT_MODE_LOCALE_KEY.length;
+    const valueEnd = source.indexOf("`", valueStart + 1);
+    const value = source.slice(valueStart + 1, valueEnd);
+    const patched = source.startsWith(PRODUCT_MODE_LOCALE_MARKER_COMMENT, valueEnd + 1);
+    if (
+      keyCount !== 1 ||
+      source[valueStart] !== "`" ||
+      valueEnd === -1 ||
+      value.includes("\\") ||
+      (patched && value !== HYDEX_PRODUCT_NAME)
+    ) {
+      throw new Error(
+        `Unexpected Codex product-mode locale contract in ${entry.name}: ` +
+          `${keyCount} key, value ${JSON.stringify(value)}, patched ${patched}`,
+      );
+    }
+    const replacementEnd = patched
+      ? valueEnd + 1 + PRODUCT_MODE_LOCALE_MARKER_COMMENT.length
+      : valueEnd + 1;
+    matches.push({
+      assetPath,
+      name: entry.name,
+      patched,
+      replacementEnd,
+      source,
+      valueStart,
+    });
+  }
+  if (matches.length === 0) {
+    throw new Error("Could not find Codex product-mode locale catalogs");
+  }
+
+  let changed = false;
+  for (const match of matches) {
+    if (match.patched) continue;
+    fs.writeFileSync(
+      match.assetPath,
+      match.source.slice(0, match.valueStart - PRODUCT_MODE_LOCALE_KEY.length) +
+        PRODUCT_MODE_LOCALE_PATCHED +
+        match.source.slice(match.replacementEnd),
+    );
+    changed = true;
+  }
+  return {
+    changed,
+    matched: matches.length,
+    targets: matches.map((match) => match.name).sort(),
+  };
 }
 
 function warn(message, patchName) {
@@ -284,6 +382,17 @@ const descriptors = [
     apply: applyHydexRequestBridgePatch,
   },
   {
+    id: "hydex-product-mode-label",
+    phase: "webview-asset",
+    order: 20705,
+    ciPolicy: "optional",
+    pattern: /^app-primary-[^.]+\.js$/,
+    assetMatch: matchesHydexProductModeLabelContract,
+    missingDescription: "current Codex sidebar product-mode label bundle",
+    skipDescription: "Hydex product-mode label patch",
+    apply: applyHydexProductModeLabelPatch,
+  },
+  {
     id: "hydex-offload-composer-control",
     phase: "webview-asset",
     order: 20710,
@@ -294,16 +403,28 @@ const descriptors = [
     skipDescription: "Hydex offload composer control patch",
     apply: applyHydexComposerControlPatch,
   },
+  {
+    id: "hydex-product-mode-locale-labels",
+    phase: "extracted-app:post-webview",
+    order: 20720,
+    ciPolicy: "optional",
+    apply: applyHydexProductModeLocalePatch,
+  },
 ];
 
 module.exports = {
   CONTROL_MARKER,
   NEXT_TURN_MARKER,
+  PRODUCT_MODE_LOCALE_LABEL_MARKER,
+  PRODUCT_MODE_LABEL_MARKER,
   REQUEST_MARKER,
   applyHydexProductNamePatch,
   applyHydexComposerControlPatch,
+  applyHydexProductModeLocalePatch,
+  applyHydexProductModeLabelPatch,
   applyHydexRequestBridgePatch,
   descriptors,
   matchesHydexComposerContract,
+  matchesHydexProductModeLabelContract,
   matchesHydexRequestBridgeContract,
 };
