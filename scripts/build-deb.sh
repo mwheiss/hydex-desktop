@@ -83,6 +83,7 @@ main() {
     write_launcher_stub "$PKG_ROOT"
     stage_linux_feature_package_resources "$PKG_ROOT" "deb"
     run_linux_feature_package_hooks "$PKG_ROOT" "deb"
+    stage_native_command_aliases "$PKG_ROOT"
     normalize_package_payload_permissions "$PKG_ROOT"
     restore_linux_feature_payload_permissions "$PKG_ROOT"
     restore_linux_feature_package_resource_permissions "$PKG_ROOT" "deb"

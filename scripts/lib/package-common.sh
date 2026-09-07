@@ -121,8 +121,12 @@ codex_cli_package_links_present() {
         [ ! -e "$code_mode_link" ] && [ ! -L "$code_mode_link" ]; then
         return 1
     fi
-    [ -L "$codex_link" ] && [ "$(readlink "$codex_link")" = "$expected_codex" ] || \
+    [ -L "$codex_link" ] || \
         error "Codex CLI package entrypoint is incomplete or unexpected: $codex_link"
+    case "$(readlink "$codex_link")" in
+        "$expected_codex"|"/opt/$PACKAGE_NAME/resources/codex") ;;
+        *) error "Codex CLI package entrypoint is incomplete or unexpected: $codex_link" ;;
+    esac
     [ -L "$code_mode_link" ] && [ "$(readlink "$code_mode_link")" = "$expected_code_mode" ] || \
         error "Codex code-mode package entrypoint is incomplete or unexpected: $code_mode_link"
 }
@@ -136,14 +140,14 @@ codex_cli_package_metadata() {
     case "$format" in
     pacman)
     cat <<'METADATA'
-provides=('codex' 'openai-codex')
+provides=('codex' 'openai-codex' 'hydex' 'codex-code-mode-host' 'hydex-code-mode-host')
 conflicts=('hydex' 'hydex-bin' 'codex' 'codex-bin' 'openai-codex' 'openai-codex-bin' 'openai-codex-autoup-bin')
 replaces=('hydex-bin' 'openai-codex-bin' 'openai-codex-autoup-bin')
 METADATA
         ;;
     deb)
         cat <<'METADATA'
-Provides: codex, openai-codex
+Provides: codex, openai-codex, hydex, codex-code-mode-host, hydex-code-mode-host
 Conflicts: hydex, hydex-bin, codex, codex-bin, openai-codex, openai-codex-bin, openai-codex-autoup-bin
 Replaces: hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin
 METADATA
@@ -152,6 +156,9 @@ METADATA
         cat <<'METADATA'
 Provides:       codex
 Provides:       openai-codex
+Provides:       hydex
+Provides:       codex-code-mode-host
+Provides:       hydex-code-mode-host
 Conflicts:      hydex, hydex-bin, codex, codex-bin, openai-codex, openai-codex-bin, openai-codex-autoup-bin
 Obsoletes:      hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin
 METADATA
@@ -166,7 +173,7 @@ codex_cli_package_files() {
 
     codex_cli_package_links_present "$root" || return 0
     case "$format" in
-        rpm) printf '/usr/bin/codex\n/usr/bin/codex-code-mode-host\n' ;;
+        rpm) printf '/usr/bin/codex\n/usr/bin/codex-code-mode-host\n/usr/bin/hydex\n/usr/bin/hydex-code-mode-host\n' ;;
         deb|pacman) ;;
         *) error "Unsupported Codex CLI package file format: $format" ;;
     esac
@@ -1259,4 +1266,45 @@ write_launcher_stub() {
 exec /opt/$PACKAGE_NAME/start.sh "\$@"
 SCRIPT
     chmod 0755 "$root/usr/bin/$PACKAGE_NAME"
+}
+
+ensure_native_command_alias() {
+    local target="$1"
+    local link_target="$2"
+
+    if [ -L "$target" ]; then
+        [ "$(readlink "$target")" = "$link_target" ] || \
+            error "Native command alias is unexpected: $target"
+        return 0
+    fi
+    [ ! -e "$target" ] || error "Native command alias would replace an existing path: $target"
+    ln -s "$link_target" "$target"
+}
+
+stage_native_command_aliases() {
+    local root="$1"
+    local bin_dir="$root/usr/bin"
+
+    [ "$PACKAGE_NAME" = "hydex-desktop" ] || return 0
+    [ -x "$bin_dir/hydex-desktop" ] || error "Hydex Desktop launcher is missing"
+    mkdir -p "$bin_dir"
+
+    if [ ! -e "$bin_dir/codex" ] && [ ! -L "$bin_dir/codex" ]; then
+        ensure_native_command_alias \
+            "$bin_dir/codex" \
+            "/opt/$PACKAGE_NAME/resources/codex"
+    fi
+    if [ ! -e "$bin_dir/codex-code-mode-host" ] && [ ! -L "$bin_dir/codex-code-mode-host" ]; then
+        ensure_native_command_alias \
+            "$bin_dir/codex-code-mode-host" \
+            "/opt/$PACKAGE_NAME/resources/codex-code-mode-host"
+    fi
+    codex_cli_package_links_present "$root"
+
+    ensure_native_command_alias "$bin_dir/codex-desktop" "hydex-desktop"
+    ensure_native_command_alias "$bin_dir/hydex" "codex"
+    ensure_native_command_alias "$bin_dir/hydex-code-mode-host" "codex-code-mode-host"
+    if [ -e "$bin_dir/codex-update-manager" ]; then
+        ensure_native_command_alias "$bin_dir/hydex-update-manager" "codex-update-manager"
+    fi
 }

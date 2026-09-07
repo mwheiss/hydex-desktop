@@ -132,6 +132,7 @@ main() {
 	write_launcher_stub "$staging_root"
 	stage_linux_feature_package_resources "$staging_root" "pacman"
 	run_linux_feature_package_hooks "$staging_root" "pacman"
+	stage_native_command_aliases "$staging_root"
 	normalize_package_payload_permissions "$staging_root"
 	restore_linux_feature_payload_permissions "$staging_root"
 	restore_linux_feature_package_resource_permissions "$staging_root" "pacman"
