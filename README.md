@@ -210,7 +210,7 @@ used by both official and Community applications.
 
 ### Optional Linux features
 
-`remote-mobile-control` and `persistent-app-server` are enabled by default for
+`remote-mobile-control`, `persistent-app-server`, and `remote-trust-race-workaround` are enabled by default for
 fresh native builds. Other features remain opt-in. A local `features.json`
 replaces those defaults with an explicit machine selection. Each adjacent
 README describes requirements, known limitations, configuration, and tests.
@@ -249,6 +249,7 @@ README describes requirements, known limitations, configuration, and tests.
 | `record-and-replay` | Record a Linux demonstration and turn it into a reusable skill | [Docs](linux-features/record-and-replay/README.md) |
 | `remote-control-ui` | Expose experimental remote-control settings on Linux | [Docs](linux-features/remote-control-ui/README.md) |
 | `remote-mobile-control` | Experimental Linux remote-host and outbound-control flows | [Docs](linux-features/remote-mobile-control/README.md) |
+| `remote-trust-race-workaround` | Narrow inotify workaround for generated Remote exact-path trust races | [Docs](linux-features/remote-trust-race-workaround/README.md) |
 | `shallow-repository-watches` | Avoid recursive main-thread walks for transient repository previews | [Docs](linux-features/shallow-repository-watches/README.md) |
 | `shared-app-server-socket` | Share one protocol-transparent Unix app-server socket | [Docs](linux-features/shared-app-server-socket/README.md) |
 | `thorium-chrome-plugin` | Add Thorium to the official bundled Chrome integration | [Docs](linux-features/thorium-chrome-plugin/README.md) |
