@@ -14,6 +14,20 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PublishDesktopCoprTests(unittest.TestCase):
+    def test_all_prebuilt_tiers_own_chatgpt_compatibility_surface(self):
+        for tier in MODULE.TIERS:
+            template = (
+                MODULE_PATH.parents[1] / "packaging" / "copr" / tier.template
+            ).read_text()
+            self.assertRegex(template, r"(?m)^Provides:\s+.*\bchatgpt\b", tier.name)
+            self.assertRegex(template, r"(?m)^Conflicts:\s+.*\bchatgpt\b", tier.name)
+            for path in (
+                "/usr/bin/chatgpt",
+                "/usr/share/applications/chatgpt.desktop",
+                "/usr/share/icons/hicolor/256x256/apps/chatgpt.png",
+            ):
+                self.assertIn(path, template, tier.name)
+
     def test_tiers_cover_each_chroot_once_in_sequential_order(self):
         self.assertEqual([tier.name for tier in MODULE.TIERS], ["rhel9", "rhel7", "full"])
         chroots = [chroot for tier in MODULE.TIERS for chroot in tier.chroots]
