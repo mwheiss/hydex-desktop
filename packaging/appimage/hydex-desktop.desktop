@@ -1,6 +1,7 @@
 [Desktop Entry]
 Name=__PACKAGE_DISPLAY_NAME__
 Comment=__PACKAGE_COMMENT__
+GenericName=Coding agent
 Exec=AppRun --show %u
 Icon=__PACKAGE_NAME__
 Terminal=false
