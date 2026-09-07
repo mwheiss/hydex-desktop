@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 """Install/ensure the per-user Remote trust-race watcher service."""
-from __future__ import annotations
 
 import argparse
 import os
@@ -15,20 +14,20 @@ UNIT = "hydex-remote-trust-race-workaround.service"
 MARKER = "# Managed by hydex-desktop remote-trust-race-workaround v1\n"
 
 
-def absolute(value: str) -> Path:
+def absolute(value):
     value = str(value)
     if not value or any(c in value for c in "\x00\r\n") or not Path(value).is_absolute():
         raise ValueError("Expected an absolute, single-line path: " + repr(value))
     return Path(value).resolve()
 
 
-def owned_file(path: Path) -> None:
+def owned_file(path):
     st = path.lstat()
     if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
         raise ValueError("Refusing unsafe or foreign file: " + str(path))
 
 
-def atomic_write(path: Path, data: str, mode: int = 0o644) -> None:
+def atomic_write(path, data, mode=0o644):
     path.parent.mkdir(parents=True, exist_ok=True)
     if os.path.lexists(path):
         owned_file(path)
@@ -45,7 +44,7 @@ def atomic_write(path: Path, data: str, mode: int = 0o644) -> None:
             os.unlink(temporary)
 
 
-def quote_unit(value: object, *, argument: bool = False) -> str:
+def quote_unit(value, *, argument=False):
     value = str(value)
     if any(c in value for c in "\x00\r\n"):
         raise ValueError("Invalid systemd value")
@@ -55,18 +54,18 @@ def quote_unit(value: object, *, argument: bool = False) -> str:
     return '"' + value + '"'
 
 
-def unit_path() -> Path:
+def unit_path():
     config_home = absolute(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")))
     return config_home / "systemd/user" / UNIT
 
 
-def watcher_path(app_dir: Path) -> Path:
+def watcher_path(app_dir):
     return app_dir / ".codex-linux/features" / FEATURE / "watcher.py"
 
 
-def unit_text(app_dir: Path) -> str:
+def unit_text(app_dir):
     watcher = watcher_path(app_dir)
-    command = " ".join(quote_unit(v, argument=True) for v in ("/usr/bin/python3", watcher))
+    command = " ".join(quote_unit(v, argument=True) for v in (sys.executable, watcher))
     return MARKER + f"""[Unit]
 Description=Hydex Remote generated-path trust race workaround
 Documentation=https://github.com/openai/codex/issues/39678
@@ -88,11 +87,17 @@ WantedBy=default.target
 """
 
 
-def run(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, check=check, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def run(args, *, check=True):
+    return subprocess.run(
+        args,
+        check=check,
+        universal_newlines=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
 
 
-def ensure(app_dir: str) -> None:
+def ensure(app_dir):
     if os.getuid() == 0:
         raise ValueError("Run as the ordinary desktop user, not root or sudo")
     app = absolute(app_dir)
@@ -120,7 +125,7 @@ def ensure(app_dir: str) -> None:
     run(["systemctl", "--user", "enable", "--now", UNIT])
 
 
-def remove() -> None:
+def remove():
     unit = unit_path()
     if not os.path.lexists(unit):
         return
@@ -132,7 +137,7 @@ def remove() -> None:
     run(["systemctl", "--user", "daemon-reload"], check=False)
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("ensure", "remove"))
     parser.add_argument("--app-dir", default="/opt/hydex-desktop")

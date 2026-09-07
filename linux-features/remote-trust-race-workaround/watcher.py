@@ -1,11 +1,10 @@
 #!/usr/bin/python3
 """Narrow inotify workaround for Codex Remote exact-path trust races on Linux."""
-from __future__ import annotations
 
+from collections import namedtuple
 import ctypes
 import ctypes.util
-from dataclasses import dataclass
-from datetime import date
+from datetime import datetime
 import errno
 import json
 import os
@@ -16,7 +15,11 @@ import stat
 import struct
 import sys
 import time
-import tomllib
+
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
 
 FEATURE = "remote-trust-race-workaround"
 IN_ATTRIB = 0x00000004
@@ -32,17 +35,13 @@ EVENT = struct.Struct("iIII")
 DATE_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}(?:-|$)")
 
 
-@dataclass(frozen=True)
-class Paths:
-    home: Path
-    codex_home: Path
-    config: Path
-    state: Path
-    projectless_root: Path
-    worktrees_root: Path
+Paths = namedtuple(
+    "Paths",
+    ("home", "codex_home", "config", "state", "projectless_root", "worktrees_root"),
+)
 
 
-def env_path(name: str, default: Path) -> Path:
+def env_path(name, default):
     raw = os.environ.get(name)
     path = Path(raw).expanduser() if raw else default
     if not path.is_absolute() or any(c in str(path) for c in "\x00\r\n"):
@@ -50,7 +49,7 @@ def env_path(name: str, default: Path) -> Path:
     return path
 
 
-def configured_paths() -> Paths:
+def configured_paths():
     home = Path.home().resolve()
     codex_home = env_path("CODEX_HOME", home / ".codex").resolve()
     projectless = env_path("HYDEX_REMOTE_PROJECTLESS_ROOT", home / "Documents/Codex").resolve()
@@ -60,7 +59,7 @@ def configured_paths() -> Paths:
     return Paths(home, codex_home, codex_home / "config.toml", state, projectless, worktrees)
 
 
-def safe_owned_directory(path: Path) -> bool:
+def safe_owned_directory(path):
     try:
         st = path.lstat()
     except FileNotFoundError:
@@ -68,7 +67,7 @@ def safe_owned_directory(path: Path) -> bool:
     return stat.S_ISDIR(st.st_mode) and not path.is_symlink() and st.st_uid == os.getuid()
 
 
-def read_config(path: Path) -> dict:
+def read_config(path):
     try:
         st = path.lstat()
         if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
@@ -80,23 +79,23 @@ def read_config(path: Path) -> dict:
         return {}
 
 
-def project_map(config: dict) -> dict:
+def project_map(config):
     value = config.get("projects", {})
     return value if isinstance(value, dict) else {}
 
 
-def explicitly_trusted(config: dict, path: Path) -> bool:
+def explicitly_trusted(config, path):
     value = project_map(config).get(str(path))
     return isinstance(value, dict) and value.get("trust_level") == "trusted"
 
 
-def explicitly_untrusted(config: dict, path: Path) -> bool:
+def explicitly_untrusted(config, path):
     value = project_map(config).get(str(path))
     return isinstance(value, dict) and value.get("trust_level") == "untrusted"
 
 
-def trusted_git_checkout_names(config: dict) -> set[str]:
-    names: set[str] = set()
+def trusted_git_checkout_names(config):
+    names = set()
     for raw_path, value in project_map(config).items():
         if not isinstance(raw_path, str) or not isinstance(value, dict) or value.get("trust_level") != "trusted":
             continue
@@ -109,12 +108,12 @@ def trusted_git_checkout_names(config: dict) -> set[str]:
     return names
 
 
-def same_dayish_projectless_name(name: str) -> bool:
+def same_dayish_projectless_name(name):
     if not DATE_PREFIX.match(name):
         return False
     try:
         prefix = name[:10]
-        parsed = date.fromisoformat(prefix)
+        parsed = datetime.strptime(prefix, "%Y-%m-%d").date()
     except ValueError:
         return False
     # The date prefix is a shape check, not a clock policy; Remote may reconnect
@@ -123,7 +122,7 @@ def same_dayish_projectless_name(name: str) -> bool:
     return parsed.isoformat() == prefix
 
 
-def projectless_candidate(paths: Paths, candidate: Path, config: dict) -> bool:
+def projectless_candidate(paths, candidate, config):
     try:
         if candidate.parent != paths.projectless_root:
             return False
@@ -137,7 +136,7 @@ def projectless_candidate(paths: Paths, candidate: Path, config: dict) -> bool:
     )
 
 
-def worktree_candidate(paths: Paths, candidate: Path, config: dict) -> bool:
+def worktree_candidate(paths, candidate, config):
     try:
         relative = candidate.relative_to(paths.worktrees_root)
     except ValueError:
@@ -152,13 +151,13 @@ def worktree_candidate(paths: Paths, candidate: Path, config: dict) -> bool:
     return candidate.name in trusted_git_checkout_names(config)
 
 
-def toml_table(path: Path) -> bytes:
+def toml_table(path):
     # JSON string escaping is a valid TOML basic-string escaping subset.
     key = json.dumps(str(path), ensure_ascii=True)
     return f'\n[projects.{key}]\ntrust_level = "trusted"\n'.encode("utf-8")
 
 
-def add_exact_trust(config_path: Path, candidate: Path) -> bool:
+def add_exact_trust(config_path, candidate):
     flags = os.O_RDWR | os.O_APPEND | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(config_path, flags)
@@ -200,7 +199,7 @@ def add_exact_trust(config_path: Path, candidate: Path) -> bool:
     return explicitly_trusted(read_config(config_path), candidate)
 
 
-def load_state(path: Path) -> set[Path]:
+def load_state(path):
     try:
         st = path.lstat()
         if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
@@ -216,7 +215,7 @@ def load_state(path: Path) -> set[Path]:
         return set()
 
 
-def save_state(path: Path, approved: set[Path]) -> None:
+def save_state(path, approved):
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     payload = json.dumps({
         "version": 1,
@@ -233,11 +232,11 @@ def save_state(path: Path, approved: set[Path]) -> None:
     os.replace(temporary, path)
 
 
-def validate_candidate(paths: Paths, candidate: Path, config: dict) -> bool:
+def validate_candidate(paths, candidate, config):
     return projectless_candidate(paths, candidate, config) or worktree_candidate(paths, candidate, config)
 
 
-def remember_and_trust(paths: Paths, candidate: Path, config: dict | None = None) -> bool:
+def remember_and_trust(paths, candidate, config=None):
     config = config or read_config(paths.config)
     if explicitly_trusted(config, candidate):
         return True
@@ -264,10 +263,10 @@ class Inotify:
         if self.fd < 0:
             code = ctypes.get_errno()
             raise OSError(code, os.strerror(code))
-        self.watches: dict[int, Path] = {}
-        self.reverse: dict[Path, int] = {}
+        self.watches = {}
+        self.reverse = {}
 
-    def add(self, path: Path) -> None:
+    def add(self, path):
         path = path.resolve()
         if path in self.reverse or not safe_owned_directory(path):
             return
@@ -280,7 +279,7 @@ class Inotify:
         self.watches[wd] = path
         self.reverse[path] = wd
 
-    def events(self, timeout: float = 1.0):
+    def events(self, timeout=1.0):
         ready, _, _ = select.select([self.fd], [], [], timeout)
         if not ready:
             return
@@ -298,7 +297,7 @@ class Inotify:
             yield base, name, mask
 
 
-def reconcile(paths: Paths, ino: Inotify) -> None:
+def reconcile(paths, ino):
     config = read_config(paths.config)
     approved = load_state(paths.state)
     # Watch config parent so atomic config.toml replacement is observed.
@@ -314,7 +313,7 @@ def reconcile(paths: Paths, ino: Inotify) -> None:
                 ino.add(generated)
     # Reconcile only paths that this service previously approved. Startup must
     # not retroactively trust arbitrary pre-existing date-shaped directories.
-    retained: set[Path] = set()
+    retained = set()
     for candidate in approved:
         if not safe_owned_directory(candidate):
             continue
@@ -325,18 +324,18 @@ def reconcile(paths: Paths, ino: Inotify) -> None:
         save_state(paths.state, retained)
 
 
-def handle_candidate(paths: Paths, candidate: Path) -> None:
+def handle_candidate(paths, candidate):
     config = read_config(paths.config)
     if explicitly_trusted(config, candidate):
         return
     if validate_candidate(paths, candidate, config):
-        started = time.monotonic_ns()
+        started = time.monotonic()
         if remember_and_trust(paths, candidate, config):
-            elapsed_ms = (time.monotonic_ns() - started) / 1_000_000
+            elapsed_ms = (time.monotonic() - started) * 1000
             print(f"{FEATURE}: trusted generated path in {elapsed_ms:.3f} ms: {candidate}", file=sys.stderr, flush=True)
 
 
-def run() -> None:
+def run():
     if os.getuid() == 0:
         raise ValueError("refusing to run as root")
     paths = configured_paths()
