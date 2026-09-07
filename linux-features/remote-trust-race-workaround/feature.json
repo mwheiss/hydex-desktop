@@ -22,6 +22,31 @@
       "source": "package-lifecycle.sh",
       "target": ".codex-linux/features/remote-trust-race-workaround/package-lifecycle.sh",
       "mode": "0755"
+    },
+    {
+      "source": "tomli/__init__.py",
+      "target": ".codex-linux/features/remote-trust-race-workaround/tomli/__init__.py",
+      "mode": "0644"
+    },
+    {
+      "source": "tomli/_parser.py",
+      "target": ".codex-linux/features/remote-trust-race-workaround/tomli/_parser.py",
+      "mode": "0644"
+    },
+    {
+      "source": "tomli/_re.py",
+      "target": ".codex-linux/features/remote-trust-race-workaround/tomli/_re.py",
+      "mode": "0644"
+    },
+    {
+      "source": "tomli/_types.py",
+      "target": ".codex-linux/features/remote-trust-race-workaround/tomli/_types.py",
+      "mode": "0644"
+    },
+    {
+      "source": "tomli/LICENSE",
+      "target": ".codex-linux/features/remote-trust-race-workaround/tomli/LICENSE",
+      "mode": "0644"
     }
   ],
   "runtimeHooks": {
