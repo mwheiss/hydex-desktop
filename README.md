@@ -351,6 +351,19 @@ make pacman
 make appimage
 ```
 
+Maintainers can build the complete Hydex Desktop native release and publish all COPR tiers without
+manually assembling RPM payloads:
+
+```bash
+python3 scripts/build_hydex_release.py --upstream-deb <chatgpt.deb> \
+  --hydex-bin <codex> --package-version <YYYY.MM.DD.HHMMSS>
+python3 scripts/publish_desktop_copr.py --version <YYYY.MM.DD.HHMMSS> \
+  --native-dir <release-output-dir> --publish
+```
+
+The COPR publisher submits tiers sequentially, waits for completion, downloads every result, runs
+cross-version UBI validation, writes `report.json`, and removes large intermediates after success.
+
 Builds are transactional: a candidate is verified before it replaces the
 working tree. Enabled ASAR-feature drift rejects a candidate; disabled features
 are not probed. Package scripts consume the generated `codex-app/` tree. See
