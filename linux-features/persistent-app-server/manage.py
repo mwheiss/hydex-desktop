@@ -310,6 +310,8 @@ def main(argv=None):
         enable_selection(repo)
         run(["make", "install-native"], cwd=repo, timeout=None)
         setup(args.app_dir, linger=not args.no_linger)
+        launcher = "/usr/bin/hydex-desktop"
+        os.execv(launcher, [launcher])
     elif args.action == "setup":
         setup(args.app_dir, linger=not args.no_linger)
     elif args.action == "ensure":

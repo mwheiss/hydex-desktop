@@ -44,6 +44,8 @@ Run as your ordinary user, not with `sudo`. The final command:
 4. Verifies the packaged mobile launch-patch marker and CLI capabilities,
    installs the current user's service, enables lingering, and enables/starts
    `codex-remote-control.service`. It never restarts an already active service.
+5. Replaces the installer process with `/usr/bin/hydex-desktop`, so the first
+   successful install continues directly into the Hydex Desktop GUI.
 
 The feature and `remote-mobile-control` are tracked defaults for fresh native
 builds. Creating a local `linux-features/features.json` makes the selection
