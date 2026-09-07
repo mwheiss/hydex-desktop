@@ -23,12 +23,17 @@ const {
 const {
   CONTROL_MARKER,
   NEXT_TURN_MARKER,
+  PRODUCT_MODE_LOCALE_LABEL_MARKER,
+  PRODUCT_MODE_LABEL_MARKER,
   REQUEST_MARKER,
   applyHydexComposerControlPatch,
   applyHydexProductNamePatch,
+  applyHydexProductModeLocalePatch,
+  applyHydexProductModeLabelPatch,
   applyHydexRequestBridgePatch,
   descriptors,
   matchesHydexComposerContract,
+  matchesHydexProductModeLabelContract,
   matchesHydexRequestBridgeContract,
 } = require("./patch.js");
 
@@ -47,12 +52,32 @@ function requestBridgeFixture() {
 
 function localComposerFixture() {
   return [
+    productModeLabelFixture(),
     "function modelSelectionWrapper(e){let {modelSettings:baseSettings,setDefaultModelAndReasoningEffort:setBaseDefault,setModelAndReasoningEffort:setBaseModel,setModelAndReasoningEffortForNextTurn:setBaseNext}=useBaseModelSelection(e),selectModel=()=>{};",
     "return{modelSettings:baseSettings,setDefaultModelAndReasoningEffort:setBaseDefault,setModelAndReasoningEffort:setBaseModel,selectComposerModelAndReasoningEffort:selectModel}}",
     "function localModelPicker(e){let cache=(0,memo.c)(10),{allowAeonDraftModelSelection:allow,conversationId:conversation,hideLabel:hide,permissionsCwdOverride:cwd,permissionsHostId:host}=e,enabled=allow!==void 0&&allow,[view,setView]=(0,React.useState)(`simple`);",
     "let modelSelection=useModelSelection(props),{modelSettings:settings,selectComposerModelAndReasoningEffort:select,setDefaultModelAndReasoningEffort:setDefault,setModelAndReasoningEffort:setModel}=modelSelection,tooltip=`composer.intelligenceDropdown.tooltip`,trigger={\"data-codex-intelligence-trigger\":!0};",
     "let result;return cache[0]!==trigger?(result=(0,jsx.jsx)(jsx.Fragment,{children:(0,jsx.jsx)(Menu,{triggerButton:trigger})}),cache[0]=trigger,cache[1]=result):result=cache[1],result}",
     "function supportsPersistent(e){let{reasoningEffort:t}=e;return t===`persistent`}",
+  ].join("");
+}
+
+function productModeLabelFixture() {
+  return [
+    "var productModeLabels=createMessages({",
+    "codex:{id:`sidebarElectron.productMode.codex`,defaultMessage:`Codex`,description:`Codex option in the sidebar mode selector`},",
+    "priority:{id:`sidebarElectron.priorityThreads.details.codex`,defaultMessage:`Codex`}",
+    "});",
+  ].join("");
+}
+
+function localeProductModeFixture(label = "Codex", marker = "") {
+  return [
+    "export default {",
+    `"sidebarElectron.productMode.chatGpt":\`ChatGPT\`,`,
+    `"sidebarElectron.productMode.codex":\`${label}\`${marker},`,
+    `"sidebarElectron.productMode.codex.description.developer":\`Build, debug, and ship\``,
+    "};",
   ].join("");
 }
 
@@ -206,7 +231,7 @@ test("hydex-offload is self-contained and does not enable unrelated features", (
   });
 });
 
-test("feature loader exposes both enforced webview surfaces", () => {
+test("feature loader exposes every enforced branding and offload surface", () => {
   withFeatureConfig(["hydex-offload"], (featuresRoot) => {
     const loaded = hydexDescriptors(featuresRoot);
 
@@ -225,7 +250,14 @@ test("feature loader exposes both enforced webview surfaces", () => {
           true,
         ],
         ["feature:hydex-offload:hydex-offload-request-bridge", "webview-asset", "optional", true],
+        ["feature:hydex-offload:hydex-product-mode-label", "webview-asset", "optional", true],
         ["feature:hydex-offload:hydex-offload-composer-control", "webview-asset", "optional", true],
+        [
+          "feature:hydex-offload:hydex-product-mode-locale-labels",
+          "extracted-app:post-webview",
+          "optional",
+          true,
+        ],
       ],
     );
   });
@@ -260,6 +292,92 @@ test("Hydex patcher changes only the visible Electron product name", () => {
       () => applyHydexProductNamePatch(root),
       /Expected Electron productName Codex/,
     );
+  });
+});
+
+test("Hydex patcher changes only the sidebar product-mode label", () => {
+  const source = productModeLabelFixture();
+  const patched = applyPatchTwice(applyHydexProductModeLabelPatch, source);
+
+  assert.match(patched, new RegExp(PRODUCT_MODE_LABEL_MARKER));
+  assert.match(
+    patched,
+    /id:`sidebarElectron\.productMode\.codex`,defaultMessage:`Hydex`/,
+  );
+  assert.match(
+    patched,
+    /id:`sidebarElectron\.priorityThreads\.details\.codex`,defaultMessage:`Codex`/,
+  );
+  assert.equal(matchesHydexProductModeLabelContract(source), true);
+  assert.equal(matchesHydexProductModeLabelContract(patched), true);
+});
+
+test("ambiguous sidebar product-mode labels warn and remain byte-identical", () => {
+  const source = `${productModeLabelFixture()}${productModeLabelFixture()}`;
+  const { value, warnings } = captureWarnings(() => applyHydexProductModeLabelPatch(source));
+
+  assert.equal(value, source);
+  assert.deepEqual(warnings, [
+    "WARN: Expected one current Codex product-mode label, found 2 original and 0 patched - skipping Hydex product-mode label patch",
+  ]);
+});
+
+test("Hydex patcher changes the product-mode label in every locale catalog", () => {
+  withTempDir((root) => {
+    const assetsDir = path.join(root, "webview", "assets");
+    fs.mkdirSync(assetsDir, { recursive: true });
+    const locales = [
+      ["bn-BD-current.js", "কোডেক্স"],
+      ["de-DE-current.js", "Codex"],
+    ];
+    const localeNames = locales.map(([name]) => name);
+    for (const [name, label] of locales) {
+      fs.writeFileSync(path.join(assetsDir, name), localeProductModeFixture(label));
+    }
+    fs.writeFileSync(path.join(assetsDir, "unrelated.js"), "export default {};");
+
+    assert.deepEqual(applyHydexProductModeLocalePatch(root), {
+      changed: true,
+      matched: 2,
+      targets: localeNames,
+    });
+    for (const name of localeNames) {
+      const source = fs.readFileSync(path.join(assetsDir, name), "utf8");
+      assert.equal(
+        source.includes(
+          '"sidebarElectron.productMode.codex":`Hydex`/*' +
+            PRODUCT_MODE_LOCALE_LABEL_MARKER +
+            "*/",
+        ),
+        true,
+      );
+    }
+    assert.deepEqual(applyHydexProductModeLocalePatch(root), {
+      changed: false,
+      matched: 2,
+      targets: localeNames,
+    });
+  });
+});
+
+test("locale patch validates every catalog before changing any file", () => {
+  withTempDir((root) => {
+    const assetsDir = path.join(root, "webview", "assets");
+    fs.mkdirSync(assetsDir, { recursive: true });
+    const validPath = path.join(assetsDir, "de-DE-current.js");
+    const driftedPath = path.join(assetsDir, "fr-FR-current.js");
+    const valid = localeProductModeFixture();
+    fs.writeFileSync(validPath, valid);
+    fs.writeFileSync(
+      driftedPath,
+      `${localeProductModeFixture()}${localeProductModeFixture()}`,
+    );
+
+    assert.throws(
+      () => applyHydexProductModeLocalePatch(root),
+      /Unexpected Codex product-mode locale contract in fr-FR-current\.js: 2 key/,
+    );
+    assert.equal(fs.readFileSync(validPath, "utf8"), valid);
   });
 });
 
@@ -322,14 +440,19 @@ test("descriptors target the semantic current bundle owners", () => {
     [
       ["hydex-desktop-product-name", "extracted-app:pre-webview"],
       ["hydex-offload-request-bridge", "webview-asset"],
+      ["hydex-product-mode-label", "webview-asset"],
       ["hydex-offload-composer-control", "webview-asset"],
+      ["hydex-product-mode-locale-labels", "extracted-app:post-webview"],
     ],
   );
   assert.equal(descriptors[1].pattern.test("app-initial-c8dbea294abe.js"), true);
   assert.equal(descriptors[1].pattern.test("app-primary-7eef500906c5.js"), false);
   assert.equal(descriptors[2].pattern.test("app-primary-7eef500906c5.js"), true);
   assert.equal(descriptors[2].pattern.test("app-initial-c8dbea294abe.js"), false);
+  assert.equal(descriptors[3].pattern.test("app-primary-7eef500906c5.js"), true);
+  assert.equal(descriptors[3].pattern.test("app-initial-c8dbea294abe.js"), false);
   assert.equal(matchesHydexRequestBridgeContract(requestBridgeFixture()), true);
+  assert.equal(matchesHydexProductModeLabelContract(productModeLabelFixture()), true);
   assert.equal(matchesHydexComposerContract(localComposerFixture()), true);
 });
 
@@ -601,6 +724,7 @@ test("feature descriptors patch both extracted webview assets", () => {
         report.patches.map((entry) => [entry.name, entry.status]),
         [
           ["feature:hydex-offload:hydex-offload-request-bridge", "applied"],
+          ["feature:hydex-offload:hydex-product-mode-label", "applied"],
           ["feature:hydex-offload:hydex-offload-composer-control", "applied"],
         ],
       );
@@ -631,12 +755,19 @@ test("a missing enabled surface is reported as candidate-rejecting drift", () =>
         report,
       ));
 
+      assert.ok(warnings.some((warning) => warning.includes("current Codex sidebar product-mode label bundle")));
       assert.ok(warnings.some((warning) => warning.includes("current local Codex model picker bundle")));
       assert.deepEqual(enabledFeatureFailuresFromReport(report), [
         {
           featureId: "hydex-offload",
-          name: "feature:hydex-offload:hydex-offload-composer-control",
+          name: "feature:hydex-offload:hydex-product-mode-label",
           reason: report.patches[1].reason,
+          status: "skipped-optional",
+        },
+        {
+          featureId: "hydex-offload",
+          name: "feature:hydex-offload:hydex-offload-composer-control",
+          reason: report.patches[2].reason,
           status: "skipped-optional",
         },
       ]);

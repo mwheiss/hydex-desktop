@@ -110,10 +110,16 @@ main() {
     else
         sed -i '/^__CODEX_CLI_PACKAGE_METADATA__$/d' "$PKG_ROOT/DEBIAN/control"
     fi
-    replace_literal_file_token \
-        "$PKG_ROOT/DEBIAN/control" \
-        "__DESKTOP_PACKAGE_TRANSITION_METADATA__" \
-        "$(desktop_package_transition_metadata deb)"
+    local desktop_package_metadata
+    desktop_package_metadata="$(desktop_package_transition_metadata deb)"
+    if [ -n "$desktop_package_metadata" ]; then
+        replace_literal_file_token \
+            "$PKG_ROOT/DEBIAN/control" \
+            "__DESKTOP_PACKAGE_TRANSITION_METADATA__" \
+            "$desktop_package_metadata"
+    else
+        sed -i '/^__DESKTOP_PACKAGE_TRANSITION_METADATA__$/d' "$PKG_ROOT/DEBIAN/control"
+    fi
     if [ -n "$upstream_recommends" ]; then
         replace_literal_file_token "$PKG_ROOT/DEBIAN/control" "__UPSTREAM_RECOMMENDS__" "$upstream_recommends"
     else
