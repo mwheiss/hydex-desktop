@@ -1,0 +1,105 @@
+Name:           hydex-desktop
+Version:        @VERSION@
+Release:        rhel9%{?dist}
+Summary:        Hydex for Linux
+License:        Proprietary and LGPLv2+ and GPLv3+ with exceptions and ASL 2.0
+URL:            https://github.com/mwheiss/hydex-desktop
+Source0:        hydex-desktop-@VERSION@-rhel9-x86_64-payload.tar.zst
+ExclusiveArch:  x86_64
+BuildRequires:  tar
+BuildRequires:  zstd
+
+%global __requires_exclude_from ^/opt/hydex-desktop/.*$
+%global __provides_exclude_from ^/opt/hydex-desktop/.*$
+%global __os_install_post %{nil}
+%global __brp_strip %{nil}
+%global __brp_strip_static_archive %{nil}
+%global __brp_strip_comment_note %{nil}
+%global hydex_elf_suffix ()(64bit)
+
+Provides:       codex, openai-codex, hydex, codex-code-mode-host, hydex-code-mode-host, codex-desktop
+Conflicts:      codex, codex-bin, codex-desktop, hydex, hydex-bin, openai-codex, openai-codex-autoup-bin, openai-codex-bin
+Obsoletes:      codex-desktop, hydex, hydex-bin, openai-codex-autoup-bin, openai-codex-bin
+
+Requires:       python3, systemd, xdg-utils
+Requires:       libasound.so.2%{hydex_elf_suffix}, libatk-bridge-2.0.so.0%{hydex_elf_suffix}
+Requires:       libatk-1.0.so.0%{hydex_elf_suffix}, libatspi.so.0%{hydex_elf_suffix}, libcairo.so.2%{hydex_elf_suffix}, libcups.so.2%{hydex_elf_suffix}
+Requires:       libdbus-1.so.3%{hydex_elf_suffix}, libexpat.so.1%{hydex_elf_suffix}, libgdk_pixbuf-2.0.so.0%{hydex_elf_suffix}
+Requires:       libglib-2.0.so.0%{hydex_elf_suffix}, libgtk-3.so.0%{hydex_elf_suffix}, libnotify.so.4%{hydex_elf_suffix}
+Requires:       libdrm.so.2%{hydex_elf_suffix}, libnspr4.so%{hydex_elf_suffix}, libnss3.so%{hydex_elf_suffix}
+Requires:       libpango-1.0.so.0%{hydex_elf_suffix}, libstdc++.so.6%{hydex_elf_suffix}
+Requires:       libudev.so.1%{hydex_elf_suffix}, libusb-1.0.so.0%{hydex_elf_suffix}, libX11.so.6%{hydex_elf_suffix}
+Requires:       libX11-xcb.so.1%{hydex_elf_suffix}, libxcb.so.1%{hydex_elf_suffix}, libxcb-dri3.so.0%{hydex_elf_suffix}
+Requires:       libXcomposite.so.1%{hydex_elf_suffix}, libXdamage.so.1%{hydex_elf_suffix}
+Requires:       libXext.so.6%{hydex_elf_suffix}, libXfixes.so.3%{hydex_elf_suffix}, libxkbcommon.so.0%{hydex_elf_suffix}
+Requires:       libXrandr.so.2%{hydex_elf_suffix}, libgbm.so.1%{hydex_elf_suffix}, libGL.so.1%{hydex_elf_suffix}
+Requires:       libgraphite2.so.3%{hydex_elf_suffix}, xz
+Recommends:     zenity, kdialog
+
+%description
+Custom hydex-desktop distribution built from OpenAI's signed official Linux package.
+The complete official runtime, Hydex CLI, rg, and code-mode host are bundled.
+
+This package uses a private compatibility runtime and omits codex-update-manager.
+Update manually from a trusted checkout.
+
+%prep
+:
+
+%build
+:
+
+%install
+rm -rf %{buildroot}
+mkdir -p %{buildroot}
+zstd -dc %{SOURCE0} | tar -xf - -C %{buildroot}
+
+%files
+%defattr(-,root,root,-)
+/opt/hydex-desktop/
+/etc/apparmor.d/hydex-desktop
+/usr/bin/hydex-desktop
+/usr/bin/codex-desktop
+/usr/bin/codex
+/usr/bin/codex-code-mode-host
+/usr/bin/hydex
+/usr/bin/hydex-code-mode-host
+/usr/share/applications/hydex-desktop.desktop
+/usr/share/icons/hicolor/256x256/apps/hydex-desktop.png
+
+%post
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+fi
+if command -v aa-enabled >/dev/null 2>&1 && command -v apparmor_parser >/dev/null 2>&1 &&
+   aa-enabled --quiet && [ -f /etc/apparmor.d/hydex-desktop ]; then
+    apparmor_parser -r -W -T /etc/apparmor.d/hydex-desktop >/dev/null 2>&1 || true
+fi
+DESKTOP_ENTRY_DOCTOR=/opt/hydex-desktop/.codex-linux/hydex-desktop-entry-doctor.sh
+if [ -f "$DESKTOP_ENTRY_DOCTOR" ]; then
+    . "$DESKTOP_ENTRY_DOCTOR"
+    codex_desktop_repair_system_package_shadow_entries hydex-desktop || true
+fi
+
+CLEANUP_HELPER=/opt/hydex-desktop/.codex-linux/codex-no-updater-transition-cleanup.sh
+if [ -f "$CLEANUP_HELPER" ]; then
+    . "$CLEANUP_HELPER"
+    codex_no_updater_cleanup_update_manager_service || true
+fi
+
+%preun
+PERSISTENT_APP_DIR=/opt/hydex-desktop
+PERSISTENT_SERVICE_HELPER=$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/package-lifecycle.sh
+if [ $1 -eq 0 ] && [ -f "$PERSISTENT_SERVICE_HELPER" ]; then
+    . "$PERSISTENT_SERVICE_HELPER"
+    codex_persistent_remove_all_users || true
+fi
+CLEANUP_HELPER=/opt/hydex-desktop/.codex-linux/codex-no-updater-transition-cleanup.sh
+if [ -f "$CLEANUP_HELPER" ]; then
+    . "$CLEANUP_HELPER"
+    codex_no_updater_cleanup_update_manager_service || true
+fi
+
+%changelog
+* @CHANGELOG_DATE@ Hydex for Linux Maintainers <maintainers@hydex-desktop>
+- Publish the validated private-runtime payload for RHEL and EPEL 8 and 9
