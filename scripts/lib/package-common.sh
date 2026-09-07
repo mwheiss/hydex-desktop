@@ -693,11 +693,16 @@ set -eu
 CLEANUP_HELPER="/opt/$package_name/.codex-linux/codex-no-updater-transition-cleanup.sh"
 PERSISTENT_APP_DIR="/opt/$package_name"
 PERSISTENT_SERVICE_HELPER="\$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/package-lifecycle.sh"
+REMOTE_TRUST_SERVICE_HELPER="\$PERSISTENT_APP_DIR/.codex-linux/features/remote-trust-race-workaround/package-lifecycle.sh"
 case "\${1:-}" in
     remove|purge|deconfigure)
         if [ -f "\$PERSISTENT_SERVICE_HELPER" ]; then
             . "\$PERSISTENT_SERVICE_HELPER"
             codex_persistent_remove_all_users || true
+        fi
+        if [ -f "\$REMOTE_TRUST_SERVICE_HELPER" ]; then
+            . "\$REMOTE_TRUST_SERVICE_HELPER"
+            codex_remote_trust_remove_all_users || true
         fi
         ;;
 esac
@@ -722,6 +727,7 @@ CLEANUP_HELPER="/opt/$package_name/.codex-linux/codex-no-updater-transition-clea
 DESKTOP_ENTRY_DOCTOR="/opt/$package_name/.codex-linux/hydex-desktop-entry-doctor.sh"
 PERSISTENT_APP_DIR="/opt/$package_name"
 PERSISTENT_SERVICE_HELPER="\$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/package-lifecycle.sh"
+REMOTE_TRUST_SERVICE_HELPER="\$PERSISTENT_APP_DIR/.codex-linux/features/remote-trust-race-workaround/package-lifecycle.sh"
 
 codex_no_updater_cleanup_if_present() {
     if [ -f "\$CLEANUP_HELPER" ]; then
@@ -746,6 +752,13 @@ codex_persistent_remove_if_present() {
     fi
 }
 
+codex_remote_trust_remove_if_present() {
+    if [ -f "\$REMOTE_TRUST_SERVICE_HELPER" ]; then
+        . "\$REMOTE_TRUST_SERVICE_HELPER"
+        codex_remote_trust_remove_all_users || true
+    fi
+}
+
 post_install() {
     if command -v update-desktop-database >/dev/null 2>&1; then
         update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
@@ -760,6 +773,7 @@ post_upgrade() {
 
 pre_remove() {
     codex_persistent_remove_if_present
+    codex_remote_trust_remove_if_present
     codex_no_updater_cleanup_if_present
 }
 SCRIPT
