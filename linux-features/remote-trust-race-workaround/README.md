@@ -26,6 +26,9 @@ The watcher never treats an arbitrary parent as recursively trusted and never ov
 The service uses Linux inotify directly through libc; this is **not** an inotify-limit workaround and
 requires no `inotify-tools` package.
 
+The runtime supports Python 3.6 and newer. Python 3.11+ uses the standard-library `tomllib`; older
+interpreters use the bundled MIT-licensed Tomli 1.2.3 parser.
+
 ## Feature flag
 
 Feature id: `remote-trust-race-workaround`.
