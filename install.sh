@@ -15,7 +15,6 @@ fi
 INSTALL_DIR="${CODEX_INSTALL_DIR:-$INSTALL_ROOT/$DEFAULT_INSTALL_DIR_NAME}"
 WORK_DIR="$(mktemp -d)"
 ARCH="${CODEX_TARGET_ARCH:-$(uname -m)}"
-ICON_SOURCE="$SCRIPT_DIR/assets/codex-linux.png"
 
 . "$SCRIPT_DIR/scripts/lib/install-helpers.sh"
 . "$SCRIPT_DIR/scripts/lib/process-detection.sh"
@@ -91,12 +90,11 @@ create_start_script() {
     chmod 0755 "$INSTALL_DIR/start.sh"
 }
 
-stage_community_branding() {
+stage_upstream_icon() {
+    local icon_source="$INSTALL_DIR/resources/icon-chatgpt.png"
+    [ -f "$icon_source" ] || error "Official package payload is missing resources/icon-chatgpt.png"
     mkdir -p "$INSTALL_DIR/.codex-linux"
-    if [ -f "$ICON_SOURCE" ]; then
-        cp "$ICON_SOURCE" "$INSTALL_DIR/.codex-linux/$CODEX_APP_ID.png"
-        cp "$ICON_SOURCE" "$INSTALL_DIR/resources/icon-chatgpt.png"
-    fi
+    cp "$icon_source" "$INSTALL_DIR/.codex-linux/$CODEX_APP_ID.png"
 }
 
 verify_clean_asar_preserved() {
@@ -127,7 +125,7 @@ build_from_upstream_package() {
         "$INSTALL_DIR/resources/app.asar"
     run_linux_feature_stage_hooks "$UPSTREAM_APP_DIR"
     create_start_script
-    stage_community_branding
+    stage_upstream_icon
 
     if [ -n "${CODEX_PATCH_REPORT_RESOLVED:-}" ] && [ -f "$CODEX_PATCH_REPORT_RESOLVED" ]; then
         cp "$CODEX_PATCH_REPORT_RESOLVED" "$INSTALL_DIR/.codex-linux/patch-report.json"

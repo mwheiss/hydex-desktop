@@ -15,10 +15,10 @@ OpenAI's official Linux ChatGPT desktop application. It verifies and
 repackages the signed upstream Linux payload, adds disabled-by-default Linux
 features, and produces deb, RPM, pacman, AppImage, and Nix outputs.
 
-The custom application appears in desktop menus as **Hydex** and
-uses an icon marked with a blue `C`. Its package, command, and installation
-identity remain `hydex-desktop` and `/opt/hydex-desktop`, so it is easy to
-distinguish from OpenAI's separate **ChatGPT** package.
+The custom application appears in desktop menus as **Hydex Desktop** and uses
+the original icon from the signed OpenAI payload under a package-owned Hydex
+icon name. Its package and installation identity remain `hydex-desktop` and
+`/opt/hydex-desktop`.
 
 OpenAI's signed Linux `.deb` is the only upstream source. The official
 Electron runtime, native modules, bundled `codex` and `rg`, code-mode host,
@@ -109,10 +109,11 @@ Old `.dmg`, `DMG=`, and `CODEX_DMG_*` inputs are intentionally unsupported.
   `dpkg-deb`, tar, make, and a C/C++ toolchain. Rust is used for the updater and
   enabled native feature helpers. `make bootstrap-native` installs or guides
   you through these requirements.
-- The official `chatgpt` and custom `hydex-desktop` packages may coexist, but
-  both intentionally use the upstream `Codex` user profile. Do not run them at
-  the same time; the upstream single-instance lock may route the second launch
-  into the process that is already running.
+- The native `hydex-desktop` package conflicts with the official `chatgpt`
+  package because Hydex intentionally owns the compatible `chatgpt` command,
+  desktop entry, and icon paths. Both use the upstream `Codex` user profile.
+  AppImage remains separately runnable, but do not run it concurrently with
+  another Codex/ChatGPT desktop process.
 - AppImage never adds `--no-sandbox` automatically. If your distribution
   disables unprivileged user namespaces, use the native package or follow the
   sandbox guidance in [Troubleshooting](docs/troubleshooting.md).
@@ -206,7 +207,7 @@ used by both official and Community applications.
 | Transactional update manager | Native packages | Included unless built with `PACKAGE_WITH_UPDATER=0` |
 | Official Browser and Chrome integrations | Upstream | Reused from the official Linux package; no legacy port layer |
 | Linux feature framework | Tracked defaults plus local overrides | Configure with `make setup-native` |
-| Distinct desktop identity | Always | **Hydex**, blue `C` icon, `hydex-desktop` package identity |
+| Distinct desktop identity | Always | **Hydex Desktop**, upstream icon, `hydex-desktop` package identity |
 
 ### Optional Linux features
 
