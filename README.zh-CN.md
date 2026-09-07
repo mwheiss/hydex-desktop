@@ -320,6 +320,19 @@ make pacman
 make appimage
 ```
 
+维护者可以通过脚本构建完整的 Hydex Desktop 原生发布，并发布所有 COPR 层级，
+无需手动组装 RPM payload：
+
+```bash
+python3 scripts/build_hydex_release.py --upstream-deb <chatgpt.deb> \
+  --hydex-bin <codex> --package-version <YYYY.MM.DD.HHMMSS>
+python3 scripts/publish_desktop_copr.py --version <YYYY.MM.DD.HHMMSS> \
+  --native-dir <release-output-dir> --publish
+```
+
+COPR publisher 会按顺序提交各层级并等待完成，下载所有结果，执行跨版本 UBI 验证，
+写入 `report.json`，并在成功后删除大型中间文件。
+
 构建采用事务方式：候选版本通过验证后才会替换当前应用。启用的 ASAR 扩展
 发生 drift 时会拒绝候选版本；未启用扩展不会被探测。依赖、变量、输出布局、
 并行构建和 payload 检查见[构建与打包](docs/build-and-packaging.md)。
