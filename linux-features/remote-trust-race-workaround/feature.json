@@ -1,0 +1,44 @@
+{
+  "id": "remote-trust-race-workaround",
+  "title": "Remote Trust Race Workaround",
+  "description": "Narrowly trusts newly generated Remote worktree and projectless paths before the Remote exact-path preflight races them.",
+  "defaultEnabled": true,
+  "nixSupported": false,
+  "requires": [
+    "remote-mobile-control"
+  ],
+  "resources": [
+    {
+      "source": "watcher.py",
+      "target": ".codex-linux/features/remote-trust-race-workaround/watcher.py",
+      "mode": "0755"
+    },
+    {
+      "source": "manage.py",
+      "target": ".codex-linux/features/remote-trust-race-workaround/manage.py",
+      "mode": "0755"
+    },
+    {
+      "source": "package-lifecycle.sh",
+      "target": ".codex-linux/features/remote-trust-race-workaround/package-lifecycle.sh",
+      "mode": "0755"
+    }
+  ],
+  "runtimeHooks": {
+    "launcher": "launcher.sh"
+  },
+  "packageDependencies": {
+    "deb": [
+      "python3",
+      "systemd"
+    ],
+    "rpm": [
+      "python3",
+      "systemd"
+    ],
+    "pacman": [
+      "python",
+      "systemd"
+    ]
+  }
+}
