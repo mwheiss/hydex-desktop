@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-from __future__ import annotations
 
+import builtins
 import importlib.util
 import json
 import os
@@ -57,6 +57,32 @@ class WatcherTests(unittest.TestCase):
         self.assertTrue(manifest["defaultEnabled"])
         self.assertEqual(manifest["requires"], ["remote-mobile-control"])
         self.assertEqual(manifest["id"], "remote-trust-race-workaround")
+        resources = {item["source"]: item for item in manifest["resources"]}
+        for relative_path in (
+            "tomli/__init__.py",
+            "tomli/_parser.py",
+            "tomli/_re.py",
+            "tomli/_types.py",
+            "tomli/LICENSE",
+        ):
+            self.assertEqual(resources[relative_path]["mode"], "0644")
+            self.assertTrue((HERE / relative_path).is_file())
+
+    def test_bundled_tomli_is_the_pre_311_fallback(self):
+        original_import = builtins.__import__
+
+        def import_without_tomllib(name, *args, **kwargs):
+            if name == "tomllib":
+                raise ImportError("forced pre-3.11 fallback")
+            return original_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", side_effect=import_without_tomllib):
+            fallback = load("hydex_remote_trust_watcher_fallback", "watcher.py")
+        self.assertEqual(fallback.tomllib.__version__, "1.2.3")
+        self.assertEqual(
+            fallback.tomllib.loads('model = "gpt-5.6-sol"'),
+            {"model": "gpt-5.6-sol"},
+        )
 
     def test_projectless_requires_explicit_root_trust_and_date_direct_child(self):
         candidate = self.projectless / f"{time.strftime('%Y-%m-%d')}-test-2"
@@ -200,6 +226,7 @@ class ManagerTests(unittest.TestCase):
         unit = m.unit_path()
         text = unit.read_text()
         self.assertTrue(text.startswith(m.MARKER))
+        self.assertIn(m.quote_unit(m.sys.executable, argument=True), text)
         self.assertIn(str(self.app / ".codex-linux/features/remote-trust-race-workaround/watcher.py"), text)
         self.assertIn(["systemctl", "--user", "daemon-reload"], calls)
         self.assertIn(["systemctl", "--user", "enable", "--now", m.UNIT], calls)
