@@ -243,3 +243,34 @@ Package inspection should also confirm the payload architecture matches the
 builder (`amd64` or `arm64`), the desktop entry says **Hydex**, and
 the package neither installs nor depends on OpenAI's APT source or maintainer
 scripts.
+
+## COPR publication
+
+Hydex uses one COPR project, `mheiss/hydex`, for two alternative system Codex
+providers. Both package names are built for RHEL and EPEL 7, 8, 9, and 10
+x86_64. They intentionally conflict and are not installed together.
+
+Publish `hydex-desktop` from an uploaded, prebuilt SRPM. Start with a clean
+worktree at an exact published commit, build an accepted app candidate with
+`remote-mobile-control`, `hydex-offload`, and `persistent-app-server`, then
+build the normal native RPM with its updater. Use that payload for RHEL/EPEL
+10. Build the repository's private-runtime `rhel9` payload for RHEL/EPEL 8 and
+9, and the split RPM4/gzip `rhel7` pair for RHEL/EPEL 7. Convert each accepted
+payload tier into a deterministic archive plus a reconstruction spec. The
+target builds only unpack and repackage those bytes; they must run with network
+access disabled and must not fetch the OpenAI package, rerun feature patchers,
+or compile Rust.
+
+Before upload, rebuild the SRPM locally and compare the result with the native
+RPM: file names/modes/sizes/digests/links, dependencies, package transitions,
+and all scriptlets must match. Verify exact Hydex CLI hashes and offload flags,
+the visible Electron `productName` of `Hydex`, clean source provenance, and a
+disposable install/CLI smoke test in UBI 7.9, 8, 9, and 10 as appropriate.
+Repeat these checks after downloading every successful COPR result. A locally
+assembled SRPM does not by itself solve glibc compatibility; only the private
+runtime payloads do that for EL7-9.
+
+The `.copr` directory is retained only as a deliberately failing dummy-ASAR
+source-pipeline fixture. It is not the live package source. The detailed
+operator workflow is maintained in the Hydex source repository's
+`hydex-plugin-refresh` skill under `references/copr.md`.
