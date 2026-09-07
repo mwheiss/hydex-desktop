@@ -37,6 +37,11 @@ class BuildHydexReleaseTests(unittest.TestCase):
             )
             MODULE.validate_features(config)
 
+    def test_tracked_release_features_include_remote_trust_workaround(self):
+        config = MODULE_PATH.parents[1] / ".copr" / "features.json"
+        self.assertIn("remote-trust-race-workaround", MODULE.REQUIRED_FEATURES)
+        MODULE.validate_features(config)
+
     def test_release_features_reject_missing_or_shared_socket(self):
         with tempfile.TemporaryDirectory() as temporary:
             config = Path(temporary) / "features.json"
