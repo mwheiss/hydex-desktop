@@ -162,10 +162,16 @@ SCRIPT
         "$spec_file" \
         "__CODEX_CLI_PACKAGE_METADATA__" \
         "$cli_package_metadata"
-    replace_literal_file_token \
-        "$spec_file" \
-        "__DESKTOP_PACKAGE_TRANSITION_METADATA__" \
-        "$(desktop_package_transition_metadata rpm)"
+    local desktop_package_metadata
+    desktop_package_metadata="$(desktop_package_transition_metadata rpm)"
+    if [ -n "$desktop_package_metadata" ]; then
+        replace_literal_file_token \
+            "$spec_file" \
+            "__DESKTOP_PACKAGE_TRANSITION_METADATA__" \
+            "$desktop_package_metadata"
+    else
+        sed -i '/^__DESKTOP_PACKAGE_TRANSITION_METADATA__$/d' "$spec_file"
+    fi
     replace_literal_file_token \
         "$spec_file" \
         "__CODEX_CLI_PACKAGE_FILES__" \
