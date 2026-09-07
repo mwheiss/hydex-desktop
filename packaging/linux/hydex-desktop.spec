@@ -89,9 +89,11 @@ cp -a "__RPM_STAGING_DIR__/." "%{buildroot}/"
 /opt/__PACKAGE_NAME__/
 /etc/apparmor.d/__PACKAGE_NAME__
 /usr/bin/__PACKAGE_NAME__
+/usr/bin/codex-desktop
 __CODEX_CLI_PACKAGE_FILES__
 %if __PACKAGE_WITH_UPDATER__
 /usr/bin/codex-update-manager
+/usr/bin/hydex-update-manager
 /usr/lib/systemd/user/codex-update-manager.service
 %endif
 /usr/share/applications/__PACKAGE_NAME__.desktop
