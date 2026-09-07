@@ -24,6 +24,8 @@ ensure_app_layout() {
     [ -x "$APP_DIR/start.sh" ] || error "Missing launcher: $APP_DIR/start.sh"
     [ -x "$APP_DIR/ChatGPT" ] || error "Missing official ChatGPT runtime: $APP_DIR/ChatGPT. Run ./install.sh first."
     [ -f "$APP_DIR/resources/app.asar" ] || error "Missing official app.asar: $APP_DIR/resources/app.asar. Run ./install.sh first."
+    [ -f "$APP_DIR/resources/icon-chatgpt.png" ] || error "Missing official ChatGPT icon: $APP_DIR/resources/icon-chatgpt.png. Run ./install.sh first."
+    [ -f "$APP_DIR/.codex-linux/upstream-package/chatgpt.desktop" ] || error "Missing official ChatGPT desktop entry metadata. Run ./install.sh first."
     [ -x "$APP_DIR/resources/codex" ] || error "Missing bundled Codex CLI: $APP_DIR/resources/codex. Run ./install.sh first."
 }
 
@@ -140,27 +142,30 @@ codex_cli_package_metadata() {
     case "$format" in
     pacman)
     cat <<'METADATA'
-provides=('codex' 'openai-codex' 'hydex' 'codex-code-mode-host' 'hydex-code-mode-host')
-conflicts=('hydex' 'hydex-bin' 'codex' 'codex-bin' 'openai-codex' 'openai-codex-bin' 'openai-codex-autoup-bin')
-replaces=('hydex-bin' 'openai-codex-bin' 'openai-codex-autoup-bin')
+provides=('chatgpt' 'codex' 'openai-codex' 'hydex' 'codex-code-mode-host' 'hydex-code-mode-host' 'codex-desktop')
+conflicts=('chatgpt' 'hydex' 'hydex-bin' 'codex' 'codex-bin' 'openai-codex' 'openai-codex-bin' 'openai-codex-autoup-bin' 'codex-desktop')
+replaces=('hydex-bin' 'openai-codex-bin' 'openai-codex-autoup-bin' 'codex-desktop')
 METADATA
         ;;
     deb)
         cat <<'METADATA'
-Provides: codex, openai-codex, hydex, codex-code-mode-host, hydex-code-mode-host
-Conflicts: hydex, hydex-bin, codex, codex-bin, openai-codex, openai-codex-bin, openai-codex-autoup-bin
-Replaces: hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin
+Provides: chatgpt, codex, openai-codex, hydex, codex-code-mode-host, hydex-code-mode-host, codex-desktop
+Conflicts: chatgpt, hydex, hydex-bin, codex, codex-bin, openai-codex, openai-codex-bin, openai-codex-autoup-bin, codex-desktop
+Breaks: codex-desktop
+Replaces: hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin, codex-desktop
 METADATA
         ;;
     rpm)
         cat <<'METADATA'
+Provides:       chatgpt
 Provides:       codex
 Provides:       openai-codex
 Provides:       hydex
 Provides:       codex-code-mode-host
 Provides:       hydex-code-mode-host
-Conflicts:      hydex, hydex-bin, codex, codex-bin, openai-codex, openai-codex-bin, openai-codex-autoup-bin
-Obsoletes:      hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin
+Provides:       codex-desktop
+Conflicts:      chatgpt, hydex, hydex-bin, codex, codex-bin, openai-codex, openai-codex-bin, openai-codex-autoup-bin, codex-desktop
+Obsoletes:      hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin, codex-desktop
 METADATA
         ;;
     *) error "Unsupported Codex CLI package metadata format: $format" ;;
@@ -184,26 +189,7 @@ desktop_package_transition_metadata() {
 
     [ "${PACKAGE_NAME:-}" = "hydex-desktop" ] || return 0
     case "$format" in
-        pacman)
-            cat <<'METADATA'
-provides+=('codex-desktop')
-conflicts+=('codex-desktop')
-replaces+=('codex-desktop')
-METADATA
-            ;;
-        deb)
-            cat <<'METADATA'
-Breaks: codex-desktop
-Replaces: codex-desktop
-METADATA
-            ;;
-        rpm)
-            cat <<'METADATA'
-Provides:       codex-desktop
-Conflicts:      codex-desktop
-Obsoletes:      codex-desktop
-METADATA
-            ;;
+        pacman|deb|rpm) ;;
         *) error "Unsupported Desktop transition metadata format: $format" ;;
     esac
 }
@@ -409,8 +395,8 @@ render_desktop_entry() {
     local rendered_target="$target.tmp"
 
     package_name="$(sed_escape_replacement "$PACKAGE_NAME")"
-    display_name="$(sed_escape_replacement "${PACKAGE_DISPLAY_NAME:-Hydex}")"
-    comment="$(sed_escape_replacement "${PACKAGE_COMMENT:-Community Linux distribution based on OpenAI ChatGPT}")"
+    display_name="$(sed_escape_replacement "${PACKAGE_DISPLAY_NAME:-Hydex Desktop}")"
+    comment="$(sed_escape_replacement "${PACKAGE_COMMENT:-Hydex fork of Codex Desktop}")"
 
     awk \
         -v package_name="$package_name" \
@@ -470,7 +456,8 @@ resolve_package_icon_source() {
         printf '%s\n' "$PACKAGE_ICON_SOURCE"
         return 0
     fi
-    printf '%s\n' "$REPO_DIR/assets/codex-linux.png"
+    [ -n "${APP_DIR:-}" ] || error "APP_DIR is required to resolve the package icon"
+    printf '%s\n' "$APP_DIR/resources/icon-chatgpt.png"
 }
 
 render_packaged_runtime_helper() {
@@ -995,6 +982,8 @@ stage_common_package_files() {
     local root="$1"
     local app_root="$root/opt/$PACKAGE_NAME"
     local polkit_policy="$REPO_DIR/packaging/linux/com.github.mwheiss.hydex-desktop.update.policy"
+    local upstream_desktop="$APP_DIR/.codex-linux/upstream-package/chatgpt.desktop"
+    local upstream_icon="$APP_DIR/resources/icon-chatgpt.png"
 
     ensure_app_layout
 
@@ -1021,7 +1010,9 @@ stage_common_package_files() {
     cp "$ICON_SOURCE" "$app_root/resources/icon-chatgpt.png"
     render_desktop_entry_doctor_helper "$app_root/.codex-linux/hydex-desktop-entry-doctor.sh"
     render_desktop_entry "$root/usr/share/applications/$PACKAGE_NAME.desktop"
+    cp "$upstream_desktop" "$root/usr/share/applications/chatgpt.desktop"
     cp "$ICON_SOURCE" "$root/usr/share/icons/hicolor/256x256/apps/$PACKAGE_NAME.png"
+    cp "$upstream_icon" "$root/usr/share/icons/hicolor/256x256/apps/chatgpt.png"
     render_apparmor_profile "$root/etc/apparmor.d/$PACKAGE_NAME"
     if package_with_updater_enabled; then
         cp "$UPDATER_BINARY_SOURCE" "$root/usr/bin/codex-update-manager"
@@ -1316,6 +1307,7 @@ stage_native_command_aliases() {
     codex_cli_package_links_present "$root"
 
     ensure_native_command_alias "$bin_dir/codex-desktop" "hydex-desktop"
+    ensure_native_command_alias "$bin_dir/chatgpt" "hydex-desktop"
     ensure_native_command_alias "$bin_dir/hydex" "codex"
     ensure_native_command_alias "$bin_dir/hydex-code-mode-host" "codex-code-mode-host"
     if [ -e "$bin_dir/codex-update-manager" ]; then
