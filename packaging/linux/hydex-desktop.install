@@ -2,6 +2,7 @@ SERVICE_HELPER="/opt/hydex-desktop/update-builder/packaging/linux/codex-update-m
 DESKTOP_ENTRY_DOCTOR="/opt/hydex-desktop/.codex-linux/hydex-desktop-entry-doctor.sh"
 PERSISTENT_APP_DIR="/opt/hydex-desktop"
 PERSISTENT_SERVICE_HELPER="$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/package-lifecycle.sh"
+REMOTE_TRUST_SERVICE_HELPER="$PERSISTENT_APP_DIR/.codex-linux/features/remote-trust-race-workaround/package-lifecycle.sh"
 if [ -f "$SERVICE_HELPER" ]; then
     # shellcheck source=/opt/hydex-desktop/update-builder/packaging/linux/codex-update-manager-user-service.sh
     . "$SERVICE_HELPER"
@@ -12,6 +13,9 @@ if [ -f "$DESKTOP_ENTRY_DOCTOR" ]; then
 fi
 if [ -f "$PERSISTENT_SERVICE_HELPER" ]; then
     . "$PERSISTENT_SERVICE_HELPER"
+fi
+if [ -f "$REMOTE_TRUST_SERVICE_HELPER" ]; then
+    . "$REMOTE_TRUST_SERVICE_HELPER"
 fi
 
 codex_desktop_post_transaction_common() {
@@ -44,6 +48,9 @@ post_upgrade() {
 pre_remove() {
     if [ -f "$PERSISTENT_SERVICE_HELPER" ]; then
         codex_persistent_remove_all_users || true
+    fi
+    if [ -f "$REMOTE_TRUST_SERVICE_HELPER" ]; then
+        codex_remote_trust_remove_all_users || true
     fi
     if [ -f "$SERVICE_HELPER" ]; then
         codex_cleanup_user_service stop || true
