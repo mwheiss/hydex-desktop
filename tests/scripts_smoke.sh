@@ -58,6 +58,14 @@ selected_package="$(scripts/select-latest-package.sh "$selector_fixture/hydex-de
 [ "$selected_package" = "$selector_fixture/hydex-desktop_2026.08.12.100000_amd64.deb" ] ||
     fail "package selector did not choose the newest artifact: $selected_package"
 
+touch -t 202608121100 "$selector_fixture/hydex-desktop-2026.08.12.100000-1.x86_64.rpm"
+touch -t 202608121200 "$selector_fixture/hydex-desktop-2026.08.12.100000-rhel7.x86_64.rpm"
+touch -t 202608121300 "$selector_fixture/hydex-desktop-2026.08.12.100000-rhel9.x86_64.rpm"
+selected_package="$(scripts/select-latest-package.sh \
+    "$selector_fixture/hydex-desktop-[0-9]*-[0-9]*.x86_64.rpm")"
+[ "$selected_package" = "$selector_fixture/hydex-desktop-2026.08.12.100000-1.x86_64.rpm" ] ||
+    fail "generic RPM selector chose a compatibility package: $selected_package"
+
 SCRIPT_DIR="$REPO_DIR"
 . scripts/lib/asar-patch.sh
 asar_report="$selector_fixture/patch-report.json"
