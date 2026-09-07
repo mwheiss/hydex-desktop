@@ -90,6 +90,7 @@ cp -a "__RPM_STAGING_DIR__/." "%{buildroot}/"
 /etc/apparmor.d/__PACKAGE_NAME__
 /usr/bin/__PACKAGE_NAME__
 /usr/bin/codex-desktop
+/usr/bin/chatgpt
 __CODEX_CLI_PACKAGE_FILES__
 %if __PACKAGE_WITH_UPDATER__
 /usr/bin/codex-update-manager
@@ -97,7 +98,9 @@ __CODEX_CLI_PACKAGE_FILES__
 /usr/lib/systemd/user/codex-update-manager.service
 %endif
 /usr/share/applications/__PACKAGE_NAME__.desktop
+/usr/share/applications/chatgpt.desktop
 /usr/share/icons/hicolor/256x256/apps/__PACKAGE_NAME__.png
+/usr/share/icons/hicolor/256x256/apps/chatgpt.png
 __LINUX_FEATURE_FILES__
 %if __PACKAGE_WITH_UPDATER__
 /usr/share/polkit-1/actions/com.github.mwheiss.hydex-desktop.update.policy

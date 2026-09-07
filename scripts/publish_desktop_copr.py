@@ -27,6 +27,7 @@ from pathlib import Path
 SCHEMA_VERSION = 1
 PACKAGE = "hydex-desktop"
 EXPECTED_COMMANDS = (
+    "chatgpt",
     "codex",
     "hydex",
     "codex-code-mode-host",

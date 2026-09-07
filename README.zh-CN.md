@@ -14,9 +14,9 @@
 它验证并重新打包已签名的官方 Linux 软件包，提供默认关闭的 Linux 扩展，
 并可构建 deb、RPM、pacman、AppImage 和 Nix 产物。
 
-桌面菜单中的自定义应用名为 **Hydex**，图标带有蓝色 `C`。
-软件包名、命令名和安装目录仍为 `hydex-desktop`、`hydex-desktop` 和
-`/opt/hydex-desktop`，因此可以与 OpenAI 的 **ChatGPT** 清楚区分。
+桌面菜单中的自定义应用名为 **Hydex Desktop**，并在 Hydex 自有图标名称下
+使用 OpenAI 已签名 payload 中的原始图标。软件包名、命令名和安装目录仍为
+`hydex-desktop`、`hydex-desktop` 和 `/opt/hydex-desktop`。
 
 唯一的上游来源是 OpenAI 已签名的 Linux `.deb`。官方 Electron runtime、
 原生模块、内置 `codex` 和 `rg`、code-mode host、插件、库、locale 与 Owl
@@ -101,9 +101,10 @@ UPSTREAM_DEB=/path/to/chatgpt_<version>_<arch>.deb make build-app
 - 构建需要 Node.js 20+、npm、Python 3、curl、`gpgv`、`dpkg-deb`、tar、
   make 和 C/C++ 工具链。更新器及启用的原生扩展 helper 还需要 Rust。
   `make bootstrap-native` 会安装或提示这些依赖。
-- 官方 `chatgpt` 与自定义 `hydex-desktop` 可以同时安装，但两者会共享上游
-  `Codex` 用户 profile。请勿同时运行；上游 single-instance lock 可能把第二次
-  启动交给已经运行的进程。
+- 原生 `hydex-desktop` 软件包与官方 `chatgpt` 软件包冲突，因为 Hydex
+  会提供兼容的 `chatgpt` 命令、desktop entry 和图标路径。两者仍共享上游
+  `Codex` 用户 profile。AppImage 可以单独运行，但请勿与其他
+  Codex/ChatGPT desktop 进程同时运行。
 - AppImage 不会自动添加 `--no-sandbox`。若发行版禁用了 unprivileged user
   namespaces，请使用原生软件包或参阅[故障排除](docs/troubleshooting.md)。
 
@@ -189,7 +190,7 @@ Nix 用户应从 profile、Home Manager 配置或 NixOS module 中删除该包�
 | 事务式更新管理器 | 原生包 | 除非设置 `PACKAGE_WITH_UPDATER=0` |
 | 官方 Browser 和 Chrome 集成 | 上游提供 | 直接复用官方 Linux 实现，不保留旧移植层 |
 | Linux 可选扩展框架 | 默认关闭 | 使用 `make setup-native` 配置 |
-| 独立桌面标识 | 始终启用 | **Hydex**、蓝色 `C` 图标、`hydex-desktop` package identity |
+| 独立桌面标识 | 始终启用 | **Hydex Desktop**、上游原始图标、`hydex-desktop` package identity |
 
 ### 可选 Linux 扩展
 
