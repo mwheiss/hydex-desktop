@@ -17,8 +17,8 @@ BuildRequires:  zstd
 %global __brp_strip_comment_note %{nil}
 %global hydex_elf_suffix ()(64bit)
 
-Provides:       codex, openai-codex, hydex, codex-code-mode-host, hydex-code-mode-host, codex-desktop
-Conflicts:      codex, codex-bin, codex-desktop, hydex, hydex-bin, openai-codex, openai-codex-autoup-bin, openai-codex-bin
+Provides:       chatgpt, codex, openai-codex, hydex, codex-code-mode-host, hydex-code-mode-host, codex-desktop
+Conflicts:      chatgpt, codex, codex-bin, codex-desktop, hydex, hydex-bin, openai-codex, openai-codex-autoup-bin, openai-codex-bin
 Obsoletes:      codex-desktop, hydex, hydex-bin, openai-codex-autoup-bin, openai-codex-bin
 
 Requires:       polkit, curl, dpkg, nodejs, python3, systemd, xdg-utils, gnupg2
@@ -59,6 +59,7 @@ tar -xaf %{SOURCE0} -C %{buildroot}
 /etc/apparmor.d/hydex-desktop
 /usr/bin/hydex-desktop
 /usr/bin/codex-desktop
+/usr/bin/chatgpt
 /usr/bin/codex
 /usr/bin/codex-code-mode-host
 /usr/bin/hydex
@@ -67,7 +68,9 @@ tar -xaf %{SOURCE0} -C %{buildroot}
 /usr/bin/hydex-update-manager
 /usr/lib/systemd/user/codex-update-manager.service
 /usr/share/applications/hydex-desktop.desktop
+/usr/share/applications/chatgpt.desktop
 /usr/share/icons/hicolor/256x256/apps/hydex-desktop.png
+/usr/share/icons/hicolor/256x256/apps/chatgpt.png
 /usr/share/polkit-1/actions/com.github.mwheiss.hydex-desktop.update.policy
 
 %post
