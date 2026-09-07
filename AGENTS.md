@@ -19,8 +19,9 @@ manager that rebuilds from the signed stable APT repository.
   byte-for-byte.
 - Keep the output identity `hydex-desktop` under `/opt/hydex-desktop`; do not
   install the upstream APT source, key, package identity, or maintainer scripts.
-- Keep the user-facing desktop name **Hydex** and its distinct
-  community icon; `ChatGPT` without the qualifier identifies the upstream app.
+- Keep the user-facing desktop name **Hydex Desktop** and preserve the official
+  payload icon under package-owned Hydex icon paths. Native packages also own
+  an exact upstream-style **ChatGPT** desktop compatibility entry.
 - The default core patch registry is empty. A core patch requires a reproduced
   launch/work blocker and a required regression test.
 - Experimental or workflow-specific behavior belongs in `linux-features/`.
@@ -73,8 +74,10 @@ feature `stage.sh`.
 - The compact wrapper sets desktop identity, loads declarative feature hooks,
   and forwards arguments/URIs. Upstream owns single-instance, deep links, tray,
   windows, and lifecycle.
-- The custom and official packages may coexist, but both use the upstream
-  `Codex` user profile and must not be run concurrently.
+- The native Hydex package conflicts with the official `chatgpt` package
+  because it owns compatible `chatgpt` command, desktop-entry, and icon paths.
+  AppImage remains separate, but all variants use the upstream `Codex` user
+  profile and must not be run concurrently.
 - Legacy bundled Browser/Chrome cache migration must be narrow and
   fingerprinted: never wipe arbitrary plugin caches or user-authored plugins.
 - AppImage never adds `--no-sandbox` automatically. Native packages adapt the
