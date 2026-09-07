@@ -229,6 +229,7 @@ Nix 用户应从 profile、Home Manager 配置或 NixOS module 中删除该包�
 | `record-and-replay` | 将 Linux 操作演示录制为可复用 skill | [文档](linux-features/record-and-replay/README.md) |
 | `remote-control-ui` | 显示实验性 remote-control 设置 | [文档](linux-features/remote-control-ui/README.md) |
 | `remote-mobile-control` | 实验性 Linux remote-host / outbound-control flow | [文档](linux-features/remote-mobile-control/README.md) |
+| `remote-trust-race-workaround` | 针对 Remote 生成路径精确信任竞态的窄范围 inotify workaround | [文档](linux-features/remote-trust-race-workaround/README.md) |
 | `shallow-repository-watches` | 避免临时 repo preview 在主线程递归遍历 | [文档](linux-features/shallow-repository-watches/README.md) |
 | `shared-app-server-socket` | 共享 protocol-transparent Unix app-server socket | [文档](linux-features/shared-app-server-socket/README.md) |
 | `thorium-chrome-plugin` | 为官方 Chrome integration 添加 Thorium | [文档](linux-features/thorium-chrome-plugin/README.md) |
@@ -250,8 +251,8 @@ ChatGPT account rollout 和 server-side 功能仍由 OpenAI 控制。重新构�
 make setup-native
 ```
 
-全新的原生构建默认启用 `remote-mobile-control` 和
-`persistent-app-server`。也可以手动复制不启用任何扩展的示例到 gitignored
+全新的原生构建默认启用 `remote-mobile-control`、`persistent-app-server` 和
+`remote-trust-race-workaround`。也可以手动复制不启用任何扩展的示例到 gitignored
 配置；创建该文件后，本机将只启用其中明确列出的扩展：
 
 ```bash

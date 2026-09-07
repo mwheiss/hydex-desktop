@@ -268,6 +268,24 @@ test("RPM packaging preserves validated prebuilt payload binaries", () => {
   }
 });
 
+test("native package removal cleans the Remote trust workaround user service", () => {
+  const lifecycleTemplates = [
+    "packaging/linux/codex-update-manager.prerm",
+    "packaging/linux/hydex-desktop.install",
+    "packaging/linux/hydex-desktop.spec",
+    "packaging/copr/prebuilt-full.spec.in",
+    "packaging/copr/prebuilt-rhel7.spec.in",
+    "packaging/copr/prebuilt-rhel9.spec.in",
+    "scripts/lib/package-common.sh",
+  ];
+
+  for (const relativePath of lifecycleTemplates) {
+    const source = fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
+    assert.match(source, /remote-trust-race-workaround\/package-lifecycle\.sh/);
+    assert.match(source, /codex_remote_trust_remove_all_users/);
+  }
+});
+
 test("RHEL compatibility RPMs pin a private runtime and split the EL7 payload", () => {
   const manifest = JSON.parse(fs.readFileSync(
     path.join(repoRoot, "packaging/rhel-compat/runtime-packages.json"),
