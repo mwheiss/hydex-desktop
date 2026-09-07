@@ -3,11 +3,16 @@ set -eu
 
 PERSISTENT_APP_DIR="/opt/hydex-desktop"
 PERSISTENT_SERVICE_HELPER="$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/package-lifecycle.sh"
+REMOTE_TRUST_SERVICE_HELPER="$PERSISTENT_APP_DIR/.codex-linux/features/remote-trust-race-workaround/package-lifecycle.sh"
 case "${1:-}" in
     remove|purge|deconfigure)
         if [ -f "$PERSISTENT_SERVICE_HELPER" ]; then
             . "$PERSISTENT_SERVICE_HELPER"
             codex_persistent_remove_all_users || true
+        fi
+        if [ -f "$REMOTE_TRUST_SERVICE_HELPER" ]; then
+            . "$REMOTE_TRUST_SERVICE_HELPER"
+            codex_remote_trust_remove_all_users || true
         fi
         ;;
 esac

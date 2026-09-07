@@ -14,7 +14,12 @@ from pathlib import Path
 import publish_desktop_copr as copr
 
 SCHEMA_VERSION = 1
-REQUIRED_FEATURES = {"remote-mobile-control", "hydex-offload", "persistent-app-server"}
+REQUIRED_FEATURES = {
+    "remote-mobile-control",
+    "hydex-offload",
+    "persistent-app-server",
+    "remote-trust-race-workaround",
+}
 FORBIDDEN_FEATURES = {"shared-app-server-socket"}
 
 
@@ -281,7 +286,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--upstream-deb", type=Path, required=True)
     parser.add_argument("--hydex-bin", type=Path, required=True)
     parser.add_argument("--package-version", required=True)
-    parser.add_argument("--features-config", type=Path, default=repo / "linux-features" / "features.json")
+    parser.add_argument("--features-config", type=Path, default=repo / ".copr" / "features.json")
     parser.add_argument("--candidate-dir", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--report", type=Path)
