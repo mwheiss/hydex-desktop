@@ -161,10 +161,16 @@ main() {
 		"$build_root/PKGBUILD" \
 		"__CODEX_CLI_PACKAGE_METADATA__" \
 		"$cli_package_metadata"
-	replace_literal_file_token \
-		"$build_root/PKGBUILD" \
-		"__DESKTOP_PACKAGE_TRANSITION_METADATA__" \
-		"$(desktop_package_transition_metadata pacman)"
+	local desktop_package_metadata
+	desktop_package_metadata="$(desktop_package_transition_metadata pacman)"
+	if [ -n "$desktop_package_metadata" ]; then
+		replace_literal_file_token \
+			"$build_root/PKGBUILD" \
+			"__DESKTOP_PACKAGE_TRANSITION_METADATA__" \
+			"$desktop_package_metadata"
+	else
+		sed -i '/^__DESKTOP_PACKAGE_TRANSITION_METADATA__$/d' "$build_root/PKGBUILD"
+	fi
 	if ! package_with_updater_enabled; then
 		sed -i \
 			-e "/'polkit'/d" \
