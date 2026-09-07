@@ -666,7 +666,7 @@ while True:
         self.assertFalse(m.config_path().exists())
         self.assertFalse(any("enable" in v for v in self.system.calls))
 
-    def test_install_wrapper_builds_before_user_setup(self):
+    def test_install_wrapper_builds_configures_and_launches_desktop(self):
         repo = self.root / "checkout"
         (repo / "linux-features/remote-mobile-control").mkdir(parents=True)
         (repo / "linux-features/persistent-app-server").mkdir()
@@ -675,9 +675,20 @@ while True:
         (repo / "linux-features/remote-mobile-control/patch.js").write_text(
             "CODEX_REMOTE_CONTROL_APP_SERVER_MODE CODEX_REMOTE_CONTROL_APP_SERVER_PROXY_SOCKET")
         fake_file = repo / "linux-features/persistent-app-server/manage.py"
-        with patch.object(m, "__file__", str(fake_file)), patch.object(m.os, "getuid", return_value=12345), patch.object(m, "setup") as setup:
-            m.main(["install", "--no-linger"])
-            setup.assert_called_once_with("/opt/hydex-desktop", linger=False)
+        events = []
+        with patch.object(m, "__file__", str(fake_file)), \
+             patch.object(m.os, "getuid", return_value=12345):
+            with patch.object(
+                    m, "setup",
+                    side_effect=lambda *args, **kwargs: events.append("setup")) as setup, \
+                 patch.object(
+                    m.os, "execv",
+                    side_effect=lambda *args: events.append("launch")) as execv:
+                m.main(["install", "--no-linger"])
+                setup.assert_called_once_with("/opt/hydex-desktop", linger=False)
+                execv.assert_called_once_with(
+                    "/usr/bin/hydex-desktop", ["/usr/bin/hydex-desktop"])
+        self.assertEqual(events, ["setup", "launch"])
         self.assertIn(["make", "install-native"], self.system.calls)
         self.assertEqual(self.system.calls[0], ["node", str(fake_file.with_name("check-mobile.cjs")), str(repo)])
         selected = json.loads((repo / "linux-features/features.json").read_text())["enabled"]
