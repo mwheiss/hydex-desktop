@@ -119,6 +119,7 @@ SCRIPT
     chmod 0755 "$staging_root/usr/bin/$PACKAGE_NAME"
     stage_linux_feature_package_resources "$staging_root" "rpm"
     run_linux_feature_package_hooks "$staging_root" "rpm"
+    stage_native_command_aliases "$staging_root"
     normalize_package_payload_permissions "$staging_root"
     restore_linux_feature_payload_permissions "$staging_root"
     restore_linux_feature_package_resource_permissions "$staging_root" "rpm"

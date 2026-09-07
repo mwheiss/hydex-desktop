@@ -89,7 +89,10 @@ test("persistent native packages replace the standalone Codex CLI provider", (t)
     `PACKAGE_NAME=hydex-desktop codex_cli_package_metadata pacman ${JSON.stringify(root)}`,
     root,
   );
-  assert.match(pacman, /provides=\('codex' 'openai-codex'\)/);
+  assert.match(
+    pacman,
+    /provides=\('codex' 'openai-codex' 'hydex' 'codex-code-mode-host' 'hydex-code-mode-host'\)/,
+  );
   assert.match(pacman, /conflicts=\('hydex' 'hydex-bin' 'codex' 'codex-bin' 'openai-codex'/);
   assert.match(pacman, /replaces=\('hydex-bin'/);
   assert.doesNotMatch(pacman, /replaces=.*'codex-bin'/);
@@ -98,7 +101,10 @@ test("persistent native packages replace the standalone Codex CLI provider", (t)
     `PACKAGE_NAME=hydex-desktop codex_cli_package_metadata deb ${JSON.stringify(root)}`,
     root,
   );
-  assert.match(deb, /^Provides: codex, openai-codex$/m);
+  assert.match(
+    deb,
+    /^Provides: codex, openai-codex, hydex, codex-code-mode-host, hydex-code-mode-host$/m,
+  );
   assert.match(deb, /^Conflicts: hydex, hydex-bin, codex, codex-bin, openai-codex,/m);
   assert.match(deb, /^Replaces: hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin$/m);
 
@@ -107,6 +113,9 @@ test("persistent native packages replace the standalone Codex CLI provider", (t)
     root,
   );
   assert.match(rpm, /^Provides:\s+codex$/m);
+  assert.match(rpm, /^Provides:\s+hydex$/m);
+  assert.match(rpm, /^Provides:\s+codex-code-mode-host$/m);
+  assert.match(rpm, /^Provides:\s+hydex-code-mode-host$/m);
   assert.match(rpm, /^Conflicts:\s+hydex, hydex-bin, codex, codex-bin, openai-codex,/m);
   assert.match(rpm, /^Obsoletes:\s+hydex, hydex-bin, openai-codex-bin, openai-codex-autoup-bin$/m);
   assert.equal(
@@ -114,7 +123,7 @@ test("persistent native packages replace the standalone Codex CLI provider", (t)
       `PACKAGE_NAME=hydex-desktop codex_cli_package_files rpm ${JSON.stringify(root)}`,
       root,
     ),
-    "/usr/bin/codex\n/usr/bin/codex-code-mode-host\n",
+    "/usr/bin/codex\n/usr/bin/codex-code-mode-host\n/usr/bin/hydex\n/usr/bin/hydex-code-mode-host\n",
   );
 
   fs.unlinkSync(path.join(binDir, "codex-code-mode-host"));
@@ -124,6 +133,51 @@ test("persistent native packages replace the standalone Codex CLI provider", (t)
       root,
     ),
     /incomplete or unexpected/,
+  );
+});
+
+test("Hydex native packages expose both Codex and Hydex command names", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "hydex-package-command-aliases-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const binDir = path.join(root, "usr/bin");
+  const resources = path.join(root, "opt/hydex-desktop/resources");
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.mkdirSync(resources, { recursive: true });
+  for (const pathName of [
+    path.join(binDir, "hydex-desktop"),
+    path.join(binDir, "codex-update-manager"),
+    path.join(resources, "codex"),
+    path.join(resources, "codex-code-mode-host"),
+  ]) {
+    fs.writeFileSync(pathName, "", { mode: 0o755 });
+  }
+
+  runPackageCommon(
+    `PACKAGE_NAME=hydex-desktop stage_native_command_aliases ${JSON.stringify(root)}`,
+    root,
+  );
+  runPackageCommon(
+    `PACKAGE_NAME=hydex-desktop stage_native_command_aliases ${JSON.stringify(root)}`,
+    root,
+  );
+
+  assert.deepEqual(
+    Object.fromEntries([
+      "codex",
+      "codex-code-mode-host",
+      "codex-desktop",
+      "hydex",
+      "hydex-code-mode-host",
+      "hydex-update-manager",
+    ].map((name) => [name, fs.readlinkSync(path.join(binDir, name))])),
+    {
+      codex: "/opt/hydex-desktop/resources/codex",
+      "codex-code-mode-host": "/opt/hydex-desktop/resources/codex-code-mode-host",
+      "codex-desktop": "hydex-desktop",
+      hydex: "codex",
+      "hydex-code-mode-host": "codex-code-mode-host",
+      "hydex-update-manager": "codex-update-manager",
+    },
   );
 });
 

@@ -143,6 +143,13 @@ include the updater service/update-builder.
 Their dependency declarations correspond to libraries required by the official
 ELF runtime. They do not install OpenAI's repository configuration.
 
+Native packages preserve both command namespaces. `codex-desktop` aliases
+`hydex-desktop`; `hydex` and `hydex-code-mode-host` alias the packaged `codex`
+and `codex-code-mode-host` entrypoints. Packages that include the updater also
+provide `hydex-update-manager` as an alias for `codex-update-manager`. Package
+construction fails if an existing path would be replaced or an alias points at
+an unexpected target.
+
 The deb package uses the upstream dependency baseline. RPM and pacman templates
 map those library capabilities to their distribution names. Native packages
 adapt the upstream AppArmor policy to `/opt/hydex-desktop/ChatGPT`.
@@ -264,6 +271,7 @@ or compile Rust.
 Before upload, rebuild the SRPM locally and compare the result with the native
 RPM: file names/modes/sizes/digests/links, dependencies, package transitions,
 and all scriptlets must match. Verify exact Hydex CLI hashes and offload flags,
+the complete Codex/Hydex command-alias matrix,
 the visible Electron `productName` of `Hydex`, clean source provenance, and a
 disposable install/CLI smoke test in UBI 7.9, 8, 9, and 10 as appropriate.
 Repeat these checks after downloading every successful COPR result. A locally
