@@ -97,9 +97,14 @@ fi
 %preun
 PERSISTENT_APP_DIR=/opt/hydex-desktop
 PERSISTENT_SERVICE_HELPER=$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/package-lifecycle.sh
+REMOTE_TRUST_SERVICE_HELPER=$PERSISTENT_APP_DIR/.codex-linux/features/remote-trust-race-workaround/package-lifecycle.sh
 if [ $1 -eq 0 ] && [ -f "$PERSISTENT_SERVICE_HELPER" ]; then
     . "$PERSISTENT_SERVICE_HELPER"
     codex_persistent_remove_all_users || true
+fi
+if [ $1 -eq 0 ] && [ -f "$REMOTE_TRUST_SERVICE_HELPER" ]; then
+    . "$REMOTE_TRUST_SERVICE_HELPER"
+    codex_remote_trust_remove_all_users || true
 fi
 SERVICE_HELPER=/opt/hydex-desktop/update-builder/packaging/linux/codex-update-manager-user-service.sh
 [ -f "$SERVICE_HELPER" ] && . "$SERVICE_HELPER"
