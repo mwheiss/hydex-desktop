@@ -1,13 +1,19 @@
-# COPR source contract
+# COPR source-pipeline fixture
 
-The hydex-desktop COPR package uses this repository as an SCM source with the
-make_srpm method. upstream-artifact.json selects one immutable GitHub release
-asset and SHA-256. The source-RPM builder embeds that Debian package, the exact
-Git tree, and the immutable Hydex runtime before target builds run.
+The live `hydex-desktop` package is published in the unified `mheiss/hydex`
+COPR project from uploaded, prebuilt SRPMs. Each SRPM reconstructs its already
+validated native Desktop payload tier in RHEL/EPEL 7-10 builders with
+network access disabled; COPR does not download the upstream package, rerun
+patchers, or compile Rust. EL10 uses the full-updater payload, EL8/9 use the
+private-runtime compatibility payload, and EL7 uses the split RPM4/gzip pair.
 
-The checked-in entry is deliberately dummy. It points to a synthetic MIT
-package and drives the ordinary install.sh, feature-patch, Hydex, and RHEL
-compatibility paths. Failure at the synthetic ASAR is expected and is kept
-visible in COPR. Do not replace the entry with an OpenAI package unless you
-have confirmed redistribution rights for both the GitHub release and the
-resulting public COPR repository.
+This checked-in `.copr` directory remains a source-pipeline compatibility
+fixture. Its deliberately synthetic MIT package exercises signed-artifact
+selection, the ordinary installer, feature patching, Hydex injection, and RHEL
+compatibility paths. Rejection at the dummy ASAR boundary is expected. Do not
+configure the live package to use this SCM fixture.
+
+The maintained release procedure, package-source migration rule, and readback
+gates live in
+`.codex/skills/hydex-plugin-refresh/references/copr.md` in the Hydex source
+repository.
