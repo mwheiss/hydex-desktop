@@ -26,8 +26,9 @@ bash -n scripts/lib/*.sh scripts/build-deb.sh scripts/build-rpm.sh scripts/build
 bash -n scripts/build-gentoo.sh scripts/install-gentoo.sh
 node --test scripts/gentoo-native.test.js scripts/gentoo-install.test.js scripts/lib/gentoo-feature-support.test.js
 
-assert_contains packaging/linux/hydex-desktop.desktop '^Name=Hydex$'
-assert_contains packaging/linux/hydex-desktop.desktop '^Comment=Community Linux distribution based on OpenAI ChatGPT$'
+assert_contains packaging/linux/hydex-desktop.desktop '^Name=Hydex Desktop$'
+assert_contains packaging/linux/hydex-desktop.desktop '^Comment=Hydex fork of Codex Desktop$'
+assert_contains packaging/linux/hydex-desktop.desktop '^GenericName=Coding agent$'
 
 # The official app ignores --new-instance and CODEX_MULTI_LAUNCH: a second
 # launch only focuses the existing window. A "New Window" desktop action built
@@ -53,10 +54,14 @@ if command -v desktop-file-validate >/dev/null 2>&1; then
 fi
 rm -rf "$desktop_fixture"
 assert_contains install.sh 'CODEX_APP_DISPLAY_NAME:-Hydex'
-assert_contains install.sh 'cp .*ICON_SOURCE.*CODEX_APP_ID'
-assert_contains install.sh 'cp .*ICON_SOURCE.*resources/icon-chatgpt.png'
+assert_contains install.sh 'icon_source="\$INSTALL_DIR/resources/icon-chatgpt.png"'
+assert_contains install.sh 'cp .*icon_source.*CODEX_APP_ID'
+assert_absent install.sh 'cp .*ICON_SOURCE.*resources/icon-chatgpt.png'
 assert_contains scripts/lib/package-common.sh 'PACKAGE_DISPLAY_NAME:-Hydex'
-assert_contains scripts/build-appimage.sh 'PACKAGE_DISPLAY_NAME:-Hydex'
+assert_contains scripts/lib/package-common.sh 'APP_DIR/resources/icon-chatgpt.png'
+assert_contains scripts/lib/package-common.sh 'chatgpt.*hydex-desktop'
+assert_contains scripts/lib/package-common.sh 'upstream_desktop.*chatgpt.desktop'
+assert_contains scripts/build-appimage.sh 'PACKAGE_DISPLAY_NAME:-Hydex Desktop'
 assert_contains install.sh 'upstream-linux-package.sh'
 assert_contains install.sh 'CODEX_TARGET_ARCH'
 assert_contains launcher/start.sh.template '/ChatGPT'

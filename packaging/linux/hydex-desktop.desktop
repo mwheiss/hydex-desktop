@@ -1,6 +1,7 @@
 [Desktop Entry]
-Name=Hydex
-Comment=Community Linux distribution based on OpenAI ChatGPT
+Name=Hydex Desktop
+Comment=Hydex fork of Codex Desktop
+GenericName=Coding agent
 Exec=env BAMF_DESKTOP_FILE_HINT=/usr/share/applications/hydex-desktop.desktop CHROME_DESKTOP=hydex-desktop.desktop /usr/bin/hydex-desktop %u
 Icon=hydex-desktop
 Terminal=false
