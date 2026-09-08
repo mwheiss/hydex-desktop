@@ -97,6 +97,26 @@ class PublishDesktopCoprTests(unittest.TestCase):
                 ],
             )
 
+    def test_normalized_provides_ignores_each_package_own_version(self):
+        package = Path("hydex-desktop-cli-runtime.rpm")
+        with (
+            mock.patch.object(
+                MODULE,
+                "rpm_identity",
+                return_value={"name": "hydex-desktop-cli-runtime"},
+            ),
+            mock.patch.object(
+                MODULE,
+                "rpm_lines",
+                return_value=[
+                    "hydex-desktop-cli-runtime = 1-rhel7.el7_9",
+                    "hydex-desktop-cli-runtime(x86-64) = 1-rhel7.el7_9",
+                    "shared-provider = 1",
+                ],
+            ),
+        ):
+            self.assertEqual(MODULE.normalized_provides(package), ["shared-provider = 1"])
+
     def test_parse_build_id_accepts_copr_output(self):
         output = "Build was added\nhttps://copr.fedorainfracloud.org/coprs/build/10956971\nCreated builds: 10956971\n"
         self.assertEqual(MODULE.parse_build_id(output), 10956971)
@@ -139,6 +159,66 @@ class PublishDesktopCoprTests(unittest.TestCase):
                 ("watch", 103),
             ],
         )
+
+    def test_rhel7_live_comparison_accepts_already_omitted_recommendations(self):
+        native = Path("native.rpm")
+        rebuilt = Path("rebuilt.rpm")
+        live = Path("live.rpm")
+
+        def rpm_identity(path):
+            del path
+            return {"name": MODULE.PACKAGE}
+
+        def rpm_lines(path, option):
+            if option != "--recommends":
+                return []
+            return {
+                native: ["kdialog", "zenity"],
+                rebuilt: [],
+                live: [],
+            }[path]
+
+        with (
+            mock.patch.object(MODULE, "rpm_identity", side_effect=rpm_identity),
+            mock.patch.object(MODULE, "normalized_manifest", return_value=[]),
+            mock.patch.object(MODULE, "normalized_requires", return_value=[]),
+            mock.patch.object(MODULE, "normalized_provides", return_value=[]),
+            mock.patch.object(MODULE, "rpm_lines", side_effect=rpm_lines),
+            mock.patch.object(MODULE, "rpm_query", return_value=""),
+        ):
+            MODULE.compare_package_sets((native,), (rebuilt,), MODULE.TIERS[1])
+            MODULE.compare_package_sets(
+                (rebuilt,),
+                (live,),
+                MODULE.TIERS[1],
+                source_is_compat_rebuild=True,
+            )
+
+    def test_validated_record_files_reuses_complete_matching_readback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            package = Path(temporary) / "package.rpm"
+            package.write_bytes(b"rpm")
+            identity = {"name": "hydex-desktop"}
+            record = [{"path": str(package), "sha256": "digest", "identity": identity}]
+            with (
+                mock.patch.object(MODULE, "sha256", return_value="digest"),
+                mock.patch.object(MODULE, "rpm_identity", return_value=identity),
+            ):
+                self.assertEqual(MODULE.validated_record_files(record, 1), [package])
+                self.assertIsNone(MODULE.validated_record_files(record, 2))
+
+    def test_resume_download_reuses_existing_file_before_validation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "package.rpm"
+            destination.write_bytes(b"complete")
+            with mock.patch.object(MODULE, "run") as run:
+                MODULE.download_file(
+                    "https://example.invalid/package.rpm",
+                    destination,
+                    Path(temporary),
+                    reuse_existing=True,
+                )
+            run.assert_not_called()
 
     def test_cleanup_keeps_report_specs_srpms_and_readback(self):
         with tempfile.TemporaryDirectory() as temporary:
