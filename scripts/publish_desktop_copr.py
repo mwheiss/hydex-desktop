@@ -184,7 +184,8 @@ def normalized_requires(path: Path) -> list[str]:
 
 
 def normalized_provides(path: Path) -> list[str]:
-    own = re.compile(r"^hydex-desktop(?:\(x86-64\))? = ")
+    package_name = rpm_identity(path)["name"]
+    own = re.compile(rf"^{re.escape(package_name)}(?:\(x86-64\))? = ")
     return [value for value in rpm_lines(path, "--provides") if not own.match(value)]
 
 
@@ -415,7 +416,13 @@ def build_srpm(tier: Tier, spec: Path, payloads: list[Path], output: Path, versi
     return canonical_srpm, rebuilt
 
 
-def compare_package_sets(native: tuple[Path, ...], rebuilt: tuple[Path, ...], tier: Tier) -> None:
+def compare_package_sets(
+    native: tuple[Path, ...],
+    rebuilt: tuple[Path, ...],
+    tier: Tier,
+    *,
+    source_is_compat_rebuild: bool = False,
+) -> None:
     native_by_name = {rpm_identity(path)["name"]: path for path in native}
     rebuilt_by_name = {rpm_identity(path)["name"]: path for path in rebuilt}
     if native_by_name.keys() != rebuilt_by_name.keys():
@@ -434,7 +441,10 @@ def compare_package_sets(native: tuple[Path, ...], rebuilt: tuple[Path, ...], ti
         source_recommends = rpm_lines(source, "--recommends")
         candidate_recommends = rpm_lines(candidate, "--recommends")
         if tier.split_cli and name == PACKAGE:
-            if source_recommends != ["kdialog", "zenity"] or candidate_recommends:
+            expected_source_recommends = (
+                [] if source_is_compat_rebuild else ["kdialog", "zenity"]
+            )
+            if source_recommends != expected_source_recommends or candidate_recommends:
                 raise SystemExit("RHEL 7 weak recommendation omission is not the documented difference")
         elif source_recommends != candidate_recommends:
             raise SystemExit(f"{tier.name} recommendations differ for {name}")
@@ -538,8 +548,16 @@ def publish_tiers(
         write_json(args.output_dir / "report.json", report)
 
 
-def download_file(url: str, destination: Path, repo: Path) -> None:
+def download_file(
+    url: str,
+    destination: Path,
+    repo: Path,
+    *,
+    reuse_existing: bool = False,
+) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if reuse_existing and destination.is_file():
+        return
     partial = destination.with_suffix(f"{destination.suffix}.part")
     run(
         ["curl", "--fail", "--location", "--retry", "3", url, "--output", str(partial)],
@@ -553,13 +571,13 @@ def download_chroot(args: argparse.Namespace, tier: Tier, build_id: int, chroot:
     base = f"https://download.copr.fedorainfracloud.org/results/{args.project}/{chroot}/{build_id}-{PACKAGE}"
     destination = args.output_dir / "readback" / chroot
     results_path = destination / "results.json"
-    download_file(f"{base}/results.json", results_path, args.repo)
+    download_file(f"{base}/results.json", results_path, args.repo, reuse_existing=args.resume)
     results = json.loads(results_path.read_text())
     files = []
     for package in results.get("packages", []):
         filename = "{name}-{version}-{release}.{arch}.rpm".format(**package)
         path = destination / filename
-        download_file(f"{base}/{filename}", path, args.repo)
+        download_file(f"{base}/{filename}", path, args.repo, reuse_existing=args.resume)
         files.append(path)
     expected = 3 if tier.split_cli else 2
     if len(files) != expected:
@@ -572,7 +590,7 @@ def validate_live_set(tier: Tier, rebuilt: tuple[Path, ...], srpm: Path, live: l
     live_source = [path for path in live if path.name.endswith(".src.rpm")]
     if len(live_source) != 1:
         raise SystemExit(f"expected one live source RPM, found {live_source}")
-    compare_package_sets(rebuilt, live_binary, tier)
+    compare_package_sets(rebuilt, live_binary, tier, source_is_compat_rebuild=True)
     if source_manifest(srpm) != source_manifest(live_source[0]):
         raise SystemExit(f"{tier.name} live source payload differs")
     if tier.split_cli:
@@ -641,6 +659,24 @@ def smoke_live(args: argparse.Namespace, tier: Tier, chroot: str, files: list[Pa
     )
 
 
+def validated_record_files(record: object, expected: int) -> list[Path] | None:
+    if not isinstance(record, list) or len(record) != expected:
+        return None
+    files = []
+    for item in record:
+        if not isinstance(item, dict):
+            return None
+        path = Path(item.get("path", ""))
+        if (
+            not path.is_file()
+            or sha256(path) != item.get("sha256")
+            or rpm_identity(path) != item.get("identity")
+        ):
+            return None
+        files.append(path)
+    return files
+
+
 def readback(args: argparse.Namespace, report: dict[str, object]) -> None:
     records = report.setdefault("readback", {})
     for tier in TIERS:
@@ -651,6 +687,9 @@ def readback(args: argparse.Namespace, report: dict[str, object]) -> None:
         rebuilt = tuple(Path(item["path"]) for item in tier_report["rebuilt"])
         srpm = Path(tier_report["srpm"]["path"])
         for chroot in tier.chroots:
+            expected = 3 if tier.split_cli else 2
+            if validated_record_files(records.get(chroot), expected) is not None:
+                continue
             files = download_chroot(args, tier, int(build["id"]), chroot)
             validate_live_set(tier, rebuilt, srpm, files)
             if not args.skip_container_smoke:
