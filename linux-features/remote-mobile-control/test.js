@@ -73,7 +73,7 @@ function syntheticReasoningSummaryTurnStartBundle() {
 }
 
 function syntheticCurrentReasoningSummaryTurnStartBundle() {
-  return "async function HWt(e,t,n,r,i,a,o){let s=n.request,N=a.latestThreadSettings,S=a.initialParams,ye=N?.summary??`none`;S?.summary!==void 0&&(ye=S.summary),o.reasoningSummaryOverride!=null&&(ye=o.reasoningSummaryOverride),s.summary!==void 0&&(ye=s.summary);logger.info(`Reasoning summary turn-start config resolved`,{safe:{summary:ye}});return{summary:ye}}async function QWt(e,t,n,r,i,a){return await HWt(e,t,n,r,i,a,{canUseProjectlessWorkspace:!gh(e.getHostId()),canMaterializeCodexHomeRoots:!gh(e.getHostId())&&!0,preserveWorkspaceSandboxPolicyWithDefault:gh(e.getHostId()),carryProjectlessRuntimeRoots:!gh(e.getHostId()),latestUseAppServerPermissionDefault:!0,reasoningSummaryOverride:e.getDefaultFeatureOverride(`concurrent_reasoning_summaries`)===!0?`detailed`:null})}";
+  return "async function HWt(e,t,n,r,i,a,o){let s=n.request,N=a.latestThreadSettings,S=a.initialParams,ye=N?.summary??`none`;S?.summary!==void 0&&(ye=S.summary),o.reasoningSummaryOverride!=null&&(ye=o.reasoningSummaryOverride),s.summary!==void 0&&(ye=s.summary);logger.info(`Reasoning summary turn-start config resolved`,{safe:{summary:ye}});return{summary:ye}}async function QWt(e,t,n,r,i,a){return await HWt(e,t,n,r,i,a,{canUseProjectlessWorkspace:!gh(e.getHostId())||a.mode===`durable`||!1,canMaterializeCodexHomeRoots:!gh(e.getHostId())&&!0,preserveWorkspaceSandboxPolicyWithDefault:gh(e.getHostId()),carryProjectlessRuntimeRoots:!gh(e.getHostId()),latestUseAppServerPermissionDefault:!0,reasoningSummaryOverride:e.getDefaultFeatureOverride(`concurrent_reasoning_summaries`)===!0?`detailed`:null})}";
 }
 
 test("remote mobile README assigns every descriptor to one control topology", () => {
@@ -347,6 +347,23 @@ function syntheticCurrentRemoteNotificationLifecycleBundle() {
 
 function syntheticCurrentRemoteNotificationReductionBundle() {
   const source = syntheticCurrentRemoteNotificationLifecycleBundle();
+  return source.slice(0, source.indexOf("function Of(")) +
+    source.slice(source.indexOf("function xm("));
+}
+
+function syntheticLatestRemoteNotificationLifecycleBundle() {
+  return syntheticCurrentRemoteNotificationLifecycleBundle()
+    .replace("function $dt(e,t,n,r)", "function _in(e,t,n)")
+    .replace("e.automationCapability=n", "e.automationCapability=null")
+    .replace("function Sdt(e,t,n)", "function Frn(e,t)")
+    .replace(
+      "function bn(e,t){return{method:e,params:t}}function tLn(e,t,n,r,o){let a=bn(t,n),u=a.method===`turn/completed`&&r?.threadId===a.params.threadId&&r.turnId===a.params.turn.id?r:null,s={notification:a,automationCapability:u},{manager:c,notificationContext:l}=e;if(!(l.streamState.shouldIgnoreThreadMutationAsFollower(a.method,a.params,`notification`)||l.resumeNotificationBuffer.buffer(s,o)||l.threadStartedNotificationDeferral.bufferNotification(s,o)||o?.())){switch(a.method){case`turn/started`:case`turn/completed`:if($dt(e,a,u,o)===`deferred`)return;break;case`item/started`:case`item/completed`:if(Sdt(e,a,u)===`deferred`)return;break}l.events.emitNotification(a)}}",
+      "function xin(e,t){return{method:e,params:t}}function bin(e,t,n){let{manager:r,notificationContext:i}=e;if(!(i.streamState.shouldIgnoreThreadMutationAsFollower(t.method,t.params,`notification`)||i.resumeNotificationBuffer.buffer(t,n)||i.threadStartedNotificationDeferral.bufferNotification(t,n)||n?.())){switch(t.method){case`turn/started`:case`turn/completed`:if(_in(e,t,n)===`deferred`)return;break;case`item/started`:case`item/completed`:if(Frn(e,t)===`deferred`)return;break}i.events.emitNotification(t)}}",
+    );
+}
+
+function syntheticLatestRemoteNotificationReductionBundle() {
+  const source = syntheticLatestRemoteNotificationLifecycleBundle();
   return source.slice(0, source.indexOf("function Of(")) +
     source.slice(source.indexOf("function xm("));
 }
@@ -2021,6 +2038,40 @@ test("Linux remote mobile hydration recovery rejects partial lifecycle drift", (
 
   assert.doesNotMatch(result, /codexLinuxRemoteMobilePendingNotifications/);
   assert.doesNotMatch(result, /codexLinuxRemoteMobileHydrateUnknownConversation/);
+  assert.ok(warnings.some((warning) => warning.includes("complete current remote notification recovery lifecycle")));
+});
+
+test("Linux remote mobile hydration accepts the latest normalized dispatcher exactly once", () => {
+  const source = syntheticLatestRemoteNotificationLifecycleBundle();
+  const { result: patched, warnings } = captureWarnings(() =>
+    applyLinuxRemoteMobileConversationHydrationPatch(source));
+
+  assert.notEqual(patched, source);
+  assert.deepEqual(warnings, []);
+  assert.match(patched, /codexLinuxRemoteMobilePendingNotifications/);
+  assert.match(patched, /for\(let\[t,n\]of r\)e\.onNotification\(t\.method,t\.params,n\)/);
+  assert.match(patched, /codexLinuxRemoteMobileBufferPendingNotification\(i,t,n\)/);
+  assert.equal(applyLinuxRemoteMobileConversationHydrationPatch(patched), patched);
+});
+
+test("Linux remote mobile hydration rejects ambiguous legacy and normalized dispatchers", () => {
+  const source = syntheticCurrentRemoteNotificationReductionBundle() +
+    syntheticLatestRemoteNotificationReductionBundle();
+  const { result, warnings } = captureWarnings(() =>
+    applyLinuxRemoteMobileConversationHydrationPatch(source));
+
+  assert.equal(result, source);
+  assert.ok(warnings.some((warning) => warning.includes("complete current remote notification recovery lifecycle")));
+});
+
+test("Linux remote mobile hydration rejects a normalized dispatcher without its callback", () => {
+  const source = syntheticLatestRemoteNotificationReductionBundle()
+    .replace("function bin(e,t,n)", "function bin(e,t)")
+    .replace("||n?.()", "");
+  const { result, warnings } = captureWarnings(() =>
+    applyLinuxRemoteMobileConversationHydrationPatch(source));
+
+  assert.equal(result, source);
   assert.ok(warnings.some((warning) => warning.includes("complete current remote notification recovery lifecycle")));
 });
 
