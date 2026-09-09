@@ -3,8 +3,8 @@
   "architectures": {
     "amd64": {
       "machine": 62,
-      "targetInventoryCount": 37,
-      "targetInventorySha256": "e271731ff74d73e2a30ce8e7af445da67a645bfd741650b38493abbd76df4585",
+      "targetInventoryCount": 39,
+      "targetInventorySha256": "f5aae11d9c79a072a6f9ecf3cc8bf684b0870861dee3b7111abbee91b6107a5a",
       "requiredDynamicExecutables": [
         "ChatGPT",
         "browser_crashpad_handler",
@@ -17,7 +17,7 @@
       "interpreterStrategies": {
         "ChatGPT": "relocate-within-detect-libc-range",
         "resources/cua_node/bin/node": "patchelf-rpath-first",
-        "resources/cua_node/lib/node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.6": "preserve-upstream"
+        "resources/cua_node/lib/node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.3": "preserve-upstream"
       }
     },
     "arm64": {
