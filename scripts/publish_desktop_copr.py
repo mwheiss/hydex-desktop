@@ -522,6 +522,8 @@ def publish_tiers(
             build_id = int(existing["id"])
             status = copr_status(build_id, args.repo)
             if status == "succeeded":
+                existing["status"] = status
+                write_json(args.output_dir / "report.json", report)
                 continue
             if status not in {"running", "pending", "starting", "importing", "waiting"}:
                 existing = None
