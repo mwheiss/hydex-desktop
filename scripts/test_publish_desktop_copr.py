@@ -160,6 +160,35 @@ class PublishDesktopCoprTests(unittest.TestCase):
             ],
         )
 
+    def test_resume_records_existing_succeeded_builds(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = argparse.Namespace(repo=root, output_dir=root, project="mheiss/hydex")
+            report = {
+                "tiers": {
+                    tier.name: {"srpm": {"path": f"/{tier.name}.src.rpm"}}
+                    for tier in MODULE.TIERS
+                },
+                "builds": {
+                    tier.name: {"id": index, "status": "submitted"}
+                    for index, tier in enumerate(MODULE.TIERS, start=101)
+                },
+            }
+            with mock.patch.object(MODULE, "copr_status", return_value="succeeded"):
+                MODULE.publish_tiers(
+                    args,
+                    report,
+                    runner=mock.Mock(side_effect=AssertionError("unexpected runner call")),
+                )
+
+            self.assertEqual(
+                report["builds"],
+                {
+                    tier.name: {"id": index, "status": "succeeded"}
+                    for index, tier in enumerate(MODULE.TIERS, start=101)
+                },
+            )
+
     def test_rhel7_live_comparison_accepts_already_omitted_recommendations(self):
         native = Path("native.rpm")
         rebuilt = Path("rebuilt.rpm")
