@@ -17,6 +17,11 @@ const {
   routeInitializerContracts,
 } = patchModule;
 
+const coreOnlyFeaturesConfig = path.join(
+  __dirname,
+  "../../../../../../linux-features/features.example.json",
+);
+
 function fixtureRoot(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "upstream-renderer-cycle-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -141,7 +146,10 @@ test("patch runner reports the core cycle fix as applied then already applied", 
   const { root, assetsDir } = fixtureRoot(t);
   writeCycleFixture(assetsDir);
   const firstReport = createPatchReport();
-  patchExtractedApp(root, { report: firstReport });
+  patchExtractedApp(root, {
+    report: firstReport,
+    featuresConfigPath: coreOnlyFeaturesConfig,
+  });
   assert.deepEqual(
     firstReport.patches.map(({ name, status, sourceKind, ciPolicy }) => ({
       name,
@@ -159,7 +167,10 @@ test("patch runner reports the core cycle fix as applied then already applied", 
   assert.deepEqual(criticalFailuresFromReport(firstReport), []);
 
   const secondReport = createPatchReport();
-  patchExtractedApp(root, { report: secondReport });
+  patchExtractedApp(root, {
+    report: secondReport,
+    featuresConfigPath: coreOnlyFeaturesConfig,
+  });
   assert.equal(secondReport.patches[0].status, "already-applied");
   assert.deepEqual(criticalFailuresFromReport(secondReport), []);
 });
@@ -203,7 +214,10 @@ test("missing reverse import reports a required core failure", (t) => {
   writeCycleFixture(assetsDir, { reverseImport: false });
   const report = createPatchReport();
 
-  patchExtractedApp(root, { report });
+  patchExtractedApp(root, {
+    report,
+    featuresConfigPath: coreOnlyFeaturesConfig,
+  });
 
   assert.equal(report.patches[0].status, "failed-required");
   assert.deepEqual(
