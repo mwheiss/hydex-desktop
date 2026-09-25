@@ -177,7 +177,7 @@ function applyHydexRequestBridgePatch(source) {
 function composerSignaturePattern() {
   return new RegExp(
     `function (${IDENT})\\(e\\)\\{let (${IDENT})=\\(0,(${IDENT})\\.c\\)\\(\\d+\\),` +
-      `\\{allowAeonDraftModelSelection:(${IDENT}),conversationId:(${IDENT}),` +
+      `\\{(?:allowAeonDraftModelSelection|serviceTierDefaults):(${IDENT}),conversationId:(${IDENT}),` +
       `hideLabel:(${IDENT}),permissionsCwdOverride:(${IDENT}),permissionsHostId:(${IDENT})\\}=e`,
     "g",
   );
@@ -186,7 +186,7 @@ function composerSignaturePattern() {
 function composerContractMatches(source) {
   return [...source.matchAll(composerSignaturePattern())].filter((match) => {
     const region = source.slice(match.index, match.index + 30_000);
-    return region.includes("data-codex-intelligence-trigger") &&
+    return (region.includes("data-codex-intelligence-trigger") || region.includes("triggerButton:")) &&
       region.includes("composer.intelligenceDropdown.tooltip") &&
       region.includes("selectComposerModelAndReasoningEffort") &&
       region.includes("reasoningEffort") &&
@@ -375,7 +375,7 @@ const descriptors = [
     phase: "webview-asset",
     order: 20700,
     ciPolicy: "optional",
-    pattern: /^app-initial-[^.]+\.js$/,
+    pattern: /^app-(?:initial|shared)-[^.]+\.js$/,
     assetMatch: matchesHydexRequestBridgeContract,
     missingDescription: "current app-server request bridge bundle",
     skipDescription: "Hydex offload request bridge patch",
@@ -386,7 +386,7 @@ const descriptors = [
     phase: "webview-asset",
     order: 20705,
     ciPolicy: "optional",
-    pattern: /^app-primary-[^.]+\.js$/,
+    pattern: /^app-(?:primary|initial)-[^.]+\.js$/,
     assetMatch: matchesHydexProductModeLabelContract,
     missingDescription: "current Codex sidebar product-mode label bundle",
     skipDescription: "Hydex product-mode label patch",

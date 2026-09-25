@@ -934,13 +934,13 @@ function applyLinuxRemoteMobileConversationHydrationPatch(source) {
       return matches.length === 1 ? matches[0] : null;
     };
     const legacyHandlerNeedle =
-      /function (?<handler>[A-Za-z_$][\w$]*)\((?<owner>[A-Za-z_$][\w$]*),(?<method>[A-Za-z_$][\w$]*),(?<params>[A-Za-z_$][\w$]*),[A-Za-z_$][\w$]*,(?<callback>[A-Za-z_$][\w$]*)\)\{let (?<notification>[A-Za-z_$][\w$]*)=[A-Za-z_$][\w$]*\(\k<method>,\k<params>\),[\s\S]{0,300}?[A-Za-z_$][\w$]*=\{notification:\k<notification>,automationCapability:(?<capability>[A-Za-z_$][\w$]*)\},\{manager:(?<manager>[A-Za-z_$][\w$]*),notificationContext:(?<context>[A-Za-z_$][\w$]*)\}=\k<owner>;(?=[\s\S]{0,300}?\k<context>\.streamState\.shouldIgnoreThreadMutationAsFollower\(\k<notification>\.method,\k<notification>\.params,`notification`\))/u;
+      /function (?<handler>[A-Za-z_$][\w$]*)\((?<owner>[A-Za-z_$][\w$]*),(?<method>[A-Za-z_$][\w$]*),(?<params>[A-Za-z_$][\w$]*),[A-Za-z_$][\w$]*,(?:(?<receivedAt>[A-Za-z_$][\w$]*),)?(?<callback>[A-Za-z_$][\w$]*)\)\{let (?<notification>[A-Za-z_$][\w$]*)=[A-Za-z_$][\w$]*\(\k<method>,\k<params>\),[\s\S]{0,300}?[A-Za-z_$][\w$]*=\{notification:\k<notification>,automationCapability:(?<capability>[A-Za-z_$][\w$]*)(?:,receivedAtMs:\k<receivedAt>)?\},\{manager:(?<manager>[A-Za-z_$][\w$]*),notificationContext:(?<context>[A-Za-z_$][\w$]*)\}=\k<owner>;(?=[\s\S]{0,300}?\k<context>\.streamState\.shouldIgnoreThreadMutationAsFollower\(\k<notification>\.method,\k<notification>\.params,`notification`\))/u;
     const currentHandlerNeedle =
       /function (?<handler>[A-Za-z_$][\w$]*)\((?<owner>[A-Za-z_$][\w$]*),(?<notification>[A-Za-z_$][\w$]*),(?<callback>[A-Za-z_$][\w$]*)\)\{let\{manager:(?<manager>[A-Za-z_$][\w$]*),notificationContext:(?<context>[A-Za-z_$][\w$]*)\}=\k<owner>;(?=if\(!\(\k<context>\.streamState\.shouldIgnoreThreadMutationAsFollower\(\k<notification>\.method,\k<notification>\.params,`notification`\))/u;
     const handlerContracts = [
       { kind: "legacy", match: singleMatch(patched, legacyHandlerNeedle), pattern: legacyHandlerNeedle },
       { kind: "current", match: singleMatch(patched, currentHandlerNeedle), pattern: currentHandlerNeedle },
-    ].filter(({ match }) => match != null);
+    ].filter(({ match }) => match != null && (match.groups.receivedAt == null || match[0].includes(`receivedAtMs:${match.groups.receivedAt}`)));
     const handlerContract = handlerContracts.length === 1 ? handlerContracts[0] : null;
     const handlerMatch = handlerContract?.match ?? null;
     const normalizerNeedle =
@@ -953,7 +953,7 @@ function applyLinuxRemoteMobileConversationHydrationPatch(source) {
       /(?<condition>if\((?<item>[A-Za-z_$][\w$]*)\.type===`commandExecution`&&(?<context>[A-Za-z_$][\w$]*)\.itemStreamState\.clearItemTerminalInputBuffer\((?<conversation>[A-Za-z_$][\w$]*),\k<item>\.id\),\k<context>\.threadStore\.conversations\.get\(\k<conversation>\)==null\))\{(?<manager>[A-Za-z_$][\w$]*)\.logger\.error\(`Received item\/completed for unknown conversation`,\{safe:\{conversationId:\k<conversation>\},sensitive:\{\}\}\);break\}/u,
     ];
     const ownerPattern =
-      /function [A-Za-z_$][\w$]*\([^,]+,([A-Za-z_$][\w$]*)(?:,([A-Za-z_$][\w$]*))?(?:,[A-Za-z_$][\w$]*)?\)\{let\{manager:([A-Za-z_$][\w$]*),notificationContext:([A-Za-z_$][\w$]*)(?:,[^}]*)?\}=[A-Za-z_$][\w$]*;/u;
+      /function [A-Za-z_$][\w$]*\([^,]+,([A-Za-z_$][\w$]*)(?:,([A-Za-z_$][\w$]*))?(?:,[A-Za-z_$][\w$]*){0,2}\)\{let\{manager:([A-Za-z_$][\w$]*),notificationContext:([A-Za-z_$][\w$]*)(?:,[^}]*)?\}=[A-Za-z_$][\w$]*;/u;
     const unknownContracts = unknownNeedles.map((needle, index) => {
       const match = singleMatch(patched, needle);
       if (match == null) return null;
@@ -965,7 +965,12 @@ function applyLinuxRemoteMobileConversationHydrationPatch(source) {
         (match.groups.manager != null && match.groups.manager !== owner[3]) ||
         (match.groups.context != null && match.groups.context !== owner[4])
       ) return null;
-      return { match, notification: owner[1], capability: owner[2], manager: owner[3], context: owner[4] };
+      const timed = handlerMatch?.groups.receivedAt != null;
+      const parameters = prefix.match(/^function [^(]+\(([^)]+)\)/u)?.[1].split(",");
+      if (timed && (parameters == null || parameters.length !== (index < 2 ? 5 : 4))) return null;
+      return { match, notification: owner[1], capability: owner[2], manager: owner[3], context: owner[4],
+        receivedAt: timed ? parameters[3] : "void 0",
+        callback: timed && index < 2 ? parameters[4] : "void 0" };
     });
 
     if (
@@ -983,20 +988,20 @@ function applyLinuxRemoteMobileConversationHydrationPatch(source) {
       const helpers = currentDispatcher
         ? `function codexLinuxRemoteMobileBufferPendingNotification(e,t,n){let r=t.params.threadId??t.params.thread?.id;if(typeof r!==\`string\`)return!1;let i=e.${REMOTE_MOBILE_PENDING_NOTIFICATIONS_MARKER}?.get(${normalizerFn}(r));return i==null?!1:(i.push([t,n]),!0)}` +
           `function ${REMOTE_MOBILE_HYDRATION_MARKER}(e,t,n,r){let i=t.${REMOTE_MOBILE_PENDING_NOTIFICATIONS_MARKER};if(i==null)i=t.${REMOTE_MOBILE_PENDING_NOTIFICATIONS_MARKER}=new Map;let a=i.get(n);if(a!=null){a.push([r]);return}i.set(n,[[r]]);let o=r.params.threadId??r.params.thread?.id;Promise.resolve(t.threadStore.hydrateActiveThread(o)).then(()=>{let r=i.get(n)??[];i.delete(n);if(!t.threadStore.conversations.get(n)){e.logger.error(\`Failed to hydrate conversation for deferred remote notification\`,{safe:{conversationId:n},sensitive:{}});return}for(let[t,n]of r)e.onNotification(t.method,t.params,n)},r=>{i.delete(n),e.logger.error(\`Failed to hydrate conversation for deferred remote notification\`,{safe:{conversationId:n},sensitive:{error:r}})})}`
-        : `function codexLinuxRemoteMobileBufferPendingNotification(e,t,n,r){let i=t.params.threadId??t.params.thread?.id;if(typeof i!==\`string\`)return!1;let a=e.${REMOTE_MOBILE_PENDING_NOTIFICATIONS_MARKER}?.get(${normalizerFn}(i));return a==null?!1:(a.push([t,n,r]),!0)}` +
-          `function ${REMOTE_MOBILE_HYDRATION_MARKER}(e,t,n,r,i){let a=t.${REMOTE_MOBILE_PENDING_NOTIFICATIONS_MARKER};if(a==null)a=t.${REMOTE_MOBILE_PENDING_NOTIFICATIONS_MARKER}=new Map;let o=a.get(n);if(o!=null){o.push([r,i]);return}a.set(n,[[r,i]]);let s=r.params.threadId??r.params.thread?.id;Promise.resolve(t.threadStore.hydrateActiveThread(s)).then(()=>{let r=a.get(n)??[];a.delete(n);if(!t.threadStore.conversations.get(n)){e.logger.error(\`Failed to hydrate conversation for deferred remote notification\`,{safe:{conversationId:n},sensitive:{}});return}for(let[t,n,i]of r)e.onNotification(t.method,t.params,n,i)},r=>{a.delete(n),e.logger.error(\`Failed to hydrate conversation for deferred remote notification\`,{safe:{conversationId:n},sensitive:{error:r}})})}`;
+        : `function codexLinuxRemoteMobileBufferPendingNotification(e,t,n,r,receivedAtMs){let i=t.params.threadId??t.params.thread?.id;if(typeof i!==\`string\`)return!1;let a=e.${REMOTE_MOBILE_PENDING_NOTIFICATIONS_MARKER}?.get(${normalizerFn}(i));return a==null?!1:(a.push([t,n,r,receivedAtMs]),!0)}` +
+          `function ${REMOTE_MOBILE_HYDRATION_MARKER}(e,t,n,r,i,receivedAtMs,callback){let a=t.${REMOTE_MOBILE_PENDING_NOTIFICATIONS_MARKER};if(a==null)a=t.${REMOTE_MOBILE_PENDING_NOTIFICATIONS_MARKER}=new Map;let o=a.get(n);if(o!=null){o.push([r,i,callback,receivedAtMs]);return}a.set(n,[[r,i,callback,receivedAtMs]]);let s=r.params.threadId??r.params.thread?.id;Promise.resolve(t.threadStore.hydrateActiveThread(s)).then(()=>{let r=a.get(n)??[];a.delete(n);if(!t.threadStore.conversations.get(n)){e.logger.error(\`Failed to hydrate conversation for deferred remote notification\`,{safe:{conversationId:n},sensitive:{}});return}for(let[t,n,i,a]of r)e.onNotification(t.method,t.params,n,i,a)},r=>{a.delete(n),e.logger.error(\`Failed to hydrate conversation for deferred remote notification\`,{safe:{conversationId:n},sensitive:{error:r}})})}`;
 
       patched = `${helpers}${patched}`.replace(handlerContract.pattern, (needle) =>
         currentDispatcher
           ? `${needle}if(codexLinuxRemoteMobileBufferPendingNotification(${notificationContextVar},${notificationVar},${handlerMatch.groups.callback}))return;`
-          : `${needle}if(codexLinuxRemoteMobileBufferPendingNotification(${notificationContextVar},${notificationVar},${handlerMatch.groups.capability},${handlerMatch.groups.callback}))return;`,
+          : `${needle}if(codexLinuxRemoteMobileBufferPendingNotification(${notificationContextVar},${notificationVar},${handlerMatch.groups.capability},${handlerMatch.groups.callback},${handlerMatch.groups.receivedAt ?? "void 0"}))return;`,
       );
       for (const contract of unknownContracts) {
         patched = patched.replace(
           contract.match[0],
           currentDispatcher
             ? `${contract.match.groups.condition}{${REMOTE_MOBILE_HYDRATION_MARKER}(${contract.manager},${contract.context},${contract.match.groups.conversation},${contract.notification});return\`deferred\`}`
-            : `${contract.match.groups.condition}{${REMOTE_MOBILE_HYDRATION_MARKER}(${contract.manager},${contract.context},${contract.match.groups.conversation},${contract.notification},${contract.capability});return\`deferred\`}`,
+            : `${contract.match.groups.condition}{${REMOTE_MOBILE_HYDRATION_MARKER}(${contract.manager},${contract.context},${contract.match.groups.conversation},${contract.notification},${contract.capability},${contract.receivedAt},${contract.callback});return\`deferred\`}`,
         );
       }
     } else if (
@@ -1278,11 +1283,23 @@ function applyLinuxRemoteControlEnablementBridgePatch(source) {
 
   const selfAutoConnectPattern =
     /([A-Za-z_$][\w$]*)\(`set-remote-control-connections-enabled`,\{params:\{enabled:([A-Za-z_$][\w$]*)(,oneToOnePairingInAppEnabled:[A-Za-z_$][\w$]*)\}\}\)\.catch\(([A-Za-z_$][\w$]*)=>\{([A-Za-z_$][\w$]*)\.warning\(`\$\{([A-Za-z_$][\w$]*)\} sync_failed`,\{safe:\{remoteControlConnectionsEnabled:\2\},sensitive:\{error:\4\}\}\)\}\)/u;
-  const selfAutoConnectRegion = region.replace(
+  let selfAutoConnectRegion = region.replace(
     selfAutoConnectPattern,
     (_needle, desktopHostRequestFn, enabledVar, extraParams, errorVar, loggerVar, logPrefixVar) =>
       selfAutoConnectReplacement(desktopHostRequestFn, enabledVar, extraParams, errorVar, loggerVar, logPrefixVar),
   );
+
+  if (selfAutoConnectRegion === region) {
+    const literalPrefixPattern = /([A-Za-z_$][\w$]*)\(`set-remote-control-connections-enabled`,\{params:\{enabled:([A-Za-z_$][\w$]*)(,oneToOnePairingInAppEnabled:[A-Za-z_$][\w$]*)\}\}\)\.catch\(([A-Za-z_$][\w$]*)=>\{([A-Za-z_$][\w$]*)\.warning\(`\[remote-connections\/gate-bridge\] sync_failed`,\{safe:\{remoteControlConnectionsEnabled:\2\},sensitive:\{error:\4\}\}\)\}\)/gu;
+    const matches = [...region.matchAll(literalPrefixPattern)];
+    if (matches.length === 1) {
+      selfAutoConnectRegion = region.replace(
+        literalPrefixPattern,
+        (_needle, request, enabled, extra, error, logger) =>
+          selfAutoConnectReplacement(request, enabled, extra, error, logger, JSON.stringify("[remote-connections/gate-bridge]")),
+      );
+    }
+  }
 
   if (selfAutoConnectRegion === region) {
     console.warn("WARN: Could not find remote-control self auto-connect needle - skipping Linux remote-control auto-connect patch");
@@ -1550,7 +1567,8 @@ module.exports = [
   {
     id: "linux-remote-mobile-reasoning-summary-none",
     phase: "webview-asset",
-    pattern: REMOTE_CONTROL_APP_INITIAL_ASSET_PATTERN,
+    pattern: /^app-(?:initial|shared)-[^.]+\.js$/u,
+    assetMatch: (source) => source.includes("Reasoning summary turn-start config resolved"),
     order: 20_149,
     ciPolicy: "optional",
     missingDescription: "turn-start reasoning summary resolver",
@@ -1560,7 +1578,8 @@ module.exports = [
   {
     id: "linux-remote-mobile-conversation-hydration",
     phase: "webview-asset",
-    pattern: REMOTE_CONTROL_APP_INITIAL_ASSET_PATTERN,
+    pattern: /^app-(?:initial|shared)-[^.]+\.js$/u,
+    assetMatch: (source) => source.includes("Received turn/started for unknown conversation") || source.includes(REMOTE_MOBILE_HYDRATION_MARKER) || /([A-Za-z_$][\w$]*)\.resumeState===`needs_resume`&&\(\1\.threadRuntimeStatus=/u.test(source),
     order: 20_150,
     ciPolicy: "optional",
     missingDescription: "app-server conversation manager bundle",

@@ -2222,6 +2222,40 @@ test("Linux remote mobile hydration recovery rejects partial lifecycle drift", (
   assert.ok(warnings.some((warning) => warning.includes("complete current remote notification recovery lifecycle")));
 });
 
+test("timestamped remote notifications retain ordering, callbacks and receipt times during hydration", async () => {
+  const source = syntheticCurrentRemoteNotificationLifecycleBundle()
+    .replace("function tLn(e,t,n,r,o)", "function tLn(e,t,n,r,received,o)")
+    .replace("notification:a,automationCapability:u}", "notification:a,automationCapability:u,receivedAtMs:received}")
+    .replace("function $dt(e,t,n,r)", "function $dt(e,t,n,received,r)")
+    .replace("function Sdt(e,t,n)", "function Sdt(e,t,n,received)");
+  const { result, warnings } = captureWarnings(() => applyLinuxRemoteMobileConversationHydrationPatch(source));
+  assert.deepEqual(warnings, []);
+  assert.equal(applyLinuxRemoteMobileConversationHydrationPatch(result), result);
+  const context = {};
+  vm.runInNewContext(result, context);
+  let ready;
+  const hydration = new Promise((resolve) => { ready = resolve; });
+  const conversations = new Map();
+  const state = { threadStore: { conversations, hydrateActiveThread: () => hydration } };
+  const calls = [];
+  const manager = { logger: { error() { assert.fail("hydration failed"); } }, onNotification: (...args) => calls.push(args) };
+  const first = { method: "turn/started", params: { threadId: "thread-a" } };
+  const second = { method: "item/started", params: { threadId: "thread-a" } };
+  const callback = () => {};
+  const capability = { token: "fixture" };
+  context.codexLinuxRemoteMobileHydrateUnknownConversation(manager, state, "thread-a", first, capability, 101, callback);
+  assert.equal(context.codexLinuxRemoteMobileBufferPendingNotification(state, second, capability, callback, 202), true);
+  conversations.set("thread-a", {});
+  ready();
+  await hydration;
+  await new Promise(setImmediate);
+  assert.deepEqual(calls, [[first.method, first.params, capability, callback, 101], [second.method, second.params, capability, callback, 202]]);
+  const broken = source.replace("receivedAtMs:received", "receipt:received");
+  const rejected = captureWarnings(() => applyLinuxRemoteMobileConversationHydrationPatch(broken));
+  assert.ok(rejected.warnings.length > 0);
+  assert.doesNotMatch(rejected.result, /function codexLinuxRemoteMobileHydrateUnknownConversation/);
+});
+
 test("Linux remote mobile hydration accepts the latest normalized dispatcher exactly once", () => {
   const source = syntheticLatestRemoteNotificationLifecycleBundle();
   const { result: patched, warnings } = captureWarnings(() =>
@@ -2646,6 +2680,30 @@ test("Linux remote-control enablement bridge loads remote-control clients on Lin
   assert.equal(calls[0].method, "set-remote-control-connections-enabled");
   assert.equal(calls[0].params.enabled, true);
   assert.equal(calls[0].params.oneToOnePairingInAppEnabled, false);
+});
+
+test("Linux remote-control auto-connect accepts the literal log prefix", () => {
+  const source = syntheticAppMainEnablementBridgeBundle()
+    .replace("`${DF} sync_failed`", "`[remote-connections/gate-bridge] sync_failed`")
+    .replace("var DF=`[remote-connections/gate-bridge]`;", "");
+  const { result, warnings } = captureWarnings(() => applyLinuxRemoteControlEnablementBridgePatch(source));
+  assert.deepEqual(warnings, []);
+  assert.match(result, /codexLinuxRemoteControlSelfAutoConnect/);
+  assert.equal(applyLinuxRemoteControlEnablementBridgePatch(result), result);
+  new vm.Script(result);
+});
+
+test("reasoning summary descriptor selects the resolver in shared assets", () => {
+  const descriptor = remoteMobilePatchDescriptors.find((item) => item.id === "linux-remote-mobile-reasoning-summary-none");
+  const source = syntheticCurrentReasoningSummaryTurnStartBundle();
+  assert.equal(descriptor.pattern.test("app-shared-current.js"), true);
+  assert.equal(descriptor.assetMatch(source), true);
+  assert.equal(descriptor.assetMatch("const unrelated = true;"), false);
+  const { result, warnings } = captureWarnings(() => descriptor.apply(source));
+  assert.deepEqual(warnings, []);
+  assert.notEqual(result, source);
+  assert.equal(descriptor.apply(result), result);
+  new vm.Script(result);
 });
 
 test("Linux remote-control enablement bridge rejects distant anchors", () => {
