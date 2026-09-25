@@ -90,6 +90,18 @@ function chatComposerFixture() {
   ].join("");
 }
 
+test("current service-tier composer accepts the split trigger and remains idempotent", () => {
+  const source = localComposerFixture()
+    .replace("allowAeonDraftModelSelection:allow", "serviceTierDefaults:allow")
+    .replace('"data-codex-intelligence-trigger":!0', '"aria-haspopup":`menu`');
+  const patched = applyHydexComposerControlPatch(source);
+  assert.notEqual(patched, source);
+  assert.match(patched, /codexLinuxHydexOffloadControl/);
+  assert.match(patched, /setModelAndReasoningEffortForNextTurn/);
+  assert.equal(applyHydexComposerControlPatch(patched), patched);
+  new vm.Script(patched);
+});
+
 function makeStorage(value, options = {}) {
   return {
     getItem(key) {
@@ -448,7 +460,8 @@ test("descriptors target the semantic current bundle owners", () => {
   assert.equal(descriptors[1].pattern.test("app-initial-c8dbea294abe.js"), true);
   assert.equal(descriptors[1].pattern.test("app-primary-7eef500906c5.js"), false);
   assert.equal(descriptors[2].pattern.test("app-primary-7eef500906c5.js"), true);
-  assert.equal(descriptors[2].pattern.test("app-initial-c8dbea294abe.js"), false);
+  assert.equal(descriptors[2].pattern.test("app-initial-c8dbea294abe.js"), true);
+  assert.equal(descriptors[1].pattern.test("app-shared-current.js"), true);
   assert.equal(descriptors[3].pattern.test("app-primary-7eef500906c5.js"), true);
   assert.equal(descriptors[3].pattern.test("app-initial-c8dbea294abe.js"), false);
   assert.equal(matchesHydexRequestBridgeContract(requestBridgeFixture()), true);
