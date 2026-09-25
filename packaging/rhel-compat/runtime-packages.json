@@ -14,7 +14,7 @@
       "name": "libc6",
       "fileName": "libc6_2.35-0ubuntu3.15_amd64.deb",
       "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/glibc/libc6_2.35-0ubuntu3.15_amd64.deb",
-      "sha256": "79e35256227e16a607c154cdeb8d76ff12d20e31de286ea7fd9ad3b96fe0452"
+      "sha256": "79e35256227e16a607c154cdeb8d76ff12d20e31de286ea7fd9ad3b96fe0452d"
     },
     {
       "name": "libcups2",
