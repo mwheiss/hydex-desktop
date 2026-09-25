@@ -2203,6 +2203,40 @@ test("Linux remote mobile hydration recovery rejects partial lifecycle drift", (
   assert.ok(warnings.some((warning) => warning.includes("complete current remote notification recovery lifecycle")));
 });
 
+test("timestamped remote notifications retain ordering, callbacks and receipt times during hydration", async () => {
+  const source = syntheticCurrentRemoteNotificationLifecycleBundle()
+    .replace("function tLn(e,t,n,r,o)", "function tLn(e,t,n,r,received,o)")
+    .replace("notification:a,automationCapability:u}", "notification:a,automationCapability:u,receivedAtMs:received}")
+    .replace("function $dt(e,t,n,r)", "function $dt(e,t,n,received,r)")
+    .replace("function Sdt(e,t,n)", "function Sdt(e,t,n,received)");
+  const { result, warnings } = captureWarnings(() => applyLinuxRemoteMobileConversationHydrationPatch(source));
+  assert.deepEqual(warnings, []);
+  assert.equal(applyLinuxRemoteMobileConversationHydrationPatch(result), result);
+  const context = {};
+  vm.runInNewContext(result, context);
+  let ready;
+  const hydration = new Promise((resolve) => { ready = resolve; });
+  const conversations = new Map();
+  const state = { threadStore: { conversations, hydrateActiveThread: () => hydration } };
+  const calls = [];
+  const manager = { logger: { error() { assert.fail("hydration failed"); } }, onNotification: (...args) => calls.push(args) };
+  const first = { method: "turn/started", params: { threadId: "thread-a" } };
+  const second = { method: "item/started", params: { threadId: "thread-a" } };
+  const callback = () => {};
+  const capability = { token: "fixture" };
+  context.codexLinuxRemoteMobileHydrateUnknownConversation(manager, state, "thread-a", first, capability, 101, callback);
+  assert.equal(context.codexLinuxRemoteMobileBufferPendingNotification(state, second, capability, callback, 202), true);
+  conversations.set("thread-a", {});
+  ready();
+  await hydration;
+  await new Promise(setImmediate);
+  assert.deepEqual(calls, [[first.method, first.params, capability, callback, 101], [second.method, second.params, capability, callback, 202]]);
+  const broken = source.replace("receivedAtMs:received", "receipt:received");
+  const rejected = captureWarnings(() => applyLinuxRemoteMobileConversationHydrationPatch(broken));
+  assert.ok(rejected.warnings.length > 0);
+  assert.doesNotMatch(rejected.result, /function codexLinuxRemoteMobileHydrateUnknownConversation/);
+});
+
 test("Linux remote mobile hydration accepts the latest normalized dispatcher exactly once", () => {
   const source = syntheticLatestRemoteNotificationLifecycleBundle();
   const { result: patched, warnings } = captureWarnings(() =>
