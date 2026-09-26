@@ -296,6 +296,118 @@ class Tests(unittest.TestCase):
                     base,
                 )
 
+    def test_client_adapter_drains_process_exit_before_closing_replaced_connection(self):
+        config = self.install()
+        socket_path = m.socket_path(config)
+        socket_path.parent.mkdir(parents=True)
+        received = []
+        ready = threading.Event()
+
+        def server():
+            with socket.socket(socket.AF_UNIX) as listener:
+                listener.bind(str(socket_path))
+                listener.listen(1)
+                ready.set()
+                connection, _ = listener.accept()
+                with connection:
+                    request = bytearray()
+                    while b"\r\n\r\n" not in request:
+                        request.extend(connection.recv(4096))
+                    headers = {}
+                    for line in bytes(request).split(b"\r\n")[1:]:
+                        name, separator, value = line.partition(b":")
+                        if separator:
+                            headers[name.strip().lower()] = value.strip()
+                    key = headers[b"sec-websocket-key"].decode("ascii")
+                    accept = base64.b64encode(hashlib.sha1(
+                        (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
+                    ).digest()).decode("ascii")
+                    connection.sendall((
+                        "HTTP/1.1 101 Switching Protocols\r\n"
+                        "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+                        f"Sec-WebSocket-Accept: {accept}\r\n\r\n").encode("ascii"))
+
+                    first, second = connection.recv(2)
+                    self.assertEqual(first, 0x81)
+                    length = second & 0x7F
+                    if length == 126:
+                        length = struct.unpack("!H", connection.recv(2))[0]
+                    elif length == 127:
+                        length = struct.unpack("!Q", connection.recv(8))[0]
+                    mask = connection.recv(4)
+                    payload = bytearray()
+                    while len(payload) < length:
+                        payload.extend(connection.recv(length - len(payload)))
+                    decoded = bytes(
+                        value ^ mask[index % 4]
+                        for index, value in enumerate(payload))
+                    received.append(json.loads(decoded))
+
+                    response = json.dumps({"id": 7, "result": {}}).encode()
+                    connection.sendall(bytes((0x81, len(response))) + response)
+                    connection.settimeout(0.2)
+                    with self.assertRaises(socket.timeout):
+                        connection.recv(2)
+                    connection.settimeout(None)
+
+                    exited = json.dumps({
+                        "method": "process/exited",
+                        "params": {
+                            "processHandle": "git-check",
+                            "exitCode": 0,
+                            "stdout": "git version 2.55.0\n",
+                            "stderr": "",
+                        },
+                    }).encode()
+                    connection.sendall(bytes((0x81, 126)) + struct.pack("!H", len(exited)) + exited)
+                    first, second = connection.recv(2)
+                    self.assertEqual(first, 0x88)
+                    self.assertEqual(second, 0x80)
+                    connection.recv(4)
+                    connection.sendall(bytes((0x88, 0)))
+
+        thread = threading.Thread(target=server)
+        thread.start()
+        self.assertTrue(ready.wait(timeout=5))
+        request = {
+            "id": 7,
+            "method": "process/spawn",
+            "params": {
+                "command": ["/bin/sh", "-c", "git --version"],
+                "processHandle": "git-check",
+                "cwd": "/",
+            },
+        }
+        result = subprocess.run(
+            [sys.executable, str(HERE / "vscode-proxy.py"),
+             "-c", "features.code_mode_host=true", "app-server",
+             "--analytics-default-enabled"],
+            check=False,
+            input=json.dumps(request) + "\n",
+            text=True,
+            capture_output=True,
+            timeout=5,
+        )
+        thread.join(timeout=5)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(received, [request])
+        self.assertEqual(
+            [json.loads(line) for line in result.stdout.splitlines()],
+            [
+                {"id": 7, "result": {}},
+                {
+                    "method": "process/exited",
+                    "params": {
+                        "processHandle": "git-check",
+                        "exitCode": 0,
+                        "stdout": "git version 2.55.0\n",
+                        "stderr": "",
+                    },
+                },
+            ],
+        )
+
     def test_desktop_mcp_transport_materializes_only_declared_environment(self):
         proxy_spec = importlib.util.spec_from_file_location(
             "persistent_server_proxy_environment", HERE / "vscode-proxy.py")
