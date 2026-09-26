@@ -25,15 +25,18 @@ const {
   NEXT_TURN_MARKER,
   PRODUCT_MODE_LOCALE_LABEL_MARKER,
   PRODUCT_MODE_LABEL_MARKER,
+  PRODUCT_MODE_SELECTED_LABEL_MARKER,
   REQUEST_MARKER,
   applyHydexComposerControlPatch,
   applyHydexProductNamePatch,
   applyHydexProductModeLocalePatch,
   applyHydexProductModeLabelPatch,
+  applyHydexProductModeSelectedLabelPatch,
   applyHydexRequestBridgePatch,
   descriptors,
   matchesHydexComposerContract,
   matchesHydexProductModeLabelContract,
+  matchesHydexProductModeSelectedLabelContract,
   matchesHydexRequestBridgeContract,
 } = require("./patch.js");
 
@@ -52,6 +55,7 @@ function requestBridgeFixture() {
 
 function localComposerFixture() {
   return [
+    productModeSelectedLabelFixture(),
     productModeLabelFixture(),
     "function modelSelectionWrapper(e){let {modelSettings:baseSettings,setDefaultModelAndReasoningEffort:setBaseDefault,setModelAndReasoningEffort:setBaseModel,setModelAndReasoningEffortForNextTurn:setBaseNext}=useBaseModelSelection(e),selectModel=()=>{};",
     "return{modelSettings:baseSettings,setDefaultModelAndReasoningEffort:setBaseDefault,setModelAndReasoningEffort:setBaseModel,selectComposerModelAndReasoningEffort:selectModel}}",
@@ -59,6 +63,14 @@ function localComposerFixture() {
     "let modelSelection=useModelSelection(props),{modelSettings:settings,selectComposerModelAndReasoningEffort:select,setDefaultModelAndReasoningEffort:setDefault,setModelAndReasoningEffort:setModel}=modelSelection,tooltip=`composer.intelligenceDropdown.tooltip`,trigger={\"data-codex-intelligence-trigger\":!0};",
     "let result;return cache[0]!==trigger?(result=(0,jsx.jsx)(jsx.Fragment,{children:(0,jsx.jsx)(Menu,{triggerButton:trigger})}),cache[0]=trigger,cache[1]=result):result=cache[1],result}",
     "function supportsPersistent(e){let{reasoningEffort:t}=e;return t===`persistent`}",
+  ].join("");
+}
+
+function productModeSelectedLabelFixture() {
+  return [
+    "function productModeSelector(mode){let label=productModeLabels.chatGpt,visible=ChatGptWordmark;",
+    "if(mode===`codex`){label=productModeLabels.codex;let selected;cache[3]===Symbol.for(`react.memo_cache_sentinel`)?(selected=(0,jsx.jsx)(CodexWordmark,{\"aria-hidden\":`true`,className:`h-[1em] w-auto overflow-visible`,\"data-no-autosize\":!0}),cache[3]=selected):selected=cache[3],visible=selected}else if(mode===`work`){visible=ChatGptWordmark}",
+    "return(0,jsx.jsxs)(`span`,{children:[(0,jsx.jsx)(Message,{...label}),visible]})}",
   ].join("");
 }
 
@@ -263,6 +275,12 @@ test("feature loader exposes every enforced branding and offload surface", () =>
         ],
         ["feature:hydex-offload:hydex-offload-request-bridge", "webview-asset", "optional", true],
         ["feature:hydex-offload:hydex-product-mode-label", "webview-asset", "optional", true],
+        [
+          "feature:hydex-offload:hydex-product-mode-selected-label",
+          "webview-asset",
+          "optional",
+          true,
+        ],
         ["feature:hydex-offload:hydex-offload-composer-control", "webview-asset", "optional", true],
         [
           "feature:hydex-offload:hydex-product-mode-locale-labels",
@@ -331,6 +349,33 @@ test("ambiguous sidebar product-mode labels warn and remain byte-identical", () 
   assert.equal(value, source);
   assert.deepEqual(warnings, [
     "WARN: Expected one current Codex product-mode label, found 2 original and 0 patched - skipping Hydex product-mode label patch",
+  ]);
+});
+
+test("Hydex patcher replaces the selected Codex wordmark with visible Hydex text", () => {
+  const source = productModeSelectedLabelFixture();
+  const patched = applyPatchTwice(applyHydexProductModeSelectedLabelPatch, source);
+
+  assert.match(patched, new RegExp(PRODUCT_MODE_SELECTED_LABEL_MARKER));
+  assert.match(
+    patched,
+    /jsx\.jsx\)\(`span`,\{"aria-hidden":`true`,className:`font-openai-sans`,children:`Hydex`\}\)/,
+  );
+  assert.doesNotMatch(patched, /jsx\.jsx\)\(CodexWordmark/);
+  assert.match(patched, /visible=ChatGptWordmark/);
+  assert.equal(matchesHydexProductModeSelectedLabelContract(source), true);
+  assert.equal(matchesHydexProductModeSelectedLabelContract(patched), true);
+});
+
+test("ambiguous selected Codex wordmarks warn and remain byte-identical", () => {
+  const source = `${productModeSelectedLabelFixture()}${productModeSelectedLabelFixture()}`;
+  const { value, warnings } = captureWarnings(
+    () => applyHydexProductModeSelectedLabelPatch(source),
+  );
+
+  assert.equal(value, source);
+  assert.deepEqual(warnings, [
+    "WARN: Expected one selected Codex product-mode wordmark, found 2 original and 0 patched - skipping Hydex selected product-mode label patch",
   ]);
 });
 
@@ -453,6 +498,7 @@ test("descriptors target the semantic current bundle owners", () => {
       ["hydex-desktop-product-name", "extracted-app:pre-webview"],
       ["hydex-offload-request-bridge", "webview-asset"],
       ["hydex-product-mode-label", "webview-asset"],
+      ["hydex-product-mode-selected-label", "webview-asset"],
       ["hydex-offload-composer-control", "webview-asset"],
       ["hydex-product-mode-locale-labels", "extracted-app:post-webview"],
     ],
@@ -463,9 +509,15 @@ test("descriptors target the semantic current bundle owners", () => {
   assert.equal(descriptors[2].pattern.test("app-initial-c8dbea294abe.js"), true);
   assert.equal(descriptors[1].pattern.test("app-shared-current.js"), true);
   assert.equal(descriptors[3].pattern.test("app-primary-7eef500906c5.js"), true);
-  assert.equal(descriptors[3].pattern.test("app-initial-c8dbea294abe.js"), false);
+  assert.equal(descriptors[3].pattern.test("app-initial-c8dbea294abe.js"), true);
+  assert.equal(descriptors[4].pattern.test("app-primary-7eef500906c5.js"), true);
+  assert.equal(descriptors[4].pattern.test("app-initial-c8dbea294abe.js"), false);
   assert.equal(matchesHydexRequestBridgeContract(requestBridgeFixture()), true);
   assert.equal(matchesHydexProductModeLabelContract(productModeLabelFixture()), true);
+  assert.equal(
+    matchesHydexProductModeSelectedLabelContract(productModeSelectedLabelFixture()),
+    true,
+  );
   assert.equal(matchesHydexComposerContract(localComposerFixture()), true);
 });
 
@@ -718,7 +770,7 @@ test("ambiguous local model pickers warn and remain byte-identical", () => {
   ]);
 });
 
-test("feature descriptors patch both extracted webview assets", () => {
+test("feature descriptors patch every extracted webview surface", () => {
   withFeatureConfig(["hydex-offload"], (featuresRoot) => {
     withTempDir((extractedDir) => {
       writeWebviewAsset(extractedDir, "app-initial-current.js", requestBridgeFixture());
@@ -738,6 +790,7 @@ test("feature descriptors patch both extracted webview assets", () => {
         [
           ["feature:hydex-offload:hydex-offload-request-bridge", "applied"],
           ["feature:hydex-offload:hydex-product-mode-label", "applied"],
+          ["feature:hydex-offload:hydex-product-mode-selected-label", "applied"],
           ["feature:hydex-offload:hydex-offload-composer-control", "applied"],
         ],
       );
@@ -769,6 +822,7 @@ test("a missing enabled surface is reported as candidate-rejecting drift", () =>
       ));
 
       assert.ok(warnings.some((warning) => warning.includes("current Codex sidebar product-mode label bundle")));
+      assert.ok(warnings.some((warning) => warning.includes("current selected Codex product-mode wordmark bundle")));
       assert.ok(warnings.some((warning) => warning.includes("current local Codex model picker bundle")));
       assert.deepEqual(enabledFeatureFailuresFromReport(report), [
         {
@@ -779,8 +833,14 @@ test("a missing enabled surface is reported as candidate-rejecting drift", () =>
         },
         {
           featureId: "hydex-offload",
-          name: "feature:hydex-offload:hydex-offload-composer-control",
+          name: "feature:hydex-offload:hydex-product-mode-selected-label",
           reason: report.patches[2].reason,
+          status: "skipped-optional",
+        },
+        {
+          featureId: "hydex-offload",
+          name: "feature:hydex-offload:hydex-offload-composer-control",
+          reason: report.patches[3].reason,
           status: "skipped-optional",
         },
       ]);
