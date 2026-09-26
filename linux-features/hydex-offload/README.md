@@ -8,10 +8,10 @@ The control is attached only to the local app-server composer used by Codex
 and local ChatGPT Work tasks. It is not added to Chat or cloud Work, which use
 the separate ChatGPT model picker and transport.
 
-The feature also changes the visible Electron product name and the sidebar
-product-mode label from `Codex` to `Hydex`, including every bundled locale
-catalog. Internal Codex executable names, profile paths, message identifiers,
-protocols, and service contracts remain unchanged.
+The feature also changes the visible Electron product name, sidebar product-mode
+option, and selected-mode wordmark from `Codex` to `Hydex`, including every
+bundled locale catalog. Internal Codex executable names, profile paths, message
+identifiers, protocols, and service contracts remain unchanged.
 
 ## Requirements
 
