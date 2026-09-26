@@ -12,6 +12,7 @@ import struct
 import subprocess
 import sys
 import threading
+import time
 
 
 EXPECTED_APP_SERVER_ARGS = [
@@ -23,6 +24,7 @@ EXPECTED_APP_SERVER_ARGS = [
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_HTTP_HEADER_BYTES = 16 * 1024
 MAX_MESSAGE_BYTES = 64 * 1024 * 1024
+PROCESS_DRAIN_GRACE_SECONDS = 2
 DESKTOP_MCP_CONFIG_KEY = "mcp_servers.codex_app"
 THREAD_CONFIG_METHODS = frozenset(("thread/start", "thread/resume", "thread/fork"))
 DESKTOP_MCP_ENV_VARS = frozenset((
@@ -355,6 +357,59 @@ def inject_desktop_mcp_config(payload, base_config):
     return json.dumps(request, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
+class ProcessDrainTracker:
+    """Tracks connection-scoped processes until their terminal notification."""
+
+    def __init__(self):
+        self.condition = threading.Condition()
+        self.pending = {}
+        self.active = set()
+
+    def observe_client_payload(self, payload):
+        try:
+            request = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return
+        if not isinstance(request, dict) or request.get("method") != "process/spawn":
+            return
+        request_id = request.get("id")
+        params = request.get("params")
+        process_handle = params.get("processHandle") if isinstance(params, dict) else None
+        if not isinstance(request_id, (str, int)) or not isinstance(process_handle, str):
+            return
+        with self.condition:
+            self.pending[str(request_id)] = process_handle
+
+    def observe_server_message(self, message):
+        try:
+            value = json.loads(message)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(value, dict):
+            return
+        with self.condition:
+            request_id = value.get("id")
+            if isinstance(request_id, (str, int)):
+                process_handle = self.pending.pop(str(request_id), None)
+                if process_handle is not None and "error" not in value:
+                    self.active.add(process_handle)
+            if value.get("method") == "process/exited":
+                params = value.get("params")
+                process_handle = params.get("processHandle") if isinstance(params, dict) else None
+                if isinstance(process_handle, str):
+                    self.active.discard(process_handle)
+            self.condition.notify_all()
+
+    def wait_for_exit_notifications(self, timeout):
+        deadline = time.monotonic() + timeout
+        with self.condition:
+            while self.pending or self.active:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return
+                self.condition.wait(remaining)
+
+
 class UnixWebSocket:
     def __init__(self, connection, buffered=b""):
         self.connection = connection
@@ -497,6 +552,7 @@ def connect_unix_websocket(socket_path):
 def bridge_jsonl_to_websocket(socket_path, desktop_config=None):
     websocket = connect_unix_websocket(socket_path)
     writer_error = []
+    process_drain = ProcessDrainTracker()
 
     def write_stdin():
         try:
@@ -509,6 +565,7 @@ def bridge_jsonl_to_websocket(socket_path, desktop_config=None):
                     payload = inject_desktop_mcp_config(payload, desktop_config)
                     if len(payload) > MAX_MESSAGE_BYTES:
                         raise ValueError("rewritten app-server message exceeds 64 MiB")
+                    process_drain.observe_client_payload(payload)
                     websocket.send_frame(0x1, payload)
         except (EOFError, OSError, UnicodeError, ValueError) as error:
             writer_error.append(error)
@@ -517,6 +574,7 @@ def bridge_jsonl_to_websocket(socket_path, desktop_config=None):
             except OSError:
                 pass
             return
+        process_drain.wait_for_exit_notifications(PROCESS_DRAIN_GRACE_SECONDS)
         try:
             websocket.send_frame(0x8)
         except OSError:
@@ -529,6 +587,7 @@ def bridge_jsonl_to_websocket(socket_path, desktop_config=None):
             message = websocket.receive_text()
             if message is None:
                 break
+            process_drain.observe_server_message(message)
             sys.stdout.buffer.write(message.encode("utf-8") + b"\n")
             sys.stdout.buffer.flush()
     except EOFError:
