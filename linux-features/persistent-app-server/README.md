@@ -101,6 +101,12 @@ the complete transport into `thread/start`, `thread/resume`, and `thread/fork`
 configuration. This preserves Desktop's dynamic MCP transport without adding it
 to the global service configuration or exposing it to VS Code-only clients.
 
+Desktop may replace its provisional app-server transport after resolving that
+configuration. The adapter gives connection-scoped `process/spawn` requests a
+bounded drain window so fast startup probes, including Git discovery, can
+deliver their terminal `process/exited` notification before the old connection
+closes. Long-running processes still stop at the normal connection boundary.
+
 ## Dependency audit: why shared-app-server-socket is not needed
 
 Reviewed the public `hydex/main` sources on 2026-09-06, including implementation,
