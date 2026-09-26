@@ -8,6 +8,7 @@ const REQUEST_MARKER = "codexLinuxHydexOffloadRequest";
 const CONTROL_MARKER = "codexLinuxHydexOffloadControl";
 const NEXT_TURN_MARKER = "codexLinuxHydexOffloadNextTurn";
 const PRODUCT_MODE_LABEL_MARKER = "codexLinuxHydexProductModeLabel";
+const PRODUCT_MODE_SELECTED_LABEL_MARKER = "codexLinuxHydexProductModeSelectedLabel";
 const PRODUCT_MODE_LOCALE_LABEL_MARKER = "codexLinuxHydexProductModeLocaleLabel";
 const HYDEX_PRODUCT_NAME = "Hydex";
 const PRODUCT_MODE_LABEL_SOURCE =
@@ -63,6 +64,53 @@ function applyHydexProductModeLabelPatch(source) {
     return source;
   }
   return source.replace(PRODUCT_MODE_LABEL_SOURCE, PRODUCT_MODE_LABEL_PATCHED);
+}
+
+function productModeSelectedLabelPattern() {
+  return new RegExp(
+    `if\\(${IDENT}===\\\`codex\\\`\\)\\{${IDENT}=${IDENT}\\.codex;let ${IDENT};.{0,500}?` +
+      `(\\(0,(${IDENT})\\.jsx\\)\\(${IDENT},\\{"aria-hidden":\\\`true\\\`,` +
+      `className:\\\`h-\\[1em\\] w-auto overflow-visible\\\`,` +
+      `"data-no-autosize":!0\\}\\))`,
+    "g",
+  );
+}
+
+function productModeSelectedLabelContract(source) {
+  return {
+    original: [...source.matchAll(productModeSelectedLabelPattern())].length,
+    patched: exactCount(source, PRODUCT_MODE_SELECTED_LABEL_MARKER),
+  };
+}
+
+function matchesHydexProductModeSelectedLabelContract(source) {
+  const { original, patched } = productModeSelectedLabelContract(source);
+  return (original === 1 && patched === 0) || (original === 0 && patched === 1);
+}
+
+function applyHydexProductModeSelectedLabelPatch(source) {
+  const matches = [...source.matchAll(productModeSelectedLabelPattern())];
+  const patched = exactCount(source, PRODUCT_MODE_SELECTED_LABEL_MARKER);
+  if (matches.length === 0 && patched === 1) return source;
+  if (matches.length !== 1 || patched !== 0) {
+    warn(
+      `Expected one selected Codex product-mode wordmark, found ${matches.length} original and ${patched} patched`,
+      "Hydex selected product-mode label patch",
+    );
+    return source;
+  }
+
+  const [match] = matches;
+  const original = match[1];
+  const jsxAlias = match[2];
+  const originalIndex = match.index + match[0].indexOf(original);
+  const replacement =
+    `(0,${jsxAlias}.jsx)(\`span\`,{"aria-hidden":\`true\`,` +
+    `className:\`font-openai-sans\`,children:\`Hydex\`})` +
+    `/*${PRODUCT_MODE_SELECTED_LABEL_MARKER}*/`;
+  return source.slice(0, originalIndex) +
+    replacement +
+    source.slice(originalIndex + original.length);
 }
 
 function applyHydexProductModeLocalePatch(extractedDir) {
@@ -393,6 +441,17 @@ const descriptors = [
     apply: applyHydexProductModeLabelPatch,
   },
   {
+    id: "hydex-product-mode-selected-label",
+    phase: "webview-asset",
+    order: 20706,
+    ciPolicy: "optional",
+    pattern: /^app-(?:primary|initial)-[^.]+\.js$/,
+    assetMatch: matchesHydexProductModeSelectedLabelContract,
+    missingDescription: "current selected Codex product-mode wordmark bundle",
+    skipDescription: "Hydex selected product-mode label patch",
+    apply: applyHydexProductModeSelectedLabelPatch,
+  },
+  {
     id: "hydex-offload-composer-control",
     phase: "webview-asset",
     order: 20710,
@@ -417,14 +476,17 @@ module.exports = {
   NEXT_TURN_MARKER,
   PRODUCT_MODE_LOCALE_LABEL_MARKER,
   PRODUCT_MODE_LABEL_MARKER,
+  PRODUCT_MODE_SELECTED_LABEL_MARKER,
   REQUEST_MARKER,
   applyHydexProductNamePatch,
   applyHydexComposerControlPatch,
   applyHydexProductModeLocalePatch,
   applyHydexProductModeLabelPatch,
+  applyHydexProductModeSelectedLabelPatch,
   applyHydexRequestBridgePatch,
   descriptors,
   matchesHydexComposerContract,
   matchesHydexProductModeLabelContract,
+  matchesHydexProductModeSelectedLabelContract,
   matchesHydexRequestBridgeContract,
 };
