@@ -33,7 +33,7 @@ Requires:       libX11-xcb.so.1%{hydex_elf_suffix}, libxcb.so.1%{hydex_elf_suffi
 Requires:       libXcomposite.so.1%{hydex_elf_suffix}, libXdamage.so.1%{hydex_elf_suffix}
 Requires:       libXext.so.6%{hydex_elf_suffix}, libXfixes.so.3%{hydex_elf_suffix}, libxkbcommon.so.0%{hydex_elf_suffix}
 Requires:       libXrandr.so.2%{hydex_elf_suffix}, libgbm.so.1%{hydex_elf_suffix}, libGL.so.1%{hydex_elf_suffix}
-Requires:       libgraphite2.so.3%{hydex_elf_suffix}, xz
+Requires:       libgraphite2.so.3%{hydex_elf_suffix}, libtss2-esys.so.0%{hydex_elf_suffix}, libtss2-mu.so.0%{hydex_elf_suffix}, libtss2-tcti-device.so.0%{hydex_elf_suffix}, xz
 Recommends:     zenity, kdialog
 
 %description
