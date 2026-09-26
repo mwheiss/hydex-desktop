@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const DEVICE_KEY_CLIENT_MARKER = "codexLinuxRemoteControlDeviceKeyClient";
 const DEVICE_KEY_IDENT = "[A-Za-z_$][\\w$]*";
+const IDENT = DEVICE_KEY_IDENT;
 
 function deviceKeyRequirePattern(flags = "u") {
   return new RegExp(
@@ -1037,7 +1038,20 @@ function applyLinuxRemoteMobileConversationHydrationPatch(source) {
     "gu",
   );
   const runtimeFallbackMatches = [...patched.matchAll(runtimeFallbackPattern)];
-  if (runtimeFallbackMatches.length !== 1 &&
+  const runtimeFallbackHelperPattern = new RegExp(
+    `function (${IDENT})\\((${IDENT}),(${IDENT})\\)\\{let (${IDENT})=\\3\\?\\.threadRuntimeStatus;` +
+      "return \\3\\?\\.resumeState===`needs_resume`\\|\\|\\4\\?\\.type===`notLoaded`\\?" +
+      "\\2\\?\\.threadRuntimeStatus\\?\\?\\4\\?\\?void 0:" +
+      "\\4\\?\\?\\2\\?\\.threadRuntimeStatus\\}",
+    "gu",
+  );
+  const runtimeFallbackHelpers = [...patched.matchAll(runtimeFallbackHelperPattern)];
+  const currentFallbackPair = runtimeFallbackMatches.length === 0 &&
+    runtimeFallbackHelpers.length === 2 &&
+    runtimeFallbackHelpers[0][0].slice("function ".length + runtimeFallbackHelpers[0][1].length) ===
+      runtimeFallbackHelpers[1][0].slice("function ".length + runtimeFallbackHelpers[1][1].length);
+  if (!(runtimeFallbackMatches.length === 1 && runtimeFallbackHelpers.length === 0) &&
+      !currentFallbackPair &&
       patched.includes("threadRuntimeStatus") && patched.includes("resumeState")) {
     console.warn("WARN: Could not find one current thread/list runtime-status fallback - skipping remote mobile runtime-status patch");
   }

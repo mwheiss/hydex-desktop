@@ -479,6 +479,25 @@ test("runtime-status recovery accepts only one current thread-summary fallback",
   }
 });
 
+test("runtime-status recovery accepts the duplicated current shared-bundle helper", () => {
+  const helper = (name) =>
+    `function ${name}(e,t){let n=t?.threadRuntimeStatus;return t?.resumeState===\`needs_resume\`||n?.type===\`notLoaded\`?e?.threadRuntimeStatus??n??void 0:n??e?.threadRuntimeStatus}`;
+  const current = `${helper("ZGt")}${helper("Vzr")}`;
+  const accepted = captureWarnings(() =>
+    applyLinuxRemoteMobileConversationHydrationPatch(current),
+  );
+  assert.equal(accepted.result, current);
+  assert.equal(accepted.warnings.some((warning) => warning.includes("runtime-status fallback")), false);
+
+  for (const source of [helper("ZGt"), current + helper("Other")]) {
+    const { result, warnings } = captureWarnings(() =>
+      applyLinuxRemoteMobileConversationHydrationPatch(source),
+    );
+    assert.equal(result, source);
+    assert.ok(warnings.some((warning) => warning.includes("one current thread/list runtime-status fallback")));
+  }
+});
+
 function syntheticAppServerManagerStatusBundle() {
   return [
     "var z={error(){}};",
