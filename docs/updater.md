@@ -83,9 +83,9 @@ codex-update-manager rollback
 The service is controlled with:
 
 ```bash
-systemctl --user enable --now codex-update-manager.service
-systemctl --user status codex-update-manager.service --no-pager
-journalctl --user -u codex-update-manager.service
+systemctl --user enable --now hydex-update-manager.service
+systemctl --user status hydex-update-manager.service --no-pager
+journalctl --user -u hydex-update-manager.service
 ```
 
 To trigger one foreground daemon pass while debugging, stop the service and
@@ -113,8 +113,8 @@ artifact.
 The authoritative service log is the user journal:
 
 ```bash
-journalctl --user -u codex-update-manager.service -n 200 --no-pager
-journalctl --user -u codex-update-manager.service -f
+journalctl --user -u hydex-update-manager.service -n 200 --no-pager
+journalctl --user -u hydex-update-manager.service -f
 ```
 
 ## Manual-update packages

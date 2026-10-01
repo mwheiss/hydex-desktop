@@ -43,7 +43,7 @@ Run as your ordinary user, not with `sudo`. The final command:
    `HYDEX_CLI_BINARY`.
 4. Verifies the packaged mobile launch-patch marker and CLI capabilities,
    installs the current user's service, enables lingering, and enables/starts
-   `codex-remote-control.service`. It never restarts an already active service.
+   `hydex-remote-control.service`. It never restarts an already active service.
 5. Replaces the installer process with `/usr/bin/hydex-desktop`, so the first
    successful install continues directly into the Hydex Desktop GUI.
 
@@ -165,7 +165,7 @@ throwaway tree, with service-manager operations stubbed.
 Initial setup saves the installation path, absolute `CODEX_HOME`, home directory
 and PATH in `~/.config/hydex-desktop/persistent-app-server.json` (0600).
 `XDG_CONFIG_HOME` is respected. Reinstalling preserves the established settings.
-The user unit is `~/.config/systemd/user/codex-remote-control.service`.
+The user unit is `~/.config/systemd/user/hydex-remote-control.service`.
 
 The launcher emits settings from that configuration:
 
@@ -210,8 +210,8 @@ existing marker without changing its producer.
 ## Verification, upgrades and limits
 
 ```fish
-systemctl --user status codex-remote-control.service
-journalctl --user -u codex-remote-control.service -n 60 --no-pager
+systemctl --user status hydex-remote-control.service
+journalctl --user -u hydex-remote-control.service -n 60 --no-pager
 loginctl show-user (id -un) --property=Linger
 ```
 
@@ -235,7 +235,7 @@ Package upgrades deliberately do not restart the running service. After active
 tasks finish, load the upgraded binary with:
 
 ```fish
-systemctl --user restart codex-remote-control.service
+systemctl --user restart hydex-remote-control.service
 ```
 
 The patched Hydex VSIX discovers the packaged proxy as described above. This

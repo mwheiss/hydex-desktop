@@ -516,6 +516,7 @@ class Tests(unittest.TestCase):
 
     def test_setup_enables_real_foreground_unit(self):
         config = self.install()
+        self.assertEqual(Path(config["unit_path"]).name, "hydex-remote-control.service")
         unit = Path(config["unit_path"]).read_text()
         self.assertIn("Type=simple", unit)
         self.assertIn('"serve" "--config"', unit)
@@ -530,6 +531,39 @@ class Tests(unittest.TestCase):
         self.install()
         self.assertEqual(before, Path(config["unit_path"]).read_bytes())
         self.assertFalse(any("restart" in v or "stop" in v for v in self.system.calls))
+
+    def test_active_legacy_unit_remains_attached_until_idle(self):
+        config = self.install()
+        current = Path(config["unit_path"])
+        legacy = current.with_name(m.LEGACY_UNIT)
+        current.rename(legacy)
+        config["unit_path"] = str(legacy)
+        m.atomic_write(m.config_path(), json.dumps(config) + "\n")
+        self.system.calls.clear()
+
+        self.assertEqual(m.ensure_setup(self.app), config)
+        self.assertTrue(legacy.exists())
+        self.assertFalse(current.exists())
+        self.assertFalse(any("disable" in call or "enable" in call or "stop" in call
+                             for call in self.system.calls))
+
+    def test_idle_legacy_unit_migrates_without_stopping_active_work(self):
+        config = self.install()
+        current = Path(config["unit_path"])
+        legacy = current.with_name(m.LEGACY_UNIT)
+        current.rename(legacy)
+        config["unit_path"] = str(legacy)
+        m.atomic_write(m.config_path(), json.dumps(config) + "\n")
+        self.system.active = False
+        self.system.calls.clear()
+
+        migrated = m.ensure_setup(self.app)
+        self.assertEqual(migrated, {**config, "unit_path": str(current)})
+        self.assertFalse(legacy.exists())
+        self.assertTrue(current.exists())
+        self.assertIn(["systemctl", "--user", "disable", m.LEGACY_UNIT], self.system.calls)
+        self.assertIn(["systemctl", "--user", "enable", "--now", m.UNIT], self.system.calls)
+        self.assertFalse(any("stop" in call or "restart" in call for call in self.system.calls))
 
     def test_reinstall_preserves_codex_home_and_path(self):
         first = self.install()
@@ -632,7 +666,7 @@ class Tests(unittest.TestCase):
             config = {
                 "codex_home": str(self.home / ".codex"),
                 "app_dir": str(self.app),
-                "unit_path": str(self.home / ".config/systemd/user/codex-remote-control.service"),
+                "unit_path": str(self.home / ".config/systemd/user/hydex-remote-control.service"),
             }
             with patch.object(m, "read_config", return_value=config), \
                     patch.object(m, "check_foreign_owner", return_value=False):
@@ -651,6 +685,13 @@ class Tests(unittest.TestCase):
         with patch.dict(os.environ, {"CODEX_LINUX_APP_DIR": str(self.root / "other")}):
             with self.assertRaisesRegex(ValueError, "not the installation"):
                 m.emit_environment(config)
+
+    def test_another_installation_cannot_migrate_the_service(self):
+        self.install()
+        self.system.calls.clear()
+        with self.assertRaisesRegex(ValueError, "another app directory"):
+            m.ensure_setup(self.root / "other")
+        self.assertEqual(self.system.calls, [])
 
     def test_missing_setup_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "not configured"):
@@ -705,6 +746,23 @@ class Tests(unittest.TestCase):
         self.assertFalse(m.config_path().exists())
         self.assertFalse(Path(config["unit_path"]).exists())
         self.assertEqual(json.loads(settings.read_text()), {"editor.fontSize": 14})
+
+    def test_package_uninstall_cleanup_recognizes_owned_legacy_unit(self):
+        config = self.install()
+        current = Path(config["unit_path"])
+        legacy = current.with_name(m.LEGACY_UNIT)
+        current.rename(legacy)
+        config["unit_path"] = str(legacy)
+        m.atomic_write(m.config_path(), json.dumps(config) + "\n")
+        cleanup_spec = importlib.util.spec_from_file_location(
+            "persistent_server_cleanup", HERE / "uninstall-cleanup.py")
+        cleanup = importlib.util.module_from_spec(cleanup_spec)
+        cleanup_spec.loader.exec_module(cleanup)
+
+        cleanup.remove_service_state(self.home, os.getuid(), self.app)
+
+        self.assertFalse(legacy.exists())
+        self.assertFalse(m.config_path().exists())
 
     def test_generated_unit_passes_systemd_static_verification(self):
         tool = shutil.which("systemd-analyze")
