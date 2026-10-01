@@ -34,6 +34,7 @@ codex_desktop_post_transaction_common() {
 post_install() {
     codex_desktop_post_transaction_common
     if [ -f "$SERVICE_HELPER" ]; then
+        codex_migrate_legacy_user_service || true
         codex_ensure_user_service_running || true
     fi
 }
@@ -41,6 +42,7 @@ post_install() {
 post_upgrade() {
     codex_desktop_post_transaction_common
     if [ -f "$SERVICE_HELPER" ]; then
+        codex_migrate_legacy_user_service || true
         codex_start_enabled_user_service || true
     fi
 }
