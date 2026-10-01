@@ -222,6 +222,10 @@ def validate_packages(args: argparse.Namespace) -> dict[str, object]:
     for command in copr.EXPECTED_COMMANDS + copr.UPDATER_COMMANDS:
         if f"/usr/bin/{command}" not in pacman_files:
             raise SystemExit(f"pacman package is missing /usr/bin/{command}")
+    if "/usr/lib/systemd/user/hydex-update-manager.service" not in pacman_files:
+        raise SystemExit("pacman package is missing the Hydex updater unit")
+    if "/usr/lib/systemd/user/codex-update-manager.service" in pacman_files:
+        raise SystemExit("pacman package still owns the legacy updater unit")
 
     expected = {
         "fullRpm": ("1", "cpio", "zstd", copr.EXPECTED_COMMANDS + copr.UPDATER_COMMANDS),
@@ -241,6 +245,10 @@ def validate_packages(args: argparse.Namespace) -> dict[str, object]:
         for command in commands:
             if f"/usr/bin/{command}" not in files:
                 raise SystemExit(f"{name} is missing /usr/bin/{command}")
+        updater_unit = "/usr/lib/systemd/user/hydex-update-manager.service"
+        legacy_unit = "/usr/lib/systemd/user/codex-update-manager.service"
+        if legacy_unit in files or (updater_unit in files) != (name == "fullRpm"):
+            raise SystemExit(f"{name} has unexpected updater service ownership")
     rhel7_requirements = copr.rpm_lines(artifacts["rhel7Rpm"], "--requires")
     if any(value.startswith(("rpmlib(LargeFiles)", "rpmlib(PayloadIsZstd)")) for value in rhel7_requirements):
         raise SystemExit("RHEL 7 package requires unsupported RPM capabilities")

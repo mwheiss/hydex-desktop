@@ -257,6 +257,8 @@ stage_update_builder_linux_features_tree() {
         [ -d "$source" ] || error "Missing enabled Linux feature: $feature_id ($source)"
         mkdir -p "$(dirname "$destination")"
         cp -a "$source" "$destination"
+        find "$destination" -type d -exec chmod 0755 {} +
+        find "$destination" -type f \( -perm /u=x -o -perm /g=x -o -perm /o=x \) -exec chmod 0755 {} +
         find "$destination" -type d -name target -prune -exec rm -rf {} +
         if [ "$feature_id" = "directory-only-working-tree-watch" ]; then
             rm -rf "$destination/acceptance"
@@ -497,7 +499,8 @@ render_no_updater_transition_cleanup_helper() {
     cat > "$target" <<'SCRIPT'
 #!/bin/sh
 
-SERVICE_NAME="${SERVICE_NAME:-codex-update-manager.service}"
+SERVICE_NAME="${SERVICE_NAME:-hydex-update-manager.service}"
+LEGACY_SERVICE_NAME="codex-update-manager.service"
 
 codex_no_updater_foreach_user_manager() {
     if ! command -v runuser >/dev/null 2>&1 ||
@@ -543,8 +546,10 @@ codex_no_updater_cleanup_one_user_manager() {
     runtime_dir="$2"
     bus="$3"
 
-    codex_no_updater_run_systemctl_user "$user_name" "$runtime_dir" "$bus" stop "$SERVICE_NAME" || true
-    codex_no_updater_run_systemctl_user "$user_name" "$runtime_dir" "$bus" disable "$SERVICE_NAME" || true
+    for service_name in "$SERVICE_NAME" "$LEGACY_SERVICE_NAME"; do
+        codex_no_updater_run_systemctl_user "$user_name" "$runtime_dir" "$bus" stop "$service_name" || true
+        codex_no_updater_run_systemctl_user "$user_name" "$runtime_dir" "$bus" disable "$service_name" || true
+    done
     codex_no_updater_run_systemctl_user "$user_name" "$runtime_dir" "$bus" daemon-reload || true
 }
 
@@ -564,10 +569,15 @@ codex_no_updater_cleanup_user_enablement_links() {
         [ "$home" != "/" ] || continue
 
         wants_dir="$home/.config/systemd/user/default.target.wants"
-        service_link="$wants_dir/$SERVICE_NAME"
-        [ -L "$service_link" ] || continue
-
-        runuser -u "$user_name" -- rm -f "$service_link" >/dev/null 2>&1 || true
+        for service_name in "$SERVICE_NAME" "$LEGACY_SERVICE_NAME"; do
+            service_link="$wants_dir/$service_name"
+            [ -L "$service_link" ] || continue
+            case "$(readlink "$service_link")" in
+                /usr/lib/systemd/user/"$service_name"|/lib/systemd/user/"$service_name") ;;
+                *) continue ;;
+            esac
+            runuser -u "$user_name" -- rm -f "$service_link" >/dev/null 2>&1 || true
+        done
     done
 }
 
@@ -1043,8 +1053,8 @@ stage_common_package_files() {
     if package_with_updater_enabled; then
         cp "$UPDATER_BINARY_SOURCE" "$root/usr/bin/codex-update-manager"
         chmod 0755 "$root/usr/bin/codex-update-manager"
-        cp "$UPDATER_SERVICE_SOURCE" "$root/usr/lib/systemd/user/codex-update-manager.service"
-        chmod 0644 "$root/usr/lib/systemd/user/codex-update-manager.service"
+        cp "$UPDATER_SERVICE_SOURCE" "$root/usr/lib/systemd/user/hydex-update-manager.service"
+        chmod 0644 "$root/usr/lib/systemd/user/hydex-update-manager.service"
         cp "$polkit_policy" "$root/usr/share/polkit-1/actions/com.github.mwheiss.hydex-desktop.update.policy"
         chmod 0644 "$root/usr/share/polkit-1/actions/com.github.mwheiss.hydex-desktop.update.policy"
     else

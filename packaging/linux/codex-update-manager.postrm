@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-SERVICE_NAME="codex-update-manager.service"
+SERVICE_NAME="hydex-update-manager.service"
+LEGACY_SERVICE_NAME="codex-update-manager.service"
 
 for runtime_dir in /run/user/*; do
     [ -d "$runtime_dir" ] || continue
@@ -21,10 +22,12 @@ for runtime_dir in /run/user/*; do
 
     case "${1:-}" in
         remove|purge|disappear)
-            runuser -u "$user_name" -- env \
-                XDG_RUNTIME_DIR="$runtime_dir" \
-                DBUS_SESSION_BUS_ADDRESS="unix:path=$bus" \
-                systemctl --user disable "$SERVICE_NAME" >/dev/null 2>&1 || true
+            for service_name in "$SERVICE_NAME" "$LEGACY_SERVICE_NAME"; do
+                runuser -u "$user_name" -- env \
+                    XDG_RUNTIME_DIR="$runtime_dir" \
+                    DBUS_SESSION_BUS_ADDRESS="unix:path=$bus" \
+                    systemctl --user disable "$service_name" >/dev/null 2>&1 || true
+            done
             ;;
     esac
 

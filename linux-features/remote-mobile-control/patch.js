@@ -59,7 +59,7 @@ const REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_HELPER =
   "function codexLinuxRemoteMobileLocalAppServerArgs(e,t){if(process.env.CODEX_REMOTE_CONTROL_APP_SERVER_MODE===`proxy`){let n=process.env.CODEX_REMOTE_CONTROL_APP_SERVER_PROXY_SOCKET;if(n?.startsWith(`%h/`)&&process.env.HOME)n=`${process.env.HOME}${n.slice(2)}`;return[...e,...t,`app-server`,`proxy`,...(n?[`--sock`,n]:[])]}return t.length===0?[...e,`app-server`,`--remote-control`,`--analytics-default-enabled`]:[`app-server`,...e,...t,`--remote-control`,`--analytics-default-enabled`]}";
 const REMOTE_CONTROL_APP_INITIAL_ASSET_PATTERN = /^app-initial-[^.]+\.js$/u;
 const REMOTE_CONTROL_APP_PRIMARY_ASSET_PATTERN = /^app-primary-[^.]+\.js$/u;
-const REMOTE_CONTROL_VISIBILITY_ASSET_PATTERN = /^[^.]+\.js$/u;
+const REMOTE_CONTROL_VISIBILITY_ASSET_PATTERN = /^(?:app-initial|remote-control-connections-visibility)-[^.]+\.js$/u;
 const REMOTE_CONTROL_LINUX_COPY_REPLACEMENTS = [
   ["defaultMessage:`Mac`", "defaultMessage:`Linux`"],
   ["Keep this Mac awake", "Keep this Linux desktop awake"],
@@ -1417,21 +1417,32 @@ function applyLinuxRemoteMobileReasoningSummaryPatch(source) {
   }
   const callerPrefix =
     `(?<prefix>${escapeRegExp(helperName)}\\((?<manager>[A-Za-z_$][\\w$]*),` +
-      `[A-Za-z_$][\\w$]*,[A-Za-z_$][\\w$]*,[A-Za-z_$][\\w$]*,[A-Za-z_$][\\w$]*,` +
+      `[A-Za-z_$][\\w$]*,(?<context>[A-Za-z_$][\\w$]*),[A-Za-z_$][\\w$]*,[A-Za-z_$][\\w$]*,` +
       `(?<conversation>[A-Za-z_$][\\w$]*),\\{)`;
   const callerContract =
     `(?=canUseProjectlessWorkspace:!(?<classifier>[A-Za-z_$][\\w$]*)\\(\\k<manager>\\.getHostId\\(\\)\\),[\\s\\S]{0,1000}?` +
-    `reasoningSummaryOverride:\\k<manager>\\.getDefaultFeatureOverride\\(\`concurrent_reasoning_summaries\`\\)===!0\\|\\|[A-Za-z_$][\\w$]*\\?\`detailed\`:null)`;
+    `reasoningSummaryOverride:\\k<manager>\\.getDefaultFeatureOverride\\(\`concurrent_reasoning_summaries\`\\)===!0\\|\\|(?<aeonFlag>[A-Za-z_$][\\w$]*)\\?\`detailed\`:null)`;
   const pristineCallerMatches = [...source.matchAll(new RegExp(callerPrefix + callerContract, "gu"))];
   const patchedCallerPattern = new RegExp(
     callerPrefix +
       `codexLinuxRemoteMobileHost:(?<patchedClassifier>[A-Za-z_$][\\w$]*)\\(\\k<manager>\\.getHostId\\(\\)\\)&&` +
       `\\k<conversation>\\.mode===\`durable\`,` +
       `(?=canUseProjectlessWorkspace:!\\k<patchedClassifier>\\(\\k<manager>\\.getHostId\\(\\)\\),[\\s\\S]{0,1000}?` +
-      `reasoningSummaryOverride:\\k<manager>\\.getDefaultFeatureOverride\\(\`concurrent_reasoning_summaries\`\\)===!0\\|\\|[A-Za-z_$][\\w$]*\\?\`detailed\`:null)`,
+      `reasoningSummaryOverride:\\k<manager>\\.getDefaultFeatureOverride\\(\`concurrent_reasoning_summaries\`\\)===!0\\|\\|(?<aeonFlag>[A-Za-z_$][\\w$]*)\\?\`detailed\`:null)`,
     "gu",
   );
   const patchedCallerMatches = [...source.matchAll(patchedCallerPattern)];
+  const callerHasAeonFlag = (match) => {
+    const callerStart = source.lastIndexOf("async function ", match.index);
+    if (callerStart === -1 || match.index - callerStart > 4_000) return false;
+    const { aeonFlag, context, conversation } = match.groups;
+    const flagPattern = new RegExp(
+      `(?:let |,)${escapeRegExp(aeonFlag)}=${escapeRegExp(context)}\\.context\\?\\.threadStartKind===\`aeon\`` +
+        `(?:\\|\\|[A-Za-z_$][\\w$]*\\(${escapeRegExp(conversation)}\\.threadStartKind,${escapeRegExp(conversation)}\\.threadSource\\))?[;,]`,
+      "u",
+    );
+    return flagPattern.test(source.slice(callerStart, match.index));
+  };
 
   const patchedResolverSuffix =
     `/*${REMOTE_MOBILE_REASONING_SUMMARY_MARKER}*/` +
@@ -1444,12 +1455,14 @@ function applyLinuxRemoteMobileReasoningSummaryPatch(source) {
     !resolverIsPatched &&
     markerCount === 0 &&
     pristineCallerMatches.length === 1 &&
-    patchedCallerMatches.length === 0;
+    patchedCallerMatches.length === 0 &&
+    callerHasAeonFlag(pristineCallerMatches[0]);
   const completePatchedPair =
     resolverIsPatched &&
     markerCount === 1 &&
     pristineCallerMatches.length === 0 &&
-    patchedCallerMatches.length === 1;
+    patchedCallerMatches.length === 1 &&
+    callerHasAeonFlag(patchedCallerMatches[0]);
 
   if (completePatchedPair) {
     return source;

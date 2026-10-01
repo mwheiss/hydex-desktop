@@ -19,7 +19,7 @@ disk space. An explicit package must match host architecture and be named
 ```bash
 /opt/hydex-desktop/start.sh --diagnose
 /opt/hydex-desktop/ChatGPT --version
-journalctl --user -u codex-update-manager.service --no-pager
+journalctl --user -u hydex-update-manager.service --no-pager
 ```
 
 The diagnostic checks the official executable, ASAR, bundled `codex`, `rg`, and
@@ -214,7 +214,7 @@ an error; correct the config rather than adding a compatibility alias.
 
 ```bash
 codex-update-manager status
-systemctl --user status codex-update-manager.service
+systemctl --user status hydex-update-manager.service
 ```
 
 `WaitingForAppExit` is expected: close all ChatGPT/Codex desktop processes. For
@@ -239,13 +239,13 @@ your own:
 Environment=PATH=/home/<user>/.local/share/fnm/node-versions/<ver>/installation/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ```
 
-Restart the service with `systemctl --user restart codex-update-manager.service`.
+Restart the service with `systemctl --user restart hydex-update-manager.service`.
 
 Collect a useful updater report with:
 
 ```bash
 codex-update-manager diagnose --json
-journalctl --user -u codex-update-manager.service -n 200 --no-pager
+journalctl --user -u hydex-update-manager.service -n 200 --no-pager
 ```
 
 ## Native package build or install fails

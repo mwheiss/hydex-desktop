@@ -175,10 +175,10 @@ install-rhel9:
 
 service-enable:
 	systemctl --user daemon-reload
-	systemctl --user enable --now codex-update-manager.service
+	systemctl --user enable --now hydex-update-manager.service
 
 service-status:
-	systemctl --user status codex-update-manager.service --no-pager
+	systemctl --user status hydex-update-manager.service --no-pager
 
 clean-dist:
 	rm -rf "$(CURDIR)/dist"

@@ -11,7 +11,8 @@ import sys
 import tempfile
 
 FEATURE = "persistent-app-server"
-UNIT = "codex-remote-control.service"
+UNIT = "hydex-remote-control.service"
+LEGACY_UNIT = "codex-remote-control.service"
 MARKER = "# Managed by hydex-desktop persistent-app-server v1\n"
 INCOMPATIBLE = {"shared-app-server-socket"}
 
@@ -69,6 +70,8 @@ def read_config(path):
         raise ValueError("Unrecognized persistent app-server configuration")
     for name in ("home", "codex_home", "app_dir", "unit_path"):
         config[name] = str(absolute(config[name]))
+    if Path(config["unit_path"]).name not in (UNIT, LEGACY_UNIT):
+        raise ValueError("Unrecognized persistent app-server unit path")
     if not isinstance(config.get("path"), str) or any(c in config["path"] for c in "\x00\r\n"):
         raise ValueError("Invalid saved PATH")
     return config
@@ -142,16 +145,17 @@ def enable_selection(repo):
 
 
 def check_foreign_owner(config, unit):
+    unit_name = unit.name
     run(["systemctl", "--user", "show-environment"], capture=True)
-    fragment = run(["systemctl", "--user", "show", UNIT, "--property=FragmentPath", "--value"],
+    fragment = run(["systemctl", "--user", "show", unit_name, "--property=FragmentPath", "--value"],
                    check=False, capture=True).stdout.strip()
     if fragment and Path(fragment).resolve() != unit.resolve():
-        raise ValueError("Another service already owns " + UNIT + ": " + fragment)
+        raise ValueError("Another service already owns " + unit_name + ": " + fragment)
     if os.path.lexists(unit):
         owned_file(unit)
         if not unit.read_text().startswith(MARKER):
             raise ValueError("Refusing to overwrite an existing user service: " + str(unit))
-    active = run(["systemctl", "--user", "is-active", "--quiet", UNIT],
+    active = run(["systemctl", "--user", "is-active", "--quiet", unit_name],
                  check=False, capture=True).returncode == 0
     if active and not unit.exists():
         raise ValueError("A service is already running without our unit file")
@@ -189,6 +193,9 @@ def setup(app_dir, *, linger=True):
     config = read_config(path) if path.exists() else proposed
     if config["app_dir"] != str(app_dir):
         raise ValueError("Configured for another app directory; remove the old service explicitly first")
+    if Path(config["unit_path"]).name == LEGACY_UNIT:
+        ensure_setup(app_dir)
+        return
     cli = cli_path(config)
     adapter = client_adapter_path(config)
     if (not helper_path(config).is_file() or not os.access(cli, os.X_OK)
@@ -234,8 +241,22 @@ def ensure_setup(app_dir):
         setup(app_dir, linger=False)
         return read_config(path)
     config = read_config(path)
+    if config["app_dir"] != str(absolute(app_dir)):
+        raise ValueError("Configured for another app directory; remove the old service explicitly first")
     unit = Path(config["unit_path"])
     active = check_foreign_owner(config, unit)
+    if unit.name == LEGACY_UNIT:
+        if active:
+            # Keep active work attached to the existing process. A later idle
+            # first use will migrate the user unit without restarting it.
+            return config
+        if unit.exists():
+            run(["systemctl", "--user", "disable", LEGACY_UNIT], check=False)
+            unit.unlink()
+        config["unit_path"] = str(unit.with_name(UNIT))
+        atomic_write(path, json.dumps(config, indent=2) + "\n")
+        setup(app_dir, linger=False)
+        return read_config(path)
     if active:
         desired = unit_text(config, path)
         if unit.read_text() != desired:
@@ -278,7 +299,7 @@ def remove(path):
     owned_file(unit)
     if not unit.read_text().startswith(MARKER):
         raise ValueError("Refusing to remove an unrecognized service")
-    run(["systemctl", "--user", "disable", "--now", UNIT])
+    run(["systemctl", "--user", "disable", "--now", unit.name])
     unit.unlink()
     path.unlink()
     run(["systemctl", "--user", "daemon-reload"])

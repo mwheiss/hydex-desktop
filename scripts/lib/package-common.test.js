@@ -594,6 +594,60 @@ test("update-builder stages the attached CLI resource", (t) => {
   );
 });
 
+test("updater migration keeps the active legacy process and enables the Hydex unit", () => {
+  const helper = path.join(repoRoot, "packaging/linux/codex-update-manager-user-service.sh");
+  const script = [
+    `. ${JSON.stringify(helper)}`,
+    "codex_run_systemctl_user() {",
+    "  printf '%s\\n' \"$*\"",
+    "  case \"$4:$5\" in",
+    "    is-enabled:codex-update-manager.service|is-active:codex-update-manager.service|disable:codex-update-manager.service) return 0 ;;",
+    "    *) return 1 ;;",
+    "  esac",
+    "}",
+    "codex_migrate_one_legacy_user_service alice /run/user/1000 /run/user/1000/bus",
+    "codex_start_one_enabled_user_service alice /run/user/1000 /run/user/1000/bus",
+  ].join("\n");
+  const result = childProcess.spawnSync("bash", ["-c", script], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  const calls = result.stdout.trim().split("\n");
+  assert.deepEqual(calls.map((call) => call.slice(call.indexOf("bus ") + 4)), [
+    "is-enabled codex-update-manager.service",
+    "disable codex-update-manager.service",
+    "enable hydex-update-manager.service",
+    "daemon-reload",
+    "is-active codex-update-manager.service",
+  ]);
+});
+
+test("Desktop launch does not start a second updater while the legacy unit is active", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "hydex-updater-service-migration-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const helper = path.join(repoRoot, "packaging/linux/codex-packaged-runtime.sh");
+  const log = path.join(root, "systemctl.log");
+  const script = [
+    `. ${JSON.stringify(helper)}`,
+    "systemctl() {",
+    "  printf '%s\\n' \"$*\" >> \"$SERVICE_LOG\"",
+    "  case \"$*\" in",
+    "    '--user show-environment'|'--user is-active codex-update-manager.service') return 0 ;;",
+    "    *) return 1 ;;",
+    "  esac",
+    "}",
+    "dbus-update-activation-environment() { :; }",
+    "codex_packaged_runtime_trigger_update_check() { printf '%s\\n' check-now >> \"$SERVICE_LOG\"; }",
+    "codex_packaged_runtime_prelaunch_background",
+  ].join("\n");
+  const result = childProcess.spawnSync("bash", ["-c", script], {
+    encoding: "utf8",
+    env: { ...process.env, XDG_RUNTIME_DIR: root, SERVICE_LOG: log },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const calls = fs.readFileSync(log, "utf8");
+  assert.match(calls, /--user is-active codex-update-manager\.service/);
+  assert.doesNotMatch(calls, /--user start hydex-update-manager\.service|check-now/);
+});
+
 test("update-builder omits directory-watch acceptance-only evidence", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-update-builder-watchbound-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
