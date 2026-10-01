@@ -175,7 +175,7 @@ Feature-owned surfaces outside the descriptor array are also topology-scoped:
 | `feature.json` resources | `mobile-host` | Declaratively stages and tracks the cold-start hook with its executable mode. |
 | `stage.sh` | `mobile-host` | Stages host ownership markers while preserving official single-instance and browser routing. |
 | `cold-start-hook.sh` | `mobile-host` | Elects one local remote-control runtime owner and starts only the bundled official Codex fallback. |
-| Nix `codex-remote-control.service` | `mobile-host` | Replaces the bundled-process fallback with one declarative local app-server owner. |
+| Nix `hydex-remote-control.service` | `mobile-host` | Replaces the bundled-process fallback with one declarative local app-server owner. |
 
 The app-server has exactly one Remote Control owner in either supported
 topology:
@@ -235,7 +235,7 @@ On NixOS, prefer the flake's Home Manager module instead of the launcher hook:
 ```
 
 The module installs the remote-mobile package variant and manages
-`codex-remote-control.service` as a user systemd unit running
+`hydex-remote-control.service` as a user systemd unit running
 `codex app-server --remote-control --listen unix://`. It sets
 `CODEX_REMOTE_CONTROL_APP_SERVER_MODE=proxy`, so the app-server child spawned
 by Desktop runs `codex app-server proxy` and forwards its complete stdio RPC

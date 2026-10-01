@@ -17,9 +17,10 @@ case "${1:-}" in
         ;;
 esac
 
-SERVICE_NAME="codex-update-manager.service"
+SERVICE_NAME="hydex-update-manager.service"
+LEGACY_SERVICE_NAME="codex-update-manager.service"
 
-# A managed package upgrade can be launched by codex-update-manager.service
+# A managed package upgrade can be launched by hydex-update-manager.service
 # itself. Stopping that service from this prerm would terminate the privileged
 # apt/dpkg transaction that is replacing the package, leaving root-owned
 # installer processes behind in the user-service cgroup. Keep the running
@@ -48,19 +49,21 @@ for runtime_dir in /run/user/*; do
     user_name="$(getent passwd "$uid" | cut -d: -f1 || true)"
     [ -n "$user_name" ] || continue
 
-    runuser -u "$user_name" -- env \
-        XDG_RUNTIME_DIR="$runtime_dir" \
-        DBUS_SESSION_BUS_ADDRESS="unix:path=$bus" \
-        systemctl --user stop "$SERVICE_NAME" >/dev/null 2>&1 || true
+    for service_name in "$SERVICE_NAME" "$LEGACY_SERVICE_NAME"; do
+        runuser -u "$user_name" -- env \
+            XDG_RUNTIME_DIR="$runtime_dir" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=$bus" \
+            systemctl --user stop "$service_name" >/dev/null 2>&1 || true
 
-    case "${1:-}" in
-        remove|purge|deconfigure)
-            runuser -u "$user_name" -- env \
-                XDG_RUNTIME_DIR="$runtime_dir" \
-                DBUS_SESSION_BUS_ADDRESS="unix:path=$bus" \
-                systemctl --user disable "$SERVICE_NAME" >/dev/null 2>&1 || true
-            ;;
-    esac
+        case "${1:-}" in
+            remove|purge|deconfigure)
+                runuser -u "$user_name" -- env \
+                    XDG_RUNTIME_DIR="$runtime_dir" \
+                    DBUS_SESSION_BUS_ADDRESS="unix:path=$bus" \
+                    systemctl --user disable "$service_name" >/dev/null 2>&1 || true
+                ;;
+        esac
+    done
 
     runuser -u "$user_name" -- env \
         XDG_RUNTIME_DIR="$runtime_dir" \
