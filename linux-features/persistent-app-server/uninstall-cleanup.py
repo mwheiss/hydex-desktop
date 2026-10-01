@@ -10,7 +10,8 @@ import tempfile
 
 
 FEATURE = "persistent-app-server"
-UNIT = "codex-remote-control.service"
+UNIT = "hydex-remote-control.service"
+LEGACY_UNIT = "codex-remote-control.service"
 UNIT_MARKER = "# Managed by hydex-desktop persistent-app-server v1\n"
 SETTINGS_KEYS = ("hydex.cliExecutable", "chatgpt.cliExecutable")
 SETTINGS_ROOTS = ("Code", "Code - OSS", "VSCodium")
@@ -59,7 +60,11 @@ def remove_service_state(home, uid, app_dir):
     except (OSError, json.JSONDecodeError) as error:
         warn(f"preserving unrecognized configuration {config}: {error}")
         return
-    unit = home / ".config/systemd/user" / UNIT
+    unit_name = Path(str(value.get("unit_path", ""))).name if isinstance(value, dict) else ""
+    if unit_name not in (UNIT, LEGACY_UNIT):
+        warn("preserving configuration with unrecognized user service: " + str(config))
+        return
+    unit = home / ".config/systemd/user" / unit_name
     expected = {
         "version": 1,
         "feature": FEATURE,
