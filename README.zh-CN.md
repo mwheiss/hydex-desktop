@@ -175,7 +175,7 @@ sudo emerge --unmerge app-misc/codex-desktop
 原生包卸载时会禁用用户更新服务。若旧安装或手动安装仍留下服务：
 
 ```bash
-systemctl --user disable --now codex-update-manager.service
+systemctl --user disable --now hydex-update-manager.service
 systemctl --user daemon-reload
 ```
 
@@ -336,9 +336,9 @@ codex-update-manager rollback
 ```
 
 ```bash
-systemctl --user enable --now codex-update-manager.service
-systemctl --user status codex-update-manager.service
-journalctl --user -u codex-update-manager.service
+systemctl --user enable --now hydex-update-manager.service
+systemctl --user status hydex-update-manager.service
+journalctl --user -u hydex-update-manager.service
 ```
 
 构建不含 updater 的手动更新包：

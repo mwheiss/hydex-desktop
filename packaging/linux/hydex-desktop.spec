@@ -96,7 +96,7 @@ __CODEX_CLI_PACKAGE_FILES__
 %if __PACKAGE_WITH_UPDATER__
 /usr/bin/codex-update-manager
 /usr/bin/hydex-update-manager
-/usr/lib/systemd/user/codex-update-manager.service
+/usr/lib/systemd/user/hydex-update-manager.service
 %endif
 /usr/share/applications/__PACKAGE_NAME__.desktop
 /usr/share/applications/chatgpt.desktop
@@ -131,6 +131,7 @@ fi
 SERVICE_HELPER=/opt/__PACKAGE_NAME__/update-builder/packaging/linux/codex-update-manager-user-service.sh
 if [ -f "$SERVICE_HELPER" ]; then
     . "$SERVICE_HELPER"
+    codex_migrate_legacy_user_service || true
     if [ "${1:-0}" -eq 1 ]; then
         codex_ensure_user_service_running || true
     else

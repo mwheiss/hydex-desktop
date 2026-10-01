@@ -98,10 +98,10 @@ let
   nixos = (evalNixOS remoteConfig).config;
   bundledHome = (evalHome bundledRemoteConfig).config;
   bundledNixOS = (evalNixOS bundledRemoteConfig).config;
-  homeService = home.systemd.user.services.codex-remote-control;
-  nixosService = nixos.systemd.user.services.codex-remote-control;
-  bundledHomeService = bundledHome.systemd.user.services.codex-remote-control;
-  bundledNixOSService = bundledNixOS.systemd.user.services.codex-remote-control;
+  homeService = home.systemd.user.services.hydex-remote-control;
+  nixosService = nixos.systemd.user.services.hydex-remote-control;
+  bundledHomeService = bundledHome.systemd.user.services.hydex-remote-control;
+  bundledNixOSService = bundledNixOS.systemd.user.services.hydex-remote-control;
   homeDefaultPackage = builtins.head (evalHome baseConfig).config.home.packages;
   nixosDefaultPackage = builtins.head (evalNixOS baseConfig).config.environment.systemPackages;
   homeCliPackage = builtins.head (evalHome (baseConfig // { cliPackage = fakeCli; })).config.home.packages;
@@ -136,8 +136,8 @@ assert lib.assertMsg
   (homeDefaultPackage.drvPath == fakeDesktop.drvPath && nixosDefaultPackage.drvPath == fakeDesktop.drvPath)
   "the bundled CLI default unexpectedly wrapped a custom Desktop package";
 assert lib.assertMsg
-  (!((evalHome baseConfig).config.systemd.user.services ? codex-remote-control)
-    && !((evalNixOS baseConfig).config.systemd.user.services ? codex-remote-control))
+  (!((evalHome baseConfig).config.systemd.user.services ? hydex-remote-control)
+    && !((evalNixOS baseConfig).config.systemd.user.services ? hydex-remote-control))
   "remote control was enabled without explicit user configuration";
 assert lib.assertMsg
   (homeCliPackage.drvPath != fakeDesktop.drvPath && nixosCliPackage.drvPath != fakeDesktop.drvPath)
@@ -211,8 +211,8 @@ assert lib.assertMsg
     && lib.any (value: lib.hasPrefix "PATH=/run/current-system/sw/bin:" value) nixosService.serviceConfig.Environment)
   "remote-control service PATH omitted the user or system profile";
 assert lib.assertMsg
-  ((evalHome optionalEnvironmentFileConfig).config.systemd.user.services.codex-remote-control.Service.EnvironmentFile == "-/run/secrets/codex.env"
-    && (evalNixOS optionalEnvironmentFileConfig).config.systemd.user.services.codex-remote-control.serviceConfig.EnvironmentFile == "-/run/secrets/codex.env")
+  ((evalHome optionalEnvironmentFileConfig).config.systemd.user.services.hydex-remote-control.Service.EnvironmentFile == "-/run/secrets/codex.env"
+    && (evalNixOS optionalEnvironmentFileConfig).config.systemd.user.services.hydex-remote-control.serviceConfig.EnvironmentFile == "-/run/secrets/codex.env")
   "optional runtime environmentFile changed";
 assert lib.assertMsg
   (lib.all (value: value) invalidHomeFiles && lib.all (value: value) invalidNixOSFiles)

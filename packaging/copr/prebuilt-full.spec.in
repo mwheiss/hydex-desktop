@@ -67,7 +67,7 @@ tar -xaf %{SOURCE0} -C %{buildroot}
 /usr/bin/hydex-code-mode-host
 /usr/bin/codex-update-manager
 /usr/bin/hydex-update-manager
-/usr/lib/systemd/user/codex-update-manager.service
+/usr/lib/systemd/user/hydex-update-manager.service
 /usr/share/applications/hydex-desktop.desktop
 /usr/share/applications/chatgpt.desktop
 /usr/share/icons/hicolor/256x256/apps/hydex-desktop.png
@@ -91,6 +91,7 @@ fi
 SERVICE_HELPER=/opt/hydex-desktop/update-builder/packaging/linux/codex-update-manager-user-service.sh
 if [ -f "$SERVICE_HELPER" ]; then
     . "$SERVICE_HELPER"
+    codex_migrate_legacy_user_service || true
     if [ "${1:-0}" -eq 1 ]; then
         codex_ensure_user_service_running || true
     else

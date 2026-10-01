@@ -6,6 +6,7 @@ DESKTOP_ENTRY_DOCTOR="/opt/hydex-desktop/.codex-linux/hydex-desktop-entry-doctor
 if [ -f "$SERVICE_HELPER" ]; then
     # shellcheck source=/opt/hydex-desktop/update-builder/packaging/linux/codex-update-manager-user-service.sh
     . "$SERVICE_HELPER"
+    codex_migrate_legacy_user_service || true
     if [ "${1:-}" = "configure" ] && [ -z "${2:-}" ]; then
         codex_ensure_user_service_running || true
     else

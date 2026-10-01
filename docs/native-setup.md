@@ -283,7 +283,7 @@ are explicitly confirmed.
 ```bash
 command -v hydex-desktop
 hydex-desktop --diagnose
-systemctl --user status codex-update-manager.service --no-pager
+systemctl --user status hydex-update-manager.service --no-pager
 ```
 
 The official `chatgpt` and Hydex `hydex-desktop` packages can coexist. By
