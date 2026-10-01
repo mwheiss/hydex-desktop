@@ -871,7 +871,7 @@ fn fail_update_with<T>(
     });
     let result = fail(state, paths, error);
     if let Some(body) = notification {
-        send("codex-desktop update failed", &body);
+        send("Hydex Desktop update failed", &body);
     }
     result
 }
@@ -1467,11 +1467,11 @@ if [ "$1" = "-V" ]; then
 fi
 if [ "$1" = "-q" ] || [ "$1" = "-qp" ]; then
   if [ "$3" = "%{NAME}" ]; then
-    printf 'codex-desktop\n'
+    printf 'hydex-desktop\n'
   elif [ "$3" = "%{VERSION}-%{RELEASE}" ]; then
     printf '2026.09.06-1.fc42\n'
   else
-    printf 'codex-desktop\t2026.09.06-1.fc42\tx86_64\n'
+    printf 'hydex-desktop\t2026.09.06-1.fc42\tx86_64\n'
   fi
   exit 0
 fi
@@ -1495,12 +1495,12 @@ exit 90
         };
         let script = r#"#!/bin/sh
 set -eu
-if [ "$1" = "-Q" ] && [ "$2" = "codex-desktop" ]; then
-  printf 'codex-desktop 2026.09.06-1\n'
+if [ "$1" = "-Q" ] && [ "$2" = "hydex-desktop" ]; then
+  printf 'hydex-desktop 2026.09.06-1\n'
   exit 0
 fi
 if [ "$1" = "-Qip" ] || [ "$1" = "-Qi" ]; then
-  printf 'Name            : codex-desktop\n'
+  printf 'Name            : hydex-desktop\n'
   printf 'Version         : 2026.09.06-1\n'
   printf 'Architecture    : x86_64\n'
   exit 0
@@ -1957,7 +1957,7 @@ exit 90
         let dir = tempfile::tempdir()?;
         let paths = fixture_paths(dir.path());
         paths.ensure_dirs()?;
-        let package = dir.path().join("codex-desktop.rpm");
+        let package = dir.path().join("hydex-desktop.rpm");
         fs::write(&package, b"rpm fixture")?;
         let fake_rpm = write_fake_rpm_recovery_command(dir.path(), true)?;
         let _package_manager_paths = install::test_program_path_overrides(Some(&fake_rpm), None);
@@ -1978,7 +1978,7 @@ exit 90
         let dir = tempfile::tempdir()?;
         let paths = fixture_paths(dir.path());
         paths.ensure_dirs()?;
-        let package = dir.path().join("codex-desktop.rpm");
+        let package = dir.path().join("hydex-desktop.rpm");
         fs::write(&package, b"rpm fixture")?;
         let fake_rpm = write_fake_rpm_recovery_command(dir.path(), false)?;
         let _package_manager_paths = install::test_program_path_overrides(Some(&fake_rpm), None);
@@ -2000,7 +2000,7 @@ exit 90
         paths.ensure_dirs()?;
         let package = dir
             .path()
-            .join("codex-desktop-2026.09.06-1-x86_64.pkg.tar.zst");
+            .join("hydex-desktop-2026.09.06-1-x86_64.pkg.tar.zst");
         fs::write(&package, b"pacman fixture")?;
         let fake_pacman = write_fake_pacman_recovery_command(dir.path(), true)?;
         let _package_manager_paths = install::test_program_path_overrides(None, Some(&fake_pacman));
@@ -2023,7 +2023,7 @@ exit 90
         paths.ensure_dirs()?;
         let package = dir
             .path()
-            .join("codex-desktop-2026.09.06-1-x86_64.pkg.tar.zst");
+            .join("hydex-desktop-2026.09.06-1-x86_64.pkg.tar.zst");
         fs::write(&package, b"pacman fixture")?;
         let fake_pacman = write_fake_pacman_recovery_command(dir.path(), false)?;
         let _package_manager_paths = install::test_program_path_overrides(None, Some(&fake_pacman));

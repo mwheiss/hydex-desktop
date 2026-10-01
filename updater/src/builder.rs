@@ -103,7 +103,7 @@ pub async fn build_update(
         .env("UPDATER_BINARY_SOURCE", updater_binary)
         .env(
             "UPDATER_SERVICE_SOURCE",
-            bundle.join("packaging/linux/codex-update-manager.service"),
+            bundle.join("packaging/linux/hydex-update-manager.service"),
         )
         .env("TMPDIR", &temp)
         .current_dir(&bundle);
