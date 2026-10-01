@@ -2,7 +2,8 @@
 
 PERSISTENT_APP_DIR="${PERSISTENT_APP_DIR:-/opt/hydex-desktop}"
 PERSISTENT_CLEANUP="$PERSISTENT_APP_DIR/.codex-linux/features/persistent-app-server/uninstall-cleanup.py"
-PERSISTENT_UNIT="codex-remote-control.service"
+PERSISTENT_UNIT="hydex-remote-control.service"
+PERSISTENT_LEGACY_UNIT="codex-remote-control.service"
 
 codex_persistent_foreach_active_user() {
     if ! command -v getent >/dev/null 2>&1 ||
@@ -47,6 +48,8 @@ codex_persistent_run_user() {
 codex_persistent_stop_one_user() {
     codex_persistent_run_user "$1" "$2" "$3" "$4" \
         systemctl --user disable --now "$PERSISTENT_UNIT" >/dev/null 2>&1 || true
+    codex_persistent_run_user "$1" "$2" "$3" "$4" \
+        systemctl --user disable --now "$PERSISTENT_LEGACY_UNIT" >/dev/null 2>&1 || true
 }
 
 codex_persistent_reload_one_user() {

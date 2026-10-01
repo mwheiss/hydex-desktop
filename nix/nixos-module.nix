@@ -168,7 +168,7 @@ in {
     } // lib.optionalAttrs remote.disableLauncherAutostart {
       CODEX_REMOTE_CONTROL_DAEMON_AUTOSTART_DISABLED = "1";
     });
-    systemd.user.services.codex-remote-control = lib.mkIf remote.enable {
+    systemd.user.services.hydex-remote-control = lib.mkIf remote.enable {
       description = "Codex remote-control app-server";
       after = [ "network.target" ];
       wantedBy = [ remote.target ];

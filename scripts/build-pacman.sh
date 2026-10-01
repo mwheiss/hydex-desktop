@@ -9,7 +9,7 @@ DIST_DIR="${DIST_DIR_OVERRIDE:-$REPO_DIR/dist}"
 PKGBUILD_TEMPLATE="$REPO_DIR/packaging/linux/PKGBUILD.template"
 INSTALL_HOOKS="$REPO_DIR/packaging/linux/hydex-desktop.install"
 DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/hydex-desktop.desktop"
-SERVICE_TEMPLATE="$REPO_DIR/packaging/linux/codex-update-manager.service"
+SERVICE_TEMPLATE="$REPO_DIR/packaging/linux/hydex-update-manager.service"
 USER_SERVICE_HELPER_TEMPLATE="$REPO_DIR/packaging/linux/codex-update-manager-user-service.sh"
 PACKAGED_RUNTIME_TEMPLATE="$REPO_DIR/packaging/linux/codex-packaged-runtime.sh"
 
