@@ -157,7 +157,7 @@ in {
     home.packages = [ desktopPackage ];
     home.sessionVariables = lib.mkIf remote.enable sessionVariables;
     systemd.user.sessionVariables = lib.mkIf remote.enable sessionVariables;
-    systemd.user.services.codex-remote-control = lib.mkIf remote.enable {
+    systemd.user.services.hydex-remote-control = lib.mkIf remote.enable {
       Unit = {
         Description = "Codex remote-control app-server";
         After = [ "network.target" ];

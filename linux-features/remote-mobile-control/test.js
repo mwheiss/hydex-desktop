@@ -513,6 +513,9 @@ const COLD_START_TEST_ENV_KEYS = [
   "TEST_SYSTEMCTL_ACTIVE_STATUS",
   "TEST_SYSTEMCTL_CAT_STATUS",
   "TEST_SYSTEMCTL_ENABLED_STATUS",
+  "TEST_LEGACY_SYSTEMCTL_ACTIVE_STATUS",
+  "TEST_LEGACY_SYSTEMCTL_ENABLED_STATUS",
+  "TEST_LEGACY_SYSTEMCTL_CAT_STATUS",
 ];
 
 function coldStartTestEnv(env) {
@@ -530,9 +533,12 @@ function runColdStartHook(env) {
     fs.writeFileSync(systemctl, [
       "#!/usr/bin/env sh",
       "case \"$*\" in",
-      "  '--user is-active --quiet codex-remote-control.service') exit \"${TEST_SYSTEMCTL_ACTIVE_STATUS:-3}\" ;;",
-      "  '--user is-enabled --quiet codex-remote-control.service') exit \"${TEST_SYSTEMCTL_ENABLED_STATUS:-3}\" ;;",
-      "  '--user cat codex-remote-control.service') exit \"${TEST_SYSTEMCTL_CAT_STATUS:-3}\" ;;",
+      "  '--user is-active --quiet hydex-remote-control.service') exit \"${TEST_SYSTEMCTL_ACTIVE_STATUS:-3}\" ;;",
+      "  '--user is-enabled --quiet hydex-remote-control.service') exit \"${TEST_SYSTEMCTL_ENABLED_STATUS:-3}\" ;;",
+      "  '--user cat hydex-remote-control.service') exit \"${TEST_SYSTEMCTL_CAT_STATUS:-3}\" ;;",
+      "  '--user is-active --quiet codex-remote-control.service') exit \"${TEST_LEGACY_SYSTEMCTL_ACTIVE_STATUS:-3}\" ;;",
+      "  '--user is-enabled --quiet codex-remote-control.service') exit \"${TEST_LEGACY_SYSTEMCTL_ENABLED_STATUS:-3}\" ;;",
+      "  '--user cat codex-remote-control.service') exit \"${TEST_LEGACY_SYSTEMCTL_CAT_STATUS:-3}\" ;;",
       "esac",
       "exit 3",
       "",
@@ -877,7 +883,7 @@ test("remote mobile cold-start hook keeps an enabled inactive systemd owner with
     });
 
     assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /owner: systemd \(codex-remote-control.service is configured but inactive\)/);
+    assert.match(result.stdout, /owner: systemd \(hydex-remote-control.service is configured but inactive\)/);
     assert.equal(fs.existsSync(callsLog), false);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -895,6 +901,23 @@ test("remote mobile cold-start hook reports an active systemd owner", () => {
       CODEX_HOME: codexHome,
       HOME: home,
       TEST_SYSTEMCTL_ACTIVE_STATUS: "0",
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(result.stdout, /owner: systemd \(hydex-remote-control.service is active\)/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("remote mobile cold-start hook preserves an active legacy systemd owner during migration", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-cold-start-"));
+  try {
+    const result = runColdStartHook({
+      HOME: tempRoot,
+      CODEX_HOME: path.join(tempRoot, "codex-home"),
+      TEST_SYSTEMCTL_ENABLED_STATUS: "0",
+      TEST_LEGACY_SYSTEMCTL_ACTIVE_STATUS: "0",
     });
 
     assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -922,7 +945,7 @@ test("remote mobile cold-start hook does not bypass a present disabled systemd u
     });
 
     assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /owner: systemd \(codex-remote-control.service is configured but inactive\)/);
+    assert.match(result.stdout, /owner: systemd \(hydex-remote-control.service is configured but inactive\)/);
     assert.equal(fs.existsSync(callsLog), false);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -1671,6 +1694,28 @@ test("reasoning-summary caller without the current Aeon override is rejected byt
   const { result, warnings } = captureWarnings(() => applyLinuxRemoteMobileReasoningSummaryPatch(source));
   assert.equal(result, source);
   assert.ok(warnings.some((warning) => warning.includes("incomplete reasoning-summary")));
+});
+
+test("reasoning-summary caller with an unrelated override flag is rejected byte-identically", () => {
+  const source = syntheticCurrentReasoningSummaryTurnStartBundle().replace(
+    "let b=n.context?.threadStartKind===`aeon`;",
+    "let b=!0;",
+  );
+  const { result, warnings } = captureWarnings(() => applyLinuxRemoteMobileReasoningSummaryPatch(source));
+  assert.equal(result, source);
+  assert.ok(warnings.some((warning) => warning.includes("incomplete reasoning-summary")));
+});
+
+test("current Aeon thread-start caller patches once and keeps request precedence", () => {
+  const source = syntheticCurrentReasoningSummaryTurnStartBundle().replace(
+    "let b=n.context?.threadStartKind===`aeon`;",
+    "let b=n.context?.threadStartKind===`aeon`||NB(a.threadStartKind,a.threadSource);",
+  );
+  const patched = applyLinuxRemoteMobileReasoningSummaryPatch(source);
+  assert.notEqual(patched, source);
+  assert.match(patched, /codexLinuxRemoteMobileReasoningSummaryNone/);
+  assert.equal(applyLinuxRemoteMobileReasoningSummaryPatch(patched), patched);
+  assert.match(patched, /s\.summary!==void 0&&\(ye=s\.summary\)/);
 });
 
 test("duplicate reasoning-summary owner pairs are rejected byte-identically", () => {

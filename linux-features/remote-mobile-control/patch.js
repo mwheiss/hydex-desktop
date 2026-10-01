@@ -1208,21 +1208,32 @@ function applyLinuxRemoteMobileReasoningSummaryPatch(source) {
   }
   const callerPrefix =
     `(?<prefix>${escapeRegExp(helperName)}\\((?<manager>[A-Za-z_$][\\w$]*),` +
-      `[A-Za-z_$][\\w$]*,[A-Za-z_$][\\w$]*,[A-Za-z_$][\\w$]*,[A-Za-z_$][\\w$]*,` +
+      `[A-Za-z_$][\\w$]*,(?<context>[A-Za-z_$][\\w$]*),[A-Za-z_$][\\w$]*,[A-Za-z_$][\\w$]*,` +
       `(?<conversation>[A-Za-z_$][\\w$]*),\\{)`;
   const callerContract =
     `(?=canUseProjectlessWorkspace:!(?<classifier>[A-Za-z_$][\\w$]*)\\(\\k<manager>\\.getHostId\\(\\)\\),[\\s\\S]{0,1000}?` +
-    `reasoningSummaryOverride:\\k<manager>\\.getDefaultFeatureOverride\\(\`concurrent_reasoning_summaries\`\\)===!0\\|\\|[A-Za-z_$][\\w$]*\\?\`detailed\`:null)`;
+    `reasoningSummaryOverride:\\k<manager>\\.getDefaultFeatureOverride\\(\`concurrent_reasoning_summaries\`\\)===!0\\|\\|(?<aeonFlag>[A-Za-z_$][\\w$]*)\\?\`detailed\`:null)`;
   const pristineCallerMatches = [...source.matchAll(new RegExp(callerPrefix + callerContract, "gu"))];
   const patchedCallerPattern = new RegExp(
     callerPrefix +
       `codexLinuxRemoteMobileHost:(?<patchedClassifier>[A-Za-z_$][\\w$]*)\\(\\k<manager>\\.getHostId\\(\\)\\)&&` +
       `\\k<conversation>\\.mode===\`durable\`,` +
       `(?=canUseProjectlessWorkspace:!\\k<patchedClassifier>\\(\\k<manager>\\.getHostId\\(\\)\\),[\\s\\S]{0,1000}?` +
-      `reasoningSummaryOverride:\\k<manager>\\.getDefaultFeatureOverride\\(\`concurrent_reasoning_summaries\`\\)===!0\\|\\|[A-Za-z_$][\\w$]*\\?\`detailed\`:null)`,
+      `reasoningSummaryOverride:\\k<manager>\\.getDefaultFeatureOverride\\(\`concurrent_reasoning_summaries\`\\)===!0\\|\\|(?<aeonFlag>[A-Za-z_$][\\w$]*)\\?\`detailed\`:null)`,
     "gu",
   );
   const patchedCallerMatches = [...source.matchAll(patchedCallerPattern)];
+  const callerHasAeonFlag = (match) => {
+    const callerStart = source.lastIndexOf("async function ", match.index);
+    if (callerStart === -1 || match.index - callerStart > 4_000) return false;
+    const { aeonFlag, context, conversation } = match.groups;
+    const flagPattern = new RegExp(
+      `(?:let |,)${escapeRegExp(aeonFlag)}=${escapeRegExp(context)}\\.context\\?\\.threadStartKind===\`aeon\`` +
+        `(?:\\|\\|[A-Za-z_$][\\w$]*\\(${escapeRegExp(conversation)}\\.threadStartKind,${escapeRegExp(conversation)}\\.threadSource\\))?[;,]`,
+      "u",
+    );
+    return flagPattern.test(source.slice(callerStart, match.index));
+  };
 
   const patchedResolverSuffix =
     `/*${REMOTE_MOBILE_REASONING_SUMMARY_MARKER}*/` +
@@ -1235,12 +1246,14 @@ function applyLinuxRemoteMobileReasoningSummaryPatch(source) {
     !resolverIsPatched &&
     markerCount === 0 &&
     pristineCallerMatches.length === 1 &&
-    patchedCallerMatches.length === 0;
+    patchedCallerMatches.length === 0 &&
+    callerHasAeonFlag(pristineCallerMatches[0]);
   const completePatchedPair =
     resolverIsPatched &&
     markerCount === 1 &&
     pristineCallerMatches.length === 0 &&
-    patchedCallerMatches.length === 1;
+    patchedCallerMatches.length === 1 &&
+    callerHasAeonFlag(patchedCallerMatches[0]);
 
   if (completePatchedPair) {
     return source;

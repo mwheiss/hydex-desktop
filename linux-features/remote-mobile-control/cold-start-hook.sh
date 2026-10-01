@@ -58,14 +58,21 @@ owner=desktop" ]; then
 
 remote_mobile_control_systemd_state() {
     command -v systemctl >/dev/null 2>&1 || return 1
-    if systemctl --user is-active --quiet codex-remote-control.service 2>/dev/null; then
-        printf '%s\n' "active"
-    elif systemctl --user is-enabled --quiet codex-remote-control.service 2>/dev/null ||
-        systemctl --user cat codex-remote-control.service >/dev/null 2>&1; then
-        printf '%s\n' "configured"
-    else
-        return 1
-    fi
+    local unit=""
+    for unit in hydex-remote-control.service codex-remote-control.service; do
+        if systemctl --user is-active --quiet "$unit" 2>/dev/null; then
+            printf 'active:%s\n' "$unit"
+            return 0
+        fi
+    done
+    for unit in hydex-remote-control.service codex-remote-control.service; do
+        if systemctl --user is-enabled --quiet "$unit" 2>/dev/null ||
+            systemctl --user cat "$unit" >/dev/null 2>&1; then
+            printf 'configured:%s\n' "$unit"
+            return 0
+        fi
+    done
+    return 1
 }
 
 remote_mobile_control_owner() {
@@ -89,12 +96,12 @@ remote_mobile_control_main() {
     owner="$(remote_mobile_control_owner)"
 
     case "$owner" in
-        systemd:active)
-            echo "Remote mobile control owner: systemd (codex-remote-control.service is active)"
+        systemd:active:*)
+            echo "Remote mobile control owner: systemd (${owner#systemd:active:} is active)"
             return 0
             ;;
-        systemd:configured)
-            echo "Remote mobile control owner: systemd (codex-remote-control.service is configured but inactive)"
+        systemd:configured:*)
+            echo "Remote mobile control owner: systemd (${owner#systemd:configured:} is configured but inactive)"
             return 0
             ;;
         disabled)

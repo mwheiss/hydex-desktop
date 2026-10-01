@@ -1,6 +1,7 @@
 #!/bin/sh
 
-SERVICE_NAME="${SERVICE_NAME:-codex-update-manager.service}"
+SERVICE_NAME="${SERVICE_NAME:-hydex-update-manager.service}"
+LEGACY_SERVICE_NAME="codex-update-manager.service"
 
 codex_foreach_user_manager() {
     if ! command -v runuser >/dev/null 2>&1 || ! command -v systemctl >/dev/null 2>&1; then
@@ -43,6 +44,24 @@ codex_reload_user_managers() {
     codex_foreach_user_manager codex_reload_one_user_manager
 }
 
+codex_migrate_legacy_user_service() {
+    codex_foreach_user_manager codex_migrate_one_legacy_user_service
+}
+
+codex_migrate_one_legacy_user_service() {
+    user_name="$1"
+    runtime_dir="$2"
+    bus="$3"
+
+    if codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" is-enabled "$LEGACY_SERVICE_NAME"; then
+        if codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" disable "$LEGACY_SERVICE_NAME"; then
+            # An upgrade may be running inside the old updater's cgroup. Enable
+            # the replacement for the next login without stopping that process.
+            codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" enable "$SERVICE_NAME" || true
+        fi
+    fi
+}
+
 codex_reload_one_user_manager() {
     codex_run_systemctl_user "$1" "$2" "$3" daemon-reload || true
 }
@@ -62,6 +81,11 @@ codex_ensure_one_user_service_running() {
 
     codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" daemon-reload || true
 
+    if codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" is-active "$LEGACY_SERVICE_NAME" ||
+       codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" is-enabled "$LEGACY_SERVICE_NAME"; then
+        return
+    fi
+
     if codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" is-active "$SERVICE_NAME"; then
         return
     fi
@@ -79,6 +103,11 @@ codex_start_one_enabled_user_service() {
     bus="$3"
 
     codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" daemon-reload || true
+
+    if codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" is-active "$LEGACY_SERVICE_NAME" ||
+       codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" is-enabled "$LEGACY_SERVICE_NAME"; then
+        return
+    fi
 
     if codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" is-active "$SERVICE_NAME"; then
         return
@@ -101,5 +130,6 @@ codex_cleanup_one_user_service() {
     bus="$4"
 
     codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" "$action" "$SERVICE_NAME" || true
+    codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" "$action" "$LEGACY_SERVICE_NAME" || true
     codex_run_systemctl_user "$user_name" "$runtime_dir" "$bus" daemon-reload || true
 }

@@ -47,11 +47,13 @@ codex_packaged_runtime_prelaunch_background() {
         fi
     )
 
-    if ! systemctl --user is-enabled codex-update-manager.service >/dev/null 2>&1; then
+    if systemctl --user is-active codex-update-manager.service >/dev/null 2>&1 ||
+       systemctl --user is-enabled codex-update-manager.service >/dev/null 2>&1 ||
+       ! systemctl --user is-enabled hydex-update-manager.service >/dev/null 2>&1; then
         return 0
     fi
 
-    systemctl --user start codex-update-manager.service >/dev/null 2>&1 || true
+    systemctl --user start hydex-update-manager.service >/dev/null 2>&1 || true
     codex_packaged_runtime_trigger_update_check
 }
 
@@ -62,7 +64,7 @@ codex_packaged_runtime_trigger_update_check() {
 
     if command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
         systemd-run --user \
-            --unit=codex-update-manager-launch-check \
+            --unit=hydex-update-manager-launch-check \
             --collect \
             --quiet \
             /usr/bin/codex-update-manager check-now >/dev/null 2>&1 || true

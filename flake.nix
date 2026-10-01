@@ -1280,9 +1280,9 @@
             testScript = ''
               machine.wait_for_unit("multi-user.target")
               machine.succeed("hydex-desktop --diagnose")
-              machine.succeed("test -f /etc/systemd/user/codex-remote-control.service")
-              machine.succeed("grep -q 'CODEX_NIX_VM=true' /etc/systemd/user/codex-remote-control.service")
-              machine.succeed("grep -q 'After=network.target' /etc/systemd/user/codex-remote-control.service")
+              machine.succeed("test -f /etc/systemd/user/hydex-remote-control.service")
+              machine.succeed("grep -q 'CODEX_NIX_VM=true' /etc/systemd/user/hydex-remote-control.service")
+              machine.succeed("grep -q 'After=network.target' /etc/systemd/user/hydex-remote-control.service")
               # The system nix-ld path must load what the primary runtime's
               # LibreOffice needs, because Codex's shell snapshot restores the
               # host NIX_LD_LIBRARY_PATH inside the sandbox.
@@ -1296,7 +1296,7 @@
               machine.succeed("grep -Fq 'CODEX_REMOTE_CONTROL_APP_SERVER_PROXY_SOCKET=\"$HOME/.codex/app-server-control/app-server-control.sock\"' /etc/set-environment")
               machine.wait_for_unit("user@1000.service")
               machine.wait_until_succeeds(
-                "su - tester -c 'XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active codex-remote-control.service'",
+                "su - tester -c 'XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active hydex-remote-control.service'",
                 timeout=60,
               )
               machine.wait_until_succeeds(
