@@ -250,12 +250,14 @@ for (const action of ["remove", "deconfigure"]) {
         const calls = fs.readFileSync(logPath, "utf8");
         assert.match(
           calls,
-          /systemctl --user stop codex-update-manager\.service/,
+          /systemctl --user stop hydex-update-manager\.service/,
         );
         assert.match(
           calls,
-          /systemctl --user disable codex-update-manager\.service/,
+          /systemctl --user disable hydex-update-manager\.service/,
         );
+        assert.match(calls, /systemctl --user stop codex-update-manager\.service/);
+        assert.match(calls, /systemctl --user disable codex-update-manager\.service/);
         assert.match(calls, /systemctl --user daemon-reload/);
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
