@@ -17,6 +17,16 @@
       "mode": "0644"
     },
     {
+      "source": "service_update.py",
+      "target": ".codex-linux/features/persistent-app-server/service_update.py",
+      "mode": "0644"
+    },
+    {
+      "source": "server_activity.py",
+      "target": ".codex-linux/features/persistent-app-server/server_activity.py",
+      "mode": "0644"
+    },
+    {
       "source": "vscode-proxy.py",
       "target": ".codex-linux/features/persistent-app-server/codex-vscode-proxy",
       "mode": "0755"
