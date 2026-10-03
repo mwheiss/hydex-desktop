@@ -81,8 +81,10 @@ def ensure_config():
     manager = Path(__file__).resolve().with_name("manage.py")
     try:
         subprocess.run(
-            [sys.executable, str(manager), "ensure", "--no-linger"],
+            [sys.executable, str(manager), "ensure", "--app-dir",
+             str(manager.parents[3]), "--no-linger"],
             check=True,
+            stdout=sys.stderr,
         )
     except subprocess.CalledProcessError as error:
         fail(f"cannot configure the persistent user service: exit {error.returncode}")
@@ -503,9 +505,10 @@ class UnixWebSocket:
             pass
 
 
-def connect_unix_websocket(socket_path):
+def connect_unix_websocket(socket_path, *, timeout=10):
     connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    connection.settimeout(10)
+    deadline = time.monotonic() + timeout
+    connection.settimeout(timeout)
     connection.connect(str(socket_path))
     key = base64.b64encode(os.urandom(16)).decode("ascii")
     request = (
@@ -519,6 +522,11 @@ def connect_unix_websocket(socket_path):
     connection.sendall(request)
     response = bytearray()
     while b"\r\n\r\n" not in response:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            connection.close()
+            raise TimeoutError("WebSocket handshake timed out")
+        connection.settimeout(remaining)
         chunk = connection.recv(4096)
         if not chunk:
             connection.close()
@@ -636,7 +644,7 @@ def main():
             "refusing an unrecognized app-server launch; update the persistent "
             "proxy contract before reloading VS Code"
         )
-    if "app-server" in args and not socket_path.exists():
+    if "app-server" in args:
         config = ensure_config()
     if args == EXPECTED_APP_SERVER_ARGS:
         bridge_jsonl_to_websocket(socket_path)
