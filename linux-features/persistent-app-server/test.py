@@ -18,6 +18,8 @@ import time
 import unittest
 from unittest.mock import patch
 
+from service_update import ServiceUpdate, WORKER
+
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("persistent_server", HERE / "manage.py")
 m = importlib.util.module_from_spec(spec)
@@ -30,6 +32,7 @@ class System:
         self.active = False
         self.fragment = ""
         self.linger = "yes"
+        self.worker_active = False
 
     def __call__(self, args, **kwargs):
         self.calls.append([str(v) for v in args])
@@ -37,11 +40,17 @@ class System:
         if "--property=FragmentPath" in args:
             stdout = self.fragment + "\n"
         elif "is-active" in args:
-            code = 0 if self.active else 3
+            code = 0 if (self.worker_active if WORKER in args else self.active) else 3
         elif "enable" in args:
-            self.active = True
+            if WORKER in args:
+                self.worker_active = True
+            else:
+                self.active = True
         elif "disable" in args:
-            self.active = False
+            if WORKER in args:
+                self.worker_active = False
+            else:
+                self.active = False
         elif "show-user" in args:
             stdout = self.linger + "\n"
         elif "enable-linger" in args:
@@ -61,6 +70,8 @@ class Tests(unittest.TestCase):
         self.feature = self.app / ".codex-linux/features/persistent-app-server"
         self.feature.mkdir(parents=True)
         shutil.copyfile(HERE / "manage.py", self.feature / "manage.py")
+        for name in ("service_update.py", "server_activity.py"):
+            shutil.copyfile(HERE / name, self.feature / name)
         shutil.copyfile(HERE / "vscode-proxy.py", self.feature / "codex-vscode-proxy")
         (self.feature / "codex-vscode-proxy").chmod(0o755)
         shutil.copyfile(HERE / "codex-cli-wrapper", self.feature / "codex-cli-wrapper")
@@ -83,6 +94,12 @@ class Tests(unittest.TestCase):
         self.system = System()
         self.runner = patch.object(m, "run", self.system)
         self.runner.start()
+        self.identity = {"pid": 1234, "start": "1", "boot": "test"}
+        self.owner_patch = patch.object(ServiceUpdate, "owner", side_effect=lambda config:
+                                       self.identity if self.system.active else None)
+        self.owner_patch.start()
+        self.activity_patch = patch("service_update.probe", return_value={"idle": False, "reason": "Active test turn"})
+        self.activity_patch.start()
         self.output = contextlib.redirect_stdout(io.StringIO())
         self.output.start = self.output.__enter__
         self.output.start()
@@ -90,12 +107,19 @@ class Tests(unittest.TestCase):
     def tearDown(self):
         self.output.__exit__(None, None, None)
         self.runner.stop()
+        self.owner_patch.stop()
+        self.activity_patch.stop()
         self.environment.stop()
         self.tmp.cleanup()
 
     def install(self, linger=True):
         m.setup(str(self.app), linger=linger)
-        return m.read_config(m.config_path())
+        config = m.read_config(m.config_path())
+        helper = m.updates()
+        helper.write_state("runtime", config, {
+            "generation": helper.generation(config), "process": self.identity, "unit": m.UNIT,
+        })
+        return config
 
     def test_manifest_uses_existing_transport_and_requires_mobile(self):
         value = json.loads((HERE / "feature.json").read_text())
@@ -153,11 +177,13 @@ class Tests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(manager_log.read_text().splitlines(), [
             "ensure", "--app-dir", str(self.app), "--no-linger",
+            "--prompt", "cli",
         ])
         self.assertEqual(cli_log.read_text().splitlines(), ["resume", "--all"])
 
     def test_client_adapter_attaches_vscode_and_desktop_launches(self):
         config = self.install()
+        self.feature.joinpath("manage.py").write_text("import sys\nprint('update checked', file=sys.stderr)\n")
         socket_path = m.socket_path(config)
         socket_path.parent.mkdir(parents=True)
         desktop_override = (
@@ -263,7 +289,7 @@ class Tests(unittest.TestCase):
                 thread.start()
                 self.assertTrue(ready.wait(timeout=5))
                 result = subprocess.run(
-                    [sys.executable, str(HERE / "vscode-proxy.py"), *invocation],
+                    [sys.executable, str(self.feature / "codex-vscode-proxy"), *invocation],
                     check=False,
                     input=json.dumps(request_message) + "\n",
                     text=True,
@@ -277,6 +303,7 @@ class Tests(unittest.TestCase):
                 thread.join(timeout=5)
                 self.assertFalse(thread.is_alive())
                 self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("update checked", result.stderr)
                 self.assertEqual(received, [expected_message])
                 self.assertEqual(result.stdout.strip(), '{"id":0,"result":{"ok":true}}')
 
@@ -298,6 +325,7 @@ class Tests(unittest.TestCase):
 
     def test_client_adapter_drains_process_exit_before_closing_replaced_connection(self):
         config = self.install()
+        self.feature.joinpath("manage.py").write_text("import sys\nprint('update checked', file=sys.stderr)\n")
         socket_path = m.socket_path(config)
         socket_path.parent.mkdir(parents=True)
         received = []
@@ -379,7 +407,7 @@ class Tests(unittest.TestCase):
             },
         }
         result = subprocess.run(
-            [sys.executable, str(HERE / "vscode-proxy.py"),
+            [sys.executable, str(self.feature / "codex-vscode-proxy"),
              "-c", "features.code_mode_host=true", "app-server",
              "--analytics-default-enabled"],
             check=False,
@@ -517,6 +545,7 @@ class Tests(unittest.TestCase):
     def test_setup_enables_real_foreground_unit(self):
         config = self.install()
         self.assertEqual(Path(config["unit_path"]).name, "hydex-remote-control.service")
+        self.assertEqual(Path(config["codex_home"]).stat().st_mode & 0o777, 0o700)
         unit = Path(config["unit_path"]).read_text()
         self.assertIn("Type=simple", unit)
         self.assertIn('"serve" "--config"', unit)
@@ -544,7 +573,8 @@ class Tests(unittest.TestCase):
         self.assertEqual(m.ensure_setup(self.app), config)
         self.assertTrue(legacy.exists())
         self.assertFalse(current.exists())
-        self.assertFalse(any("disable" in call or "enable" in call or "stop" in call
+        self.assertTrue(self.system.worker_active)
+        self.assertFalse(any(("disable" in call or "enable" in call or "stop" in call) and WORKER not in call
                              for call in self.system.calls))
 
     def test_idle_legacy_unit_migrates_without_stopping_active_work(self):
@@ -631,6 +661,13 @@ class Tests(unittest.TestCase):
         self.install(linger=False)
         self.assertFalse(any(v[0] == "loginctl" for v in self.system.calls))
 
+    def test_setup_can_enable_lingering_for_an_already_active_service(self):
+        self.install(linger=False)
+        self.system.linger = "no"
+        self.install()
+        self.assertEqual(self.system.linger, "yes")
+        self.assertFalse(any("stop" in call or "restart" in call for call in self.system.calls))
+
     def test_config_is_private(self):
         self.install()
         self.assertEqual(m.config_path().stat().st_mode & 0o777, 0o600)
@@ -671,7 +708,7 @@ class Tests(unittest.TestCase):
             with patch.object(m, "read_config", return_value=config), \
                     patch.object(m, "check_foreign_owner", return_value=False):
                 self.assertEqual(m.ensure_setup(self.app), config)
-        setup.assert_called_once_with(self.app, linger=False)
+        setup.assert_called_once_with(self.app, linger=False, path=m.config_path())
 
     def test_first_launch_does_not_restart_active_service(self):
         config = self.install()
@@ -717,7 +754,7 @@ class Tests(unittest.TestCase):
     def test_remove_only_removes_feature_state(self):
         config = self.install()
         history = Path(config["codex_home"]) / "history.jsonl"
-        history.parent.mkdir(parents=True)
+        history.parent.mkdir(parents=True, exist_ok=True)
         history.write_text("keep me")
         self.system.calls.clear()
         m.remove(m.config_path())
@@ -800,7 +837,7 @@ while True:
         data = c.recv(1024)
         if data: c.sendall(data)
 ''')
-        script = "import importlib.util,json,sys;s=importlib.util.spec_from_file_location('m',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);m.serve(json.loads(sys.argv[2]))"
+        script = "import importlib.util,json,sys;sys.path.insert(0,str(__import__('pathlib').Path(sys.argv[1]).parent));s=importlib.util.spec_from_file_location('m',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);m.serve(json.loads(sys.argv[2]))"
         process = subprocess.Popen([
             sys.executable, "-B", "-c", script, str(HERE / "manage.py"), json.dumps(config)])
         try:

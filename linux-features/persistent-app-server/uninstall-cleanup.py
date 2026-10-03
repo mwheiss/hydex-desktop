@@ -13,6 +13,8 @@ FEATURE = "persistent-app-server"
 UNIT = "hydex-remote-control.service"
 LEGACY_UNIT = "codex-remote-control.service"
 UNIT_MARKER = "# Managed by hydex-desktop persistent-app-server v1\n"
+UPDATE_UNIT = "hydex-app-server-update.service"
+UPDATE_MARKER = "# Managed by hydex-desktop persistent-app-server update v1\n"
 SETTINGS_KEYS = ("hydex.cliExecutable", "chatgpt.cliExecutable")
 SETTINGS_ROOTS = ("Code", "Code - OSS", "VSCodium")
 
@@ -78,7 +80,27 @@ def remove_service_state(home, uid, app_dir):
         if not owned_regular(unit, uid) or not unit.read_text().startswith(UNIT_MARKER):
             warn("preserving unrecognized user service: " + str(unit))
             return
-    wants = unit.parent / "default.target.wants" / UNIT
+    update_unit = unit.with_name(UPDATE_UNIT)
+    if owned_regular(update_unit, uid) and update_unit.read_text().startswith(UPDATE_MARKER):
+        update_wants = update_unit.parent / "default.target.wants" / UPDATE_UNIT
+        if (update_wants.is_symlink() and update_wants.lstat().st_uid == uid
+                and Path(os.path.abspath(update_wants.parent / os.readlink(update_wants))) == update_unit):
+            update_wants.unlink()
+        update_unit.unlink()
+    for name in ("runtime", "update"):
+        state = config.with_name(config.stem + "." + name + ".json")
+        if owned_regular(state, uid, private=True):
+            try:
+                saved = json.loads(state.read_text())
+                if (saved.get("version") == 1 and saved.get("feature") == FEATURE
+                        and saved.get("app_dir") == str(app_dir)):
+                    state.unlink()
+            except (OSError, ValueError, AttributeError):
+                warn("preserving unrecognized service state: " + str(state))
+    lock = config.with_suffix(".lock")
+    if owned_regular(lock, uid, private=True):
+        lock.unlink()
+    wants = unit.parent / "default.target.wants" / unit_name
     if wants.is_symlink() and wants.lstat().st_uid == uid:
         target = Path(os.path.abspath(wants.parent / os.readlink(wants)))
         if target == unit:
