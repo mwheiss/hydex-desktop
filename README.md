@@ -224,6 +224,11 @@ fresh native builds. Other features remain opt-in. A local `features.json`
 replaces those defaults with an explicit machine selection. Each adjacent
 README describes requirements, known limitations, configuration, and tests.
 
+The persistent server queues installed runtime and service updates at Desktop,
+CLI or VS Code startup. A local systemd worker applies them when turns, pending
+approval/input requests and background commands are idle, and migrates the
+legacy `codex-remote-control` service name to `hydex-remote-control`.
+
 | Feature ID | Purpose | Documentation |
 |---|---|---|
 | `agent-workspace` | Agent-workspace settings and bridge for hidden desktop environments | [Docs](linux-features/agent-workspace/README.md) |

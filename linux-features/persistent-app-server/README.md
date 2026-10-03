@@ -43,7 +43,8 @@ Run as your ordinary user, not with `sudo`. The final command:
    `HYDEX_CLI_BINARY`.
 4. Verifies the packaged mobile launch-patch marker and CLI capabilities,
    installs the current user's service, enables lingering, and enables/starts
-   `hydex-remote-control.service`. It never restarts an already active service.
+   `hydex-remote-control.service`. Updates to an active service are queued until
+   shared work is idle.
 5. Replaces the installer process with `/usr/bin/hydex-desktop`, so the first
    successful install continues directly into the Hydex Desktop GUI.
 
@@ -64,8 +65,9 @@ loginctl enable-linger (id -un)
 ```
 
 Existing user setup survives subsequent package upgrades. A later Desktop,
-packaged `codex`, or adapter call starts an inactive service if needed, but
-never restarts an active server.
+packaged `codex`/`hydex`, or adapter call starts an inactive service if needed.
+Changes to installed scripts, runtime executables or service configuration
+queue an update to an active server, including when the CLI version is unchanged.
 
 On pacman, Debian, and RPM systems, selecting this feature also makes the
 Desktop package the system Codex CLI provider. It owns `/usr/bin/codex` and
@@ -231,18 +233,53 @@ recording the service MainPID before and after. Reopen Desktop and check the sam
 live thread and approvals. Then verify startup after reboot before opening the
 UI. A reboot starts a new process; it does not checkpoint an executing task.
 
-Package upgrades deliberately do not restart the running service. After active
-tasks finish, load the upgraded binary with:
+The shared startup helper records the running generation in a private
+`persistent-app-server.runtime.json` beside the service configuration. A pending
+update is saved as `persistent-app-server.update.json`. The separate systemd
+user worker `hydex-app-server-update.service` remains enabled while an update is
+pending, so closing Desktop/CLI or logging out does not discard the queue
+(logout persistence requires lingering). On reboot it checks the saved queue.
+Concurrent launches share a file lock and a single worker.
+
+Every five seconds the worker uses bounded, read-only local RPCs to check all
+loaded threads and their background terminals. Active turns, unanswered approval
+or input requests, unknown statuses and unavailable APIs block automatic updates.
+Once idle, it sends **SIGHUP to the verified service MainPID only**. The server
+blocks new turns and drains admitted work; the helper never adds a forced
+shutdown timeout. After exit, it reconciles the unit/scripts, starts the installed
+runtime and verifies that its socket accepts initialized clients. An owned
+legacy `codex-remote-control.service` migrates to `hydex-remote-control.service`
+in the same operation. The worker stops when the update is complete; no model
+or chat needs to keep polling.
+
+At interactive startup, a busy update offers **Keep working** (the update stays
+queued) or **Restart now** (interrupts shared tasks and unanswered requests).
+Desktop uses Zenity when available; the CLI uses its terminal. Noninteractive
+CLI startup only reports the queue on stderr. Idle updates do not show a prompt.
+Check progress without launching a client:
 
 ```fish
-systemctl --user restart hydex-remote-control.service
+python3 /opt/hydex-desktop/.codex-linux/features/persistent-app-server/manage.py update-status
+systemctl --user status hydex-app-server-update.service
+journalctl --user -u hydex-app-server-update.service -n 40 --no-pager
+```
+
+To explicitly interrupt shared work and apply immediately:
+
+```fish
+python3 /opt/hydex-desktop/.codex-linux/features/persistent-app-server/manage.py restart-now
 ```
 
 The patched Hydex VSIX discovers the packaged proxy as described above. This
 feature does not change thread writer/approval rules, explicit cancellation,
 account eligibility, suspend, server crashes, or GUI/keyring requirements.
 Desktop-injected process-start settings cannot retroactively configure an
-already running server. Native systemd installations are supported; AppImage
+already running server. Reload connected clients after backend replacement if
+their connection or model/settings cache has not refreshed. Automatic client
+cache invalidation and reconnection are separate follow-up work. The activity
+check is a snapshot followed by the server's graceful turn drain; detached
+processes outside the background-terminal API are not an idle guarantee.
+Native systemd installations are supported; AppImage
 mounts and independently managed Nix services are not adopted by this helper.
 The AppImage builder refuses an app containing this default feature; select the
 explicit feature-free configuration before building AppImage.
