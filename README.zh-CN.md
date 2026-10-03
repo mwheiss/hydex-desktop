@@ -293,8 +293,15 @@ make setup-native
 ```
 
 全新的原生构建默认启用 `remote-mobile-control`、`persistent-app-server` 和
-`remote-trust-race-workaround`。也可以手动复制不启用任何扩展的示例到 gitignored
-配置；创建该文件后，本机将只启用其中明确列出的扩展：
+`remote-trust-race-workaround`。
+
+Desktop、CLI 或 VS Code 启动时会将已安装的运行时和服务更新加入队列。
+独立的 systemd 用户任务会等待所有对话任务、审批或输入请求及后台命令结束，
+再自动应用更新，并将旧的 `codex-remote-control` 服务迁移为
+`hydex-remote-control`。
+
+也可以手动复制不启用任何扩展的示例到 gitignored 配置；创建该文件后，本机
+将只启用其中明确列出的扩展：
 
 ```bash
 cp linux-features/features.example.json linux-features/features.json
