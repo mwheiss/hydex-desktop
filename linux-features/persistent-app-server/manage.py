@@ -9,12 +9,19 @@ import stat
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
+
+from service_update import ServiceUpdate
 
 FEATURE = "persistent-app-server"
 UNIT = "hydex-remote-control.service"
 LEGACY_UNIT = "codex-remote-control.service"
 MARKER = "# Managed by hydex-desktop persistent-app-server v1\n"
 INCOMPATIBLE = {"shared-app-server-socket"}
+
+
+def updates(path=None):
+    return ServiceUpdate(SimpleNamespace(**globals()), path or config_path())
 
 
 def run(args, *, check=True, capture=False, timeout=30, **kwargs):
@@ -108,7 +115,7 @@ def unit_text(config, path):
     command = " ".join(quote_unit(v, argument=True) for v in
                        ("/usr/bin/python3", helper_path(config), "serve", "--config", path))
     return MARKER + f"""[Unit]
-Description=Persistent Codex app-server with Remote Control
+Description=Persistent Hydex app-server with Remote Control
 StartLimitIntervalSec=60
 StartLimitBurst=3
 
@@ -178,8 +185,44 @@ def check_foreign_owner(config, unit):
     return active
 
 
-def setup(app_dir, *, linger=True):
-    path = config_path()
+def validate_resources(config):
+    cli, adapter = cli_path(config), client_adapter_path(config)
+    if (not helper_path(config).is_file() or not os.access(cli, os.X_OK)
+            or not adapter.is_file() or not os.access(adapter, os.X_OK)):
+        raise ValueError("Install the package with this feature enabled before service setup")
+    marker = Path(config["app_dir"]) / ".codex-linux/desktop-app-server-remote-control-enabled"
+    if marker.is_symlink() or not marker.is_file() or marker.read_text() != "version=1\nowner=desktop\n":
+        raise ValueError("Packaged mobile launch transform is not verified; rebuild with remote-mobile-control")
+
+
+def validate_install(config):
+    validate_resources(config)
+    codex_home = Path(config["codex_home"])
+    codex_home.mkdir(parents=True, exist_ok=True, mode=0o700)
+    info = codex_home.stat()
+    if info.st_uid != os.getuid() or info.st_mode & 0o022:
+        raise ValueError("Refusing an unsafe or foreign Codex home")
+    environment = dict(os.environ, CODEX_HOME=config["codex_home"])
+    run([str(cli_path(config)), "app-server", "--remote-control", "--listen", "unix://", "--help"],
+        capture=True, env=environment)
+    run([str(cli_path(config)), "app-server", "proxy", "--help"], capture=True, env=environment)
+
+
+def enable_linger():
+    user = pwd.getpwuid(os.getuid()).pw_name
+    current = run(["loginctl", "show-user", user, "--property=Linger", "--value"],
+                  check=False, capture=True)
+    if current.stdout.strip() != "yes":
+        result = run(["loginctl", "enable-linger", user], check=False)
+        if result.returncode:
+            run(["sudo", "loginctl", "enable-linger", user], timeout=None)
+        current = run(["loginctl", "show-user", user, "--property=Linger", "--value"], capture=True)
+        if current.stdout.strip() != "yes":
+            raise ValueError("Lingering was not enabled; use --no-linger for login-only startup")
+
+
+def setup(app_dir, *, linger=True, path=None):
+    path = path or config_path()
     app_dir = absolute(app_dir)
     proposed = {
         "version": 1, "feature": FEATURE, "home": str(Path.home().resolve()),
@@ -193,79 +236,32 @@ def setup(app_dir, *, linger=True):
     config = read_config(path) if path.exists() else proposed
     if config["app_dir"] != str(app_dir):
         raise ValueError("Configured for another app directory; remove the old service explicitly first")
-    if Path(config["unit_path"]).name == LEGACY_UNIT:
-        ensure_setup(app_dir)
-        return
-    cli = cli_path(config)
-    adapter = client_adapter_path(config)
-    if (not helper_path(config).is_file() or not os.access(cli, os.X_OK)
-            or not adapter.is_file() or not os.access(adapter, os.X_OK)):
-        raise ValueError("Install the package with this feature enabled before service setup")
-    # Written by mobile's stage hook only after its launch transform is found.
-    # The historical marker label is not the runtime owner in proxy mode.
-    mobile_marker = app_dir / ".codex-linux/desktop-app-server-remote-control-enabled"
-    if mobile_marker.is_symlink() or not mobile_marker.is_file() or mobile_marker.read_text() != "version=1\nowner=desktop\n":
-        raise ValueError("Packaged mobile launch transform is not verified; rebuild with remote-mobile-control")
+    validate_resources(config)
     unit = Path(config["unit_path"])
     active = check_foreign_owner(config, unit)
     if active and not path.exists():
         raise ValueError("An active service has lost its configuration; stop it explicitly before setup")
-    environment = dict(os.environ, CODEX_HOME=config["codex_home"])
-    run([str(cli), "app-server", "--remote-control", "--listen", "unix://", "--help"],
-        capture=True, env=environment)
-    run([str(cli), "app-server", "proxy", "--help"], capture=True, env=environment)
+    if active or unit.name == LEGACY_UNIT:
+        if linger:
+            enable_linger()
+        if unit.name == LEGACY_UNIT:
+            updates(path).ensure(app_dir)
+        return
+    validate_install(config)
     if linger:
-        user = pwd.getpwuid(os.getuid()).pw_name
-        current = run(["loginctl", "show-user", user, "--property=Linger", "--value"],
-                      check=False, capture=True)
-        if current.stdout.strip() != "yes":
-            result = run(["loginctl", "enable-linger", user], check=False)
-            if result.returncode:
-                run(["sudo", "loginctl", "enable-linger", user], timeout=None)
-            current = run(["loginctl", "show-user", user, "--property=Linger", "--value"], capture=True)
-            if current.stdout.strip() != "yes":
-                raise ValueError("Lingering was not enabled; use --no-linger for login-only startup")
+        enable_linger()
     atomic_write(path, json.dumps(config, indent=2) + "\n")
     atomic_write(unit, unit_text(config, path), 0o644)
     run(["systemctl", "--user", "daemon-reload"])
     run(["systemctl", "--user", "enable", "--now", UNIT])
     run(["systemctl", "--user", "is-active", "--quiet", UNIT])
     print("Configured " + str(unit))
-    print("Server " + ("was already active; NOT restarted." if active else "started; check its journal for readiness."))
+    print("Server started; check its journal for readiness.")
     print("Pairing, authentication and Remote Control availability still need a live check.")
 
 
-def ensure_setup(app_dir):
-    path = config_path()
-    if not os.path.lexists(path):
-        setup(app_dir, linger=False)
-        return read_config(path)
-    config = read_config(path)
-    if config["app_dir"] != str(absolute(app_dir)):
-        raise ValueError("Configured for another app directory; remove the old service explicitly first")
-    unit = Path(config["unit_path"])
-    active = check_foreign_owner(config, unit)
-    if unit.name == LEGACY_UNIT:
-        if active:
-            # Keep active work attached to the existing process. A later idle
-            # first use will migrate the user unit without restarting it.
-            return config
-        if unit.exists():
-            run(["systemctl", "--user", "disable", LEGACY_UNIT], check=False)
-            unit.unlink()
-        config["unit_path"] = str(unit.with_name(UNIT))
-        atomic_write(path, json.dumps(config, indent=2) + "\n")
-        setup(app_dir, linger=False)
-        return read_config(path)
-    if active:
-        desired = unit_text(config, path)
-        if unit.read_text() != desired:
-            atomic_write(unit, desired, 0o644)
-            run(["systemctl", "--user", "daemon-reload"])
-    else:
-        setup(app_dir, linger=False)
-        config = read_config(path)
-    return config
+def ensure_setup(app_dir, *, prompt=None):
+    return updates().ensure(app_dir, prompt=prompt)
 
 
 def emit_environment(config):
@@ -283,11 +279,12 @@ def emit_environment(config):
         print("env " + key + "=" + value)
 
 
-def serve(config):
+def serve(config, *, path=None):
     environment = dict(os.environ, CODEX_HOME=config["codex_home"],
                        PATH=str(Path(config["app_dir"]) / "resources") + ":" + config["path"])
     binary = str(cli_path(config))
     os.chdir(config["home"])
+    updates(path).record_runtime(config)
     # exec, not a detached 'remote-control start': systemd tracks the real server.
     os.execve(binary, [binary, "-c", "features.code_mode_host=true", "app-server",
                       "--remote-control", "--listen", "unix://"], environment)
@@ -299,9 +296,7 @@ def remove(path):
     owned_file(unit)
     if not unit.read_text().startswith(MARKER):
         raise ValueError("Refusing to remove an unrecognized service")
-    run(["systemctl", "--user", "disable", "--now", unit.name])
-    unit.unlink()
-    path.unlink()
+    updates(path).cleanup(config)
     run(["systemctl", "--user", "daemon-reload"])
     print("Removed our service/config only. Codex data and user lingering were preserved.")
 
@@ -309,9 +304,11 @@ def remove(path):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "action", choices=("install", "setup", "ensure", "ensure-env", "env", "serve", "remove"))
+        "action", choices=("install", "setup", "ensure", "ensure-env", "env", "serve", "remove",
+                           "update-worker", "update-status", "restart-now"))
     parser.add_argument("--app-dir", default="/opt/hydex-desktop")
     parser.add_argument("--config", type=Path)
+    parser.add_argument("--prompt", choices=("cli", "desktop"), help="Offer a pending update once at interactive startup")
     parser.add_argument("--no-linger", action="store_true", help="Start at login rather than enabling boot/logout persistence")
     args = parser.parse_args(argv)
     if os.getuid() == 0:
@@ -335,14 +332,23 @@ def main(argv=None):
         os.execv(launcher, [launcher])
     elif args.action == "setup":
         setup(args.app_dir, linger=not args.no_linger)
-    elif args.action == "ensure":
         ensure_setup(args.app_dir)
+    elif args.action == "ensure":
+        ensure_setup(args.app_dir, prompt=args.prompt)
     elif args.action == "ensure-env":
-        emit_environment(ensure_setup(args.app_dir))
+        emit_environment(ensure_setup(args.app_dir, prompt=args.prompt))
     elif args.action == "env":
         emit_environment(read_config(path))
     elif args.action == "serve":
-        serve(read_config(path))
+        serve(read_config(path), path=path)
+    elif args.action == "update-worker":
+        updates(path).worker()
+    elif args.action == "restart-now":
+        updates(path).request_restart(read_config(path))
+    elif args.action == "update-status":
+        config = read_config(path)
+        print(json.dumps({"service": Path(config["unit_path"]).name,
+                          "pending": updates(path).read_state("update", config)}, indent=2))
     else:
         remove(path)
 
