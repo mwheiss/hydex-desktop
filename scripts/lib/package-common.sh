@@ -1099,6 +1099,7 @@ stage_update_builder_bundle() {
     cp "$REPO_DIR/scripts/build-rhel-compat-rpm.sh" \
         "$update_builder_root/scripts/build-rhel-compat-rpm.sh"
     cp "$REPO_DIR/scripts/build-pacman.sh" "$update_builder_root/scripts/build-pacman.sh"
+    cp "$REPO_DIR/scripts/update_latest_package.py" "$update_builder_root/scripts/update_latest_package.py"
     cp "$REPO_DIR/scripts/patch-linux-window-ui.js" "$update_builder_root/scripts/patch-linux-window-ui.js"
     cp -a "$REPO_DIR/scripts/patches/." "$update_builder_root/scripts/patches/"
 

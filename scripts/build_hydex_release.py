@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import publish_desktop_copr as copr
+from update_latest_package import promote_package
 
 SCHEMA_VERSION = 1
 REQUIRED_FEATURES = {
@@ -201,6 +202,7 @@ def build_packages(args: argparse.Namespace) -> None:
             "CODEX_LINUX_FEATURES_CONFIG": str(args.features_config),
             "APP_DIR_OVERRIDE": str(args.candidate_dir),
             "DIST_DIR_OVERRIDE": str(args.output_dir),
+            "PACKAGE_LATEST_POLICY": "defer",
             "PACKAGE_VERSION": args.package_version,
             "MAX_BUILD_THREADS": str(args.max_build_threads),
         }
@@ -368,6 +370,11 @@ def main() -> None:
         "validated": True,
     }
     write_report(args.report, report)
+    if not args.validate_only:
+        latest = promote_package(
+            args.repo, expected_artifacts(args.output_dir, args.package_version)["pacman"]
+        )
+        print(f"latest={latest}")
     print("HYDEX_DESKTOP_RELEASE_SUMMARY")
     print(f"package_version={args.package_version}")
     print(f"desktop_app_version={upstream['Version']}")
