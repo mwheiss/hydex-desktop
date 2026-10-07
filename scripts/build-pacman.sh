@@ -6,6 +6,7 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$REPO_DIR/scripts/lib/package-common.sh"
 APP_DIR="${APP_DIR_OVERRIDE:-$REPO_DIR/codex-app}"
 DIST_DIR="${DIST_DIR_OVERRIDE:-$REPO_DIR/dist}"
+PACKAGE_LATEST_POLICY="${PACKAGE_LATEST_POLICY:-publish}"
 PKGBUILD_TEMPLATE="$REPO_DIR/packaging/linux/PKGBUILD.template"
 INSTALL_HOOKS="$REPO_DIR/packaging/linux/hydex-desktop.install"
 DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/hydex-desktop.desktop"
@@ -85,6 +86,10 @@ write_threaded_makepkg_config() {
 
 main() {
 	validate_max_build_threads
+	case "$PACKAGE_LATEST_POLICY" in
+	publish|defer) ;;
+	*) error "PACKAGE_LATEST_POLICY must be publish or defer" ;;
+	esac
 
 	ensure_app_layout
 	ensure_file_exists "$PKGBUILD_TEMPLATE" "PKGBUILD template"
@@ -228,7 +233,10 @@ main() {
 		-print -quit 2>/dev/null || true)"
 	[ -f "$pkg_file" ] || error "makepkg did not produce a package"
 
-	ln -sfn "$(basename "$pkg_file")" "$DIST_DIR/${PACKAGE_NAME}-latest.pkg.tar.zst"
+	if [ "$PACKAGE_LATEST_POLICY" = "publish" ]; then
+		python3 "$REPO_DIR/scripts/update_latest_package.py" \
+			--repo "$REPO_DIR" --package-name "$PACKAGE_NAME" "$pkg_file" >&2
+	fi
 
 	info "Built package: $pkg_file"
 	printf '%s\n' "$pkg_file"
