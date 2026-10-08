@@ -103,6 +103,16 @@ the complete transport into `thread/start`, `thread/resume`, and `thread/fork`
 configuration. This preserves Desktop's dynamic MCP transport without adding it
 to the global service configuration or exposing it to VS Code-only clients.
 
+The adapter omits `api_key_model_discovery` from app-specific
+`experimentalFeature/enablement/set` rollout requests. The shared server and
+terminal clients therefore use the same bundled default or explicit feature
+configuration. This avoids a Desktop rollout disabling model discovery and
+causing the CLI's daemon compatibility check to reject the shared server. All
+other rollout flags and explicit config writes are forwarded unchanged; no
+per-machine setting is required. Standalone and remote servers that do not use
+this local adapter keep their normal rollout behavior. Upgrading the adapter
+queues the normal idle service restart, which clears an older in-memory override.
+
 Desktop may replace its provisional app-server transport after resolving that
 configuration. The adapter gives connection-scoped `process/spawn` requests a
 bounded drain window so fast startup probes, including Git discovery, can

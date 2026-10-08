@@ -237,6 +237,20 @@ class Tests(unittest.TestCase):
                 },
             ),
         ]
+        for invocation in (
+            ["-c", "features.code_mode_host=true", "app-server", "--analytics-default-enabled"],
+            ["-c", "features.code_mode_host=true", "app-server", "proxy", "--sock",
+             str(socket_path), "-c", desktop_override],
+        ):
+            for discovery in (False, True):
+                other_features = {"auth_elicitation": True, "api_key_cyber_access_programs": False}
+                invocations.append((
+                    invocation,
+                    {"method": "experimentalFeature/enablement/set", "id": 2,
+                     "params": {"enablement": {"api_key_model_discovery": discovery, **other_features}}},
+                    {"method": "experimentalFeature/enablement/set", "id": 2,
+                     "params": {"enablement": other_features}},
+                ))
         for invocation, request_message, expected_message in invocations:
             with self.subTest(invocation=invocation):
                 if socket_path.exists():
@@ -921,6 +935,56 @@ while True:
             self.assertEqual(run.call_args.args[0][0], "node")
             setup.assert_not_called()
         self.assertFalse((repo / "linux-features/features.json").exists())
+
+
+class SharedFeatureEnablementTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location(
+            "persistent_server_proxy_features", HERE / "vscode-proxy.py")
+        cls.proxy = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.proxy)
+
+    def test_model_discovery_only_rollout_becomes_an_empty_valid_enablement(self):
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled):
+                request = {"method": "experimentalFeature/enablement/set", "id": "rollout",
+                           "params": {"enablement": {"api_key_model_discovery": enabled}}}
+                result = json.loads(self.proxy.preserve_shared_model_discovery(
+                    json.dumps(request).encode()))
+                self.assertEqual(result, {
+                    "method": "experimentalFeature/enablement/set", "id": "rollout",
+                    "params": {"enablement": {}},
+                })
+
+    def test_explicit_configuration_and_unrelated_requests_remain_byte_identical(self):
+        requests = [
+            {"method": "config/value/write", "id": 1,
+             "params": {"keyPath": "features.api_key_model_discovery", "value": False,
+                        "mergeStrategy": "replace"}},
+            {"method": "config/batchWrite", "id": 2,
+             "params": {"edits": [{"keyPath": "features.api_key_model_discovery",
+                                   "value": True, "mergeStrategy": "replace"}]}},
+            {"method": "thread/start", "id": 3,
+             "params": {"config": {"features.api_key_model_discovery": False}}},
+            {"method": "experimentalFeature/list", "id": 4, "params": {"limit": 100}},
+            {"method": "experimentalFeature/enablement/set", "id": 5,
+             "params": {"enablement": {"auth_elicitation": False}}},
+        ]
+        for request in requests:
+            with self.subTest(method=request["method"]):
+                payload = json.dumps(request, indent=2).encode()
+                self.assertEqual(self.proxy.preserve_shared_model_discovery(payload), payload)
+
+    def test_malformed_feature_requests_are_left_for_server_validation(self):
+        payloads = [b"not json", b"[]", b"null"]
+        for params in (None, [], {"enablement": None}, {"enablement": []},
+                       {"enablement": {"api_key_model_discovery": "false"}}):
+            payloads.append(json.dumps({"method": "experimentalFeature/enablement/set",
+                                       "id": 1, "params": params}).encode())
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                self.assertEqual(self.proxy.preserve_shared_model_discovery(payload), payload)
 
 
 if __name__ == "__main__":
