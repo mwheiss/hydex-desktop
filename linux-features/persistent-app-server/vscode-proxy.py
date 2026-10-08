@@ -359,6 +359,27 @@ def inject_desktop_mcp_config(payload, base_config):
     return json.dumps(request, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
+def preserve_shared_model_discovery(payload):
+    """Leave model discovery to the shared server's config and binary default."""
+    try:
+        request = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return payload
+    if not isinstance(request, dict) or request.get("method") != "experimentalFeature/enablement/set":
+        return payload
+    params = request.get("params")
+    enablement = params.get("enablement") if isinstance(params, dict) else None
+    if not isinstance(enablement, dict) or not isinstance(enablement.get("api_key_model_discovery"), bool):
+        return payload
+    # Desktop/VS Code rollout defaults must not change a shared service flag
+    # that terminal clients compare against their own effective configuration.
+    params["enablement"] = {
+        name: enabled for name, enabled in enablement.items()
+        if name != "api_key_model_discovery"
+    }
+    return json.dumps(request, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
 class ProcessDrainTracker:
     """Tracks connection-scoped processes until their terminal notification."""
 
@@ -570,6 +591,7 @@ def bridge_jsonl_to_websocket(socket_path, desktop_config=None):
                     raise ValueError("outbound app-server message exceeds 64 MiB")
                 if payload:
                     payload.decode("utf-8")
+                    payload = preserve_shared_model_discovery(payload)
                     payload = inject_desktop_mcp_config(payload, desktop_config)
                     if len(payload) > MAX_MESSAGE_BYTES:
                         raise ValueError("rewritten app-server message exceeds 64 MiB")
