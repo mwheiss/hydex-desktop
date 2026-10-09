@@ -132,6 +132,8 @@ async function usableRuntimeBus(t) {
       }
     } else {
       try {
+        // Minimal CI containers may not have systemd's /run/user parent yet.
+        fs.mkdirSync("/run/user", { recursive: true, mode: 0o755 });
         fs.mkdirSync(candidate, { mode: 0o700 });
       } catch (error) {
         if (error && error.code === "EEXIST") continue;
