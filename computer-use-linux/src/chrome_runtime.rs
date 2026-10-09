@@ -3277,8 +3277,11 @@ mod tests {
     }
 
     fn test_root(name: &str) -> PathBuf {
+        // Keep injected runtime sockets below sockaddr_un's path limit even
+        // when Cargo's test TMPDIR includes a private per-process parent.
+        let label = name.chars().take(12).collect::<String>();
         env::temp_dir().join(format!(
-            "chrome-runtime-test-{name}-{}-{}",
+            "cr-{label}-{}-{}",
             std::process::id(),
             random_hex(4).unwrap()
         ))

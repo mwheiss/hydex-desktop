@@ -159,6 +159,10 @@ function nativePackageFixture(t) {
   fs.mkdirSync(bin);
   for (const name of ["ChatGPT", "start.sh", "resources/codex"]) fs.writeFileSync(path.join(app, name), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   fs.writeFileSync(path.join(app, "resources/app.asar"), "official fixture ASAR");
+  fs.writeFileSync(path.join(app, "resources/icon-chatgpt.png"), Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4oAAAAAASUVORK5CYII=", "base64"));
+  fs.writeFileSync(path.join(app, ".codex-linux/upstream-package/chatgpt.desktop"),
+    "[Desktop Entry]\nType=Application\nName=ChatGPT\nExec=/usr/bin/chatgpt %U\nIcon=chatgpt\n");
   fs.writeFileSync(path.join(app, ".codex-linux/upstream-package/control"), `Package: chatgpt\nArchitecture: ${architecture}\n`);
   const m = { version: "26.930.31730", architecture, sha256: "a".repeat(64), size: 42 };
   fs.writeFileSync(path.join(dir, "metadata.json"), JSON.stringify(m));
@@ -194,7 +198,7 @@ test("generated ebuild payload and Manifest use the shared native layout", t => 
   cp.execFileSync("tar", ["-xJf", archive, "-C", unpack]);
   assert.equal(fs.readFileSync(path.join(unpack, "opt/codex-desktop/resources/app.asar"), "utf8"), "official fixture ASAR");
   assert.match(fs.readFileSync(path.join(unpack, "usr/bin/codex-desktop"), "utf8"), /exec \/opt\/codex-desktop\/start.sh/);
-  assert.match(fs.readFileSync(path.join(unpack, "usr/share/applications/codex-desktop.desktop"), "utf8"), /^Name=ChatGPT Community$/m);
+  assert.match(fs.readFileSync(path.join(unpack, "usr/share/applications/codex-desktop.desktop"), "utf8"), /^Name=Hydex Desktop$/m);
   assert.equal(fs.statSync(path.join(unpack, "opt/codex-desktop/ChatGPT")).mode & 0o777, 0o755);
   assert.equal(fs.existsSync(path.join(unpack, "usr/bin/codex-update-manager")), false);
   assert.equal(fs.existsSync(path.join(unpack, "opt/codex-desktop/update-builder")), false);

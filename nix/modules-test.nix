@@ -150,8 +150,8 @@ assert lib.assertMsg
   ((evalNixOS (baseConfig // { package = fakeDesktopWithRuntime; })).config.programs.nix-ld.libraries == [ ])
   "NixOS set nix-ld libraries while nix-ld is disabled";
 assert lib.assertMsg
-  (lib.elem pkgs.lcms2.out packages.codex-desktop.passthru.workspaceRuntimeLibraries
-    && lib.elem pkgs.freetype packages.codex-desktop.passthru.workspaceRuntimeLibraries)
+  (lib.elem pkgs.lcms2.out packages.hydex-desktop.passthru.workspaceRuntimeLibraries
+    && lib.elem pkgs.freetype packages.hydex-desktop.passthru.workspaceRuntimeLibraries)
   "the Desktop package does not expose its workspace runtime libraries";
 assert lib.assertMsg
   ((builtins.head (evalHome remoteConfig).config.home.packages).drvPath != fakeDesktop.drvPath)

@@ -3029,10 +3029,13 @@ while True:
     }
 
     fn unique_test_dir(prefix: &str) -> PathBuf {
+        // The fixture includes an app-server socket; reserve space for its
+        // runtime suffix rather than using a descriptive unbounded prefix.
+        let label = prefix.chars().take(12).collect::<String>();
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        env::temp_dir().join(format!("{prefix}-{}-{nonce}", process::id()))
+        env::temp_dir().join(format!("ch-{label}-{}-{nonce}", process::id()))
     }
 }

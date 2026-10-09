@@ -188,11 +188,11 @@ for (const [label, prefix] of [
         platform: "linux", env: {},
       });
       assert.equal(runtime.home(), root);
-      assert.equal(runtime.settingsPath(), path.join(root, ".config", "codex-desktop", "settings.json"));
+      assert.equal(runtime.settingsPath(), path.join(root, ".config", "hydex-desktop", "settings.json"));
       runtime.writeSettings({ "codex-linux-read-aloud-enabled": true });
       assert.deepEqual(runtime.settings(), { "codex-linux-read-aloud-enabled": true });
       assert.equal(runtime.model(), path.join(root, ".local", "share", "kokoro", "kokoro-v1.0.onnx"));
-      assert.equal(runtime.python(), path.join(root, ".local", "share", "codex-desktop", "read-aloud", "kokoro-venv", "bin", "python"));
+      assert.equal(runtime.python(), path.join(root, ".local", "share", "hydex-desktop", "read-aloud", "kokoro-venv", "bin", "python"));
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
