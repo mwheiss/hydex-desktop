@@ -6583,6 +6583,9 @@ mod tests {
         original: Option<std::ffi::OsString>,
     }
 
+    // These fixtures temporarily change the same process-wide opt-in.
+    static SHELL_TEST_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     impl EnvVarGuard {
         fn set(key: &'static str, value: &str) -> Self {
             let original = std::env::var_os(key);
@@ -9134,37 +9137,46 @@ mod tests {
 
     #[test]
     fn run_shell_router_matches_operator_opt_in() {
+        let _env = SHELL_TEST_ENV.lock().unwrap();
         let router = ComputerUseLinux::default().mcp_tool_router();
         assert_eq!(router.get("run_shell").is_some(), shell_execution_enabled());
     }
 
-    #[tokio::test]
-    async fn shell_execution_clears_ambient_credentials_and_accepts_explicit_env() {
+    #[test]
+    fn shell_execution_clears_ambient_credentials_and_accepts_explicit_env() {
+        let _env = SHELL_TEST_ENV.lock().unwrap();
         let _enabled = EnvVarGuard::set(SHELL_ENABLE_ENV, "1");
         let _credential = EnvVarGuard::set("OPENAI_API_KEY", "test-ambient-credential");
-        let output = execute_shell(RunShellParams {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let output = runtime.block_on(execute_shell(RunShellParams {
             command: "printf '%s|%s' \"${OPENAI_API_KEY-unset}\" \"$EXPLICIT_VALUE\"".into(),
             cwd: None,
             env: BTreeMap::from([("EXPLICIT_VALUE".into(), "test-explicit-value".into())]),
             timeout_seconds: Some(2),
-        })
-        .await;
+        }));
         assert!(output.ok, "{:?}", output.error);
         assert_eq!(output.stdout, "unset|test-explicit-value");
         assert_eq!(output.exit_code, Some(0));
     }
 
-    #[tokio::test]
-    async fn shell_execution_disabled_never_runs_requested_command() {
+    #[test]
+    fn shell_execution_disabled_never_runs_requested_command() {
+        let _env = SHELL_TEST_ENV.lock().unwrap();
         let _disabled = EnvVarGuard::set(SHELL_ENABLE_ENV, "0");
         let _alias = EnvVarGuard::set(SHELL_ENABLE_ENV_STANDALONE, "1");
-        let output = execute_shell(RunShellParams {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let output = runtime.block_on(execute_shell(RunShellParams {
             command: "printf must-not-run".into(),
             cwd: None,
             env: BTreeMap::new(),
             timeout_seconds: None,
-        })
-        .await;
+        }));
         assert!(!output.ok);
         assert!(output.stdout.is_empty());
         assert!(output
