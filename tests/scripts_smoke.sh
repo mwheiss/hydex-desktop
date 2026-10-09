@@ -24,7 +24,39 @@ bash -n install.sh launcher/start.sh.template scripts/install-deps.sh \
   tests/install_deps_pacman_rust_matrix.sh
 bash -n scripts/lib/*.sh scripts/build-deb.sh scripts/build-rpm.sh scripts/build-pacman.sh scripts/build-appimage.sh
 bash -n scripts/build-gentoo.sh scripts/install-gentoo.sh
+bash -n scripts/ci/container-entrypoint.sh
 node --test scripts/gentoo-native.test.js scripts/gentoo-install.test.js scripts/lib/gentoo-feature-support.test.js
+
+smoke_nix_ci_checkout() (
+    local fixture source_head source_diff
+    fixture="$(mktemp -d)"
+    trap 'rm -rf -- "$fixture"' EXIT
+    git init -q "$fixture/source"
+    git -C "$fixture/source" config user.name 'Nix CI fixture'
+    git -C "$fixture/source" config user.email 'nix-ci@example.invalid'
+    printf 'baseline\n' > "$fixture/source/tracked.txt"
+    printf 'delete me\n' > "$fixture/source/deleted.txt"
+    printf '\000\001\002' > "$fixture/source/binary"
+    git -C "$fixture/source" add -- tracked.txt deleted.txt binary
+    git -C "$fixture/source" commit -qm 'fixture baseline'
+    source <(sed -n '/^create_nix_ci_checkout()/,/^}/p' scripts/ci/container-entrypoint.sh)
+    create_nix_ci_checkout "$fixture/source" "$fixture/clean-checkout"
+    git -C "$fixture/clean-checkout" diff --quiet HEAD || fail 'Nix CI changed a clean source'
+    git -C "$fixture/source" worktree add -q --detach "$fixture/linked" HEAD
+    printf 'current dirty content\n' > "$fixture/linked/tracked.txt"
+    printf '\000\003\004' > "$fixture/linked/binary"
+    rm "$fixture/linked/deleted.txt"
+    printf 'untracked must stay out of the Nix input\n' > "$fixture/linked/untracked.txt"
+    source_head="$(git -C "$fixture/source" rev-parse HEAD)"
+    source_diff="$(git -C "$fixture/linked" diff --binary HEAD | sha256sum)"
+    create_nix_ci_checkout "$fixture/linked" "$fixture/checkout"
+    [ "$(git -C "$fixture/checkout" rev-parse HEAD)" = "$source_head" ] || fail 'Nix CI changed the source commit'
+    [ "$(git -C "$fixture/checkout" diff --binary HEAD | sha256sum)" = "$source_diff" ] || fail 'Nix CI lost tracked dirty changes'
+    [ ! -e "$fixture/checkout/deleted.txt" ] || fail 'Nix CI lost a tracked deletion'
+    [ ! -e "$fixture/checkout/untracked.txt" ] || fail 'Nix CI copied an untracked input'
+    [ "$(git -C "$fixture/linked" diff --binary HEAD | sha256sum)" = "$source_diff" ] || fail 'Nix CI modified the source worktree'
+)
+smoke_nix_ci_checkout
 
 assert_contains packaging/linux/hydex-desktop.desktop '^Name=Hydex Desktop$'
 assert_contains packaging/linux/hydex-desktop.desktop '^Comment=Hydex fork of Codex Desktop$'
@@ -111,7 +143,9 @@ assert_contains scripts/lib/asar-patch.sh 'list --is-pack "\$app_asar" > "\$WORK
 assert_contains scripts/lib/asar-patch.sh 'scripts/patches/lib/asar-layout.js'
 assert_contains scripts/lib/asar-patch.sh 'scripts/patches/lib/asar-layout.js" verify'
 assert_absent scripts/lib/asar-patch.sh 'cmp -s "\$WORK_DIR/app.asar.upstream-layout" "\$WORK_DIR/app.asar.output-layout"'
-assert_absent scripts/lib/asar-patch.sh "find . -type f -printf '%P\\n' | LC_ALL=C sort"
+if rg -Fq -- "find . -type f -printf '%P\\n' | LC_ALL=C sort" scripts/lib/asar-patch.sh; then
+    fail "ASAR layout must not use a sorted loose-file listing"
+fi
 
 selector_fixture="$(mktemp -d)"
 trap 'rm -rf -- "$selector_fixture"' EXIT
@@ -165,7 +199,7 @@ cat > "$asar_stub_dir/npx" <<'STUB'
 #!/bin/sh
 while [ $# -gt 0 ]; do
     case "$1" in
-        --yes|--package=@electron/asar) shift ;;
+        --yes|--package=@electron/asar|--package=@electron/asar@*) shift ;;
         --) shift; break ;;
         *) break ;;
     esac
