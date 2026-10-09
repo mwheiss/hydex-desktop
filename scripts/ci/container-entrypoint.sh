@@ -116,11 +116,31 @@ run_install_deps() {
     grep -q "macOS DMG inputs are no longer supported" <<<"$output"
 }
 
-run_nix() {
+create_nix_ci_checkout() {
+    local source_repo="$1"
+    local target_repo="$2"
+    local source_git_dir
+    # Nix's libgit2 ownership check rejects a host-owned linked-worktree .git
+    # pointer even when the Git CLI trusts /work. Keep shared metadata read-only
+    # and give Nix a private checkout owned by the container user instead.
+    source_git_dir="$(git -C "$source_repo" rev-parse --absolute-git-dir)"
+    git -c "safe.directory=$source_git_dir" clone --no-hardlinks --no-checkout "$source_repo" "$target_repo"
+    git -C "$target_repo" checkout --detach "$(git -C "$source_repo" rev-parse HEAD)"
+    if ! git -C "$source_repo" diff --quiet HEAD; then
+        git -C "$source_repo" diff --binary HEAD | git -C "$target_repo" apply --binary -
+    fi
+}
+
+run_nix() (
+    local nix_source
+    nix_source="$(mktemp -d /ci-cache/nix-source.XXXXXX)"
+    trap 'rm -rf -- "$nix_source"' EXIT
+    create_nix_ci_checkout "$REPO_DIR" "$nix_source"
+    cd "$nix_source"
     export NIX_CONFIG="${NIX_CONFIG:-experimental-features = nix-command flakes}"
     nix flake check --no-write-lock-file --option sandbox false
     nix build .#hydex-desktop --no-link --option sandbox false
-}
+)
 
 [ -n "$CI_JOB" ] || die "missing job"
 cd "$REPO_DIR"
