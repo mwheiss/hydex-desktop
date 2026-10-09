@@ -205,7 +205,7 @@ test("embedded and later --cli arguments remain ordinary Desktop arguments", (t)
 
   assert.equal(result.status, 7);
   assert.deepEqual(fs.readFileSync(path.join(root, "arguments"), "utf8").trim().split("\n"), [
-    "--class=codex-desktop",
+    "--class=hydex-desktop",
     "codex://thread/--cli",
     "--cli",
     "value",
@@ -233,7 +233,7 @@ test("legacy Nix Wayland flags require both opt-in and display", (t) => {
     assert.equal(result.status, 7);
     assert.equal(
       fs.readFileSync(path.join(root, "arguments"), "utf8"),
-      "--class=codex-desktop\ncodex://thread/123\n",
+      "--class=hydex-desktop\ncodex://thread/123\n",
     );
   }
 
@@ -241,7 +241,7 @@ test("legacy Nix Wayland flags require both opt-in and display", (t) => {
 
   assert.equal(result.status, 7);
   assert.deepEqual(fs.readFileSync(path.join(root, "arguments"), "utf8").trim().split("\n"), [
-    "--class=codex-desktop",
+    "--class=hydex-desktop",
     "--ozone-platform=wayland",
     "--enable-wayland-ime=true",
     "--wayland-text-input-version=3",
