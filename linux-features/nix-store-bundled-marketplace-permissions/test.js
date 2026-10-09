@@ -120,7 +120,7 @@ test("feature stays hidden from public configuration", (t) => {
 
 test("independent descriptors are idempotent and share one helper in either order", () => {
   const repairs = [applyBundledMarketplaceStagingCopyPermissions, applyExecutorPluginCopyPermissions];
-  for (const order of [repairs, repairs.toReversed()]) {
+  for (const order of [repairs, [...repairs].reverse()]) {
     const patched = order.reduce((source, apply) => apply(source), FIXTURE);
     assert.match(patched, new RegExp(STAGING_PATCH_MARKER));
     assert.match(patched, new RegExp(EXECUTOR_PATCH_MARKER));
