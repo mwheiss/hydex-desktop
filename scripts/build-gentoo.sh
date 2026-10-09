@@ -8,7 +8,7 @@ DIST_DIR="${DIST_DIR_OVERRIDE:-$REPO_DIR/dist}"
 PACKAGE_NAME=codex-desktop
 PACKAGE_WITH_UPDATER="${PACKAGE_WITH_UPDATER:-0}"
 ICON_SOURCE="$(resolve_package_icon_source)"
-DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/codex-desktop.desktop"
+DESKTOP_TEMPLATE="$REPO_DIR/packaging/linux/hydex-desktop.desktop"
 
 check_updater_mode() {
     if package_with_updater_enabled; then
