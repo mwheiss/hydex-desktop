@@ -91,11 +91,20 @@ esac
 `, 0o755);
   const spawned = path.join(tmp, "unexpected-codex-spawn");
   write(path.join(install, "resources/codex"), '#!/bin/sh\nprintf "unexpected\\n" >> "$AUDIT_SPAWN_LOG"\nexit 99\n', 0o755);
-  check("actual mobile stage hook installs its own markers/hook without shared files", () => {
+  check("declarative mobile resources and stage hook install without shared files", () => {
+    const { stageEnabledLinuxFeatureInstall } = require(path.join(repo, "scripts/lib/linux-features.js"));
+    const featuresConfigPath = path.join(tmp, "features.json");
+    write(featuresConfigPath, JSON.stringify({ enabled: ["remote-mobile-control"] }));
+    const plan = stageEnabledLinuxFeatureInstall(install, {
+      featuresRoot: path.join(tmp, "linux-features"), featuresConfigPath,
+    });
+    assert.equal(plan.resources.length, 1);
     execFileSync("/bin/bash", [path.join(isolated, "stage.sh")], { env, timeout: 10000, stdio: "pipe" });
     assert.equal(fs.readFileSync(path.join(install, ".codex-linux/remote-mobile-control-enabled"), "utf8").trim(), "remote-mobile-control");
     assert.equal(fs.readFileSync(path.join(install, ".codex-linux/desktop-app-server-remote-control-enabled"), "utf8"), "version=1\nowner=desktop\n");
-    assert.ok(fs.existsSync(path.join(install, ".codex-linux/cold-start.d/remote-mobile-control")));
+    const hook = path.join(install, ".codex-linux/cold-start.d/remote-mobile-control");
+    assert.equal(fs.readFileSync(hook, "utf8"), fs.readFileSync(path.join(isolated, "cold-start-hook.sh"), "utf8"));
+    assert.equal(fs.statSync(hook).mode & 0o777, 0o755);
     assert.ok(!fs.existsSync(spawned), "Stage hook attempted to start Codex");
   });
   for (const [state, disabled, expected] of [
