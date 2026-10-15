@@ -303,7 +303,7 @@ function applyHydexComposerControlPatch(source) {
   const selectionMatch = region.match(selectionPattern);
   const resultMatches = [
     ...region.matchAll(new RegExp(`let (${IDENT});return`, "g")),
-  ];
+  ].filter((match) => region.endsWith(`,${match[1]}}`));
 
   if (
     reactAlias == null ||

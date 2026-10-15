@@ -31,7 +31,7 @@ function fixture(t, enabled = ["remote-mobile-control"]) {
 test("Gentoo remote mobile support adds only the runtime key-store lock dependency", (t) => {
   const f = fixture(t);
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "feature.json"), "utf8"));
-  assert.equal(manifest.defaultEnabled, false);
+  assert.equal(manifest.defaultEnabled, true);
   assert.equal(manifest.gentoo.supported, true);
   assert.deepEqual(gentooFeaturePlan(f.options), {
     enabled: ["remote-mobile-control"],
