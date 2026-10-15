@@ -114,6 +114,35 @@ test("current service-tier composer accepts the split trigger and remains idempo
   new vm.Script(patched);
 });
 
+test("current composer ignores a nested memoized callback return", () => {
+  const source = localComposerFixture().replace(
+    "let result;return",
+    "const nested=()=>{let inner;return inner={value:1},inner};let result;return",
+  );
+  const patched = applyHydexComposerControlPatch(source);
+  assert.notEqual(patched, source);
+  assert.ok(patched.includes("const nested=()=>{let inner;return inner={value:1},inner}"));
+  assert.equal(applyHydexComposerControlPatch(patched), patched);
+  new vm.Script(patched);
+});
+
+test("ambiguous composer return owners remain byte-identical", () => {
+  const source = localComposerFixture().replace(
+    "let result;return",
+    "const nested=()=>{let result;return result={value:1},result};let result;return",
+  );
+  const { value, warnings } = captureWarnings(() => applyHydexComposerControlPatch(source));
+  assert.equal(value, source);
+  assert.ok(warnings.some((warning) => warning.includes("Could not resolve local model picker symbols")));
+});
+
+test("a missing terminal composer return remains byte-identical", () => {
+  const source = localComposerFixture().replace(",result}", ",different}");
+  const { value, warnings } = captureWarnings(() => applyHydexComposerControlPatch(source));
+  assert.equal(value, source);
+  assert.ok(warnings.some((warning) => warning.includes("Could not resolve local model picker symbols")));
+});
+
 function makeStorage(value, options = {}) {
   return {
     getItem(key) {
