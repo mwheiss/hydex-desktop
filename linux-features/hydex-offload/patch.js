@@ -226,7 +226,7 @@ function composerSignaturePattern() {
   return new RegExp(
     `function (${IDENT})\\(e\\)\\{let (${IDENT})=\\(0,(${IDENT})\\.c\\)\\(\\d+\\),` +
       `\\{(?:allowAeonDraftModelSelection|serviceTierDefaults):(${IDENT}),conversationId:(${IDENT}),` +
-      `hideLabel:(${IDENT}),permissionsCwdOverride:(${IDENT}),permissionsHostId:(${IDENT})\\}=e`,
+      `hideLabel:(${IDENT}),(?:home:${IDENT},)?permissionsCwdOverride:(${IDENT}),permissionsHostId:(${IDENT})\\}=e`,
     "g",
   );
 }
