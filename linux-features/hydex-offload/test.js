@@ -114,6 +114,30 @@ test("current service-tier composer accepts the split trigger and remains idempo
   new vm.Script(patched);
 });
 
+test("home-aware service-tier composer preserves the local control contract", () => {
+  const source = localComposerFixture()
+    .replace("allowAeonDraftModelSelection:allow", "serviceTierDefaults:allow")
+    .replace("hideLabel:hide,", "hideLabel:hide,home:home,");
+  assert.equal(matchesHydexComposerContract(source), true);
+  const patched = applyHydexComposerControlPatch(source);
+  assert.notEqual(patched, source);
+  assert.ok(patched.includes("home:home"));
+  assert.ok(patched.includes(CONTROL_MARKER));
+  assert.ok(patched.includes(NEXT_TURN_MARKER));
+  assert.equal(applyHydexComposerControlPatch(patched), patched);
+  new vm.Script(patched);
+});
+
+test("unknown or duplicate local composer props remain rejected", () => {
+  for (const extra of ["unknown:extra,", "home:first,home:second,"]) {
+    const source = localComposerFixture().replace("hideLabel:hide,", `hideLabel:hide,${extra}`);
+    assert.equal(matchesHydexComposerContract(source), false);
+    const { value, warnings } = captureWarnings(() => applyHydexComposerControlPatch(source));
+    assert.equal(value, source);
+    assert.ok(warnings.some((warning) => warning.includes("found 0")));
+  }
+});
+
 test("current composer ignores a nested memoized callback return", () => {
   const source = localComposerFixture().replace(
     "let result;return",
