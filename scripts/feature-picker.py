@@ -90,11 +90,7 @@ def discover_features(root: pathlib.Path) -> dict[str, Feature]:
                 f"{manifest}: feature id '{feature_id}' must match its directory name '{manifest.parent.name}'"
             )
         if "defaultEnabled" in data and not isinstance(data["defaultEnabled"], bool):
-            raise SelectionError(f"{manifest}: defaultEnabled must be a boolean (false when provided)")
-        if data.get("defaultEnabled") is True:
-            raise SelectionError(
-                f"{manifest}: defaultEnabled true is not allowed"
-            )
+            raise SelectionError(f"{manifest}: defaultEnabled must be a boolean")
         if "internal" in data and not isinstance(data["internal"], bool):
             raise SelectionError(f"{manifest}: internal must be a boolean")
         entrypoints = data.get("entrypoints")
