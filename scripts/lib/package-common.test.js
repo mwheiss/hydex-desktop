@@ -789,7 +789,9 @@ function createReadAloudBuilderFixture(t, enabled, installer = true) {
   const source = path.join(root, "source");
   for (const relative of [
     "install.sh", "launcher", "scripts/lib", "scripts/patches", "scripts/patch-linux-window-ui.js",
-    "scripts/build-deb.sh", "scripts/build-rpm.sh", "scripts/build-pacman.sh", "packaging/linux", "assets",
+    "scripts/build-deb.sh", "scripts/build-rpm.sh", "scripts/build-rhel-compat-rpm.sh", "scripts/build-pacman.sh",
+    "scripts/update_latest_package.py", "packaging/linux", "packaging/rhel-compat/runtime-packages.json", "assets",
+    "nix/elf-runtime.cjs", "nix/elf-runtime-manifest.json", "nix/relocate-elf-interpreter.cjs",
     "linux-features/read-aloud", "linux-features/read-aloud-mcp",
     "linux-features/features.example.json", "linux-features/compatibility.json",
     "plugins/openai-bundled/plugins/read-aloud",
