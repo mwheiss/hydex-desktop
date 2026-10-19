@@ -315,6 +315,11 @@ exit 7
       CODEX_MCP_HELPER_REAPER_DELAY: "0",
       CODEX_MCP_HELPER_REAPER_PASSES: "1",
       CODEX_MCP_HELPER_REAPER_TEST_LOG: callLog,
+      // Keep host display settings from changing the launcher argument fixture.
+      CODEX_OZONE_PLATFORM: "auto",
+      NIXOS_OZONE_WL: "",
+      WAYLAND_DISPLAY: "",
+      XDG_SESSION_TYPE: "x11",
       XDG_CACHE_HOME: path.join(tempDir, "cache"),
       XDG_CONFIG_HOME: path.join(tempDir, "config"),
       XDG_STATE_HOME: path.join(tempDir, "state"),
