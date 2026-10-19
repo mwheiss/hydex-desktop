@@ -84,10 +84,8 @@ def discover_features(root: pathlib.Path) -> dict[str, Feature]:
         feature_id = data.get("id")
         if not isinstance(feature_id, str) or not ID_RE.fullmatch(feature_id):
             raise SelectionError(f"{manifest}: invalid feature id")
-        if data.get("defaultEnabled") is True:
-            raise SelectionError(
-                f"{manifest}: defaultEnabled true is not allowed"
-            )
+        if data.get("defaultEnabled") is not None and not isinstance(data["defaultEnabled"], bool):
+            raise SelectionError(f"{manifest}: defaultEnabled must be a boolean")
         if "internal" in data and not isinstance(data["internal"], bool):
             raise SelectionError(f"{manifest}: internal must be a boolean")
         if data.get("internal") is True:
