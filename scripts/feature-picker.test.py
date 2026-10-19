@@ -30,7 +30,7 @@ class FeaturePickerModelTests(unittest.TestCase):
 
     def test_cli_disabling_last_shortcut_feature_leaves_empty_selection(self):
         wizard = (REPO_ROOT / "scripts/bootstrap-wizard.sh").read_text()
-        marker = '"$output_mode" <<\'PY\'\n'
+        marker = '"$output_mode" "$use_manifest_defaults" <<\'PY\'\n'
         embedded = wizard.split(marker, 1)[1].split("\nPY\n", 1)[0]
         for feature_id in ("global-dictation", "wayland-global-shortcuts"):
             with self.subTest(feature=feature_id), tempfile.TemporaryDirectory() as temp:
@@ -38,7 +38,7 @@ class FeaturePickerModelTests(unittest.TestCase):
                 config.write_text(json.dumps({"enabled": [feature_id]}))
                 result = subprocess.run(
                     [sys.executable, "-", str(REPO_ROOT / "linux-features"), str(config),
-                     "", feature_id, "1", ""], input=embedded, text=True, capture_output=True,
+                     "", feature_id, "1", "", "0"], input=embedded, text=True, capture_output=True,
                     check=True,
                 )
                 self.assertEqual(json.loads(config.read_text())["enabled"], [])
@@ -325,6 +325,19 @@ class FeaturePickerModelTests(unittest.TestCase):
         with self.assertRaises(feature_picker.SelectionError):
             feature_picker.SelectionModel(features)
 
+    def test_manifest_discovery_accepts_boolean_defaults(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            directory = root / "default-feature"
+            directory.mkdir()
+            (directory / "README.md").write_text("# default feature\n")
+            for default in (True, False):
+                with self.subTest(default=default):
+                    (directory / "feature.json").write_text(json.dumps({
+                        "id": "default-feature", "defaultEnabled": default,
+                    }))
+                    self.assertIn("default-feature", feature_picker.discover_features(root))
+
     def test_manifest_discovery_rejects_invalid_public_contracts(self):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
@@ -337,9 +350,9 @@ class FeaturePickerModelTests(unittest.TestCase):
                 "id": "bad",
                 "title": "Bad",
                 "description": "",
-                "defaultEnabled": True,
+                "defaultEnabled": "true",
             }))
-            with self.assertRaises(feature_picker.SelectionError):
+            with self.assertRaisesRegex(feature_picker.SelectionError, "defaultEnabled must be a boolean"):
                 feature_picker.discover_features(root)
 
             manifest.write_text(json.dumps({
