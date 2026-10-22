@@ -803,7 +803,12 @@ test("update-builder omits test-only files without changing private features or 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-update-builder-test-files-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const source = path.join(root, "source");
-  for (const relative of ["install.sh", "scripts", "launcher", "packaging/linux", "assets"]) {
+  for (const relative of [
+    "install.sh", "scripts", "launcher", "packaging/linux", "assets",
+    "packaging/rhel-compat/runtime-packages.json", "nix/elf-runtime.cjs",
+    "nix/elf-runtime-manifest.json", "nix/relocate-elf-interpreter.cjs",
+  ]) {
+    fs.mkdirSync(path.dirname(path.join(source, relative)), { recursive: true });
     fs.cpSync(path.join(repoRoot, relative), path.join(source, relative), { recursive: true });
   }
   const features = path.join(source, "linux-features");
