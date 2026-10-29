@@ -6,9 +6,11 @@ target="${INSTALL_DIR:?}/resources/codex"
 bundled_source="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/runtime/codex"
 source="${HYDEX_CLI_BINARY:-$bundled_source}"
 temporary_target="${target}.hydex.$$"
+protocol_probe_dir=""
 
 cleanup() {
     rm -f -- "$temporary_target"
+    if [ -n "$protocol_probe_dir" ]; then rm -rf -- "$protocol_probe_dir"; fi
 }
 trap cleanup EXIT
 
@@ -58,6 +60,20 @@ validate_hydex_binary() {
     help_output="$("$binary" --help 2>&1)"
     [[ "$help_output" == *"--offload"* && "$help_output" == *"--no-offload"* ]] || \
         fail "Hydex CLI help is missing --offload or --no-offload: $binary"
+
+    protocol_probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/hydex-full-protocol.XXXXXX")"
+    "$binary" app-server generate-json-schema --out "$protocol_probe_dir" >/dev/null 2>&1 || \
+        fail "Hydex CLI cannot report its Full protocol capability: $binary"
+    python3 - "$protocol_probe_dir/ClientRequest.json" <<'PY_FULL_PROTOCOL' || fail "Hydex CLI does not support the Full offload mode: $binary"
+import json
+from pathlib import Path
+import sys
+
+schema = json.loads(Path(sys.argv[1]).read_text())
+assert "force_full" in schema["definitions"]["ModelOffloadRuntimeOverride"]["enum"]
+PY_FULL_PROTOCOL
+    rm -rf -- "$protocol_probe_dir"
+    protocol_probe_dir=""
 }
 
 [ -x "$target" ] || fail "bundled Codex CLI is missing or not executable: $target"

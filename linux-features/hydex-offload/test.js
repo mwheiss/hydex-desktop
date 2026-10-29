@@ -55,6 +55,7 @@ function requestBridgeFixture() {
 
 function localComposerFixture() {
   return [
+    fullLocalUsageFixture(),
     productModeSelectedLabelFixture(),
     productModeLabelFixture(),
     "function modelSelectionWrapper(e){let {modelSettings:baseSettings,setDefaultModelAndReasoningEffort:setBaseDefault,setModelAndReasoningEffort:setBaseModel,setModelAndReasoningEffortForNextTurn:setBaseNext}=useBaseModelSelection(e),selectModel=()=>{};",
@@ -258,7 +259,7 @@ function writeWebviewAsset(extractedDir, name, source) {
   fs.writeFileSync(path.join(assetsDir, name), source);
 }
 
-function writeFakeCodex(filePath, version, { hydex = false } = {}) {
+function writeFakeCodex(filePath, version, { hydex = false, full = true } = {}) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, [
     "#!/bin/sh",
@@ -267,6 +268,9 @@ function writeFakeCodex(filePath, version, { hydex = false } = {}) {
     hydex
       ? "  --help) printf '%s\\n' '--offload' '--no-offload' ;;"
       : "  --help) printf '%s\\n' 'official codex' ;;",
+    hydex
+      ? `  app-server) shift 2; full_schema_dir=""; while [ "$#" -gt 0 ]; do if [ "$1" = "--out" ]; then shift; full_schema_dir="$1"; fi; shift; done; mkdir -p "$full_schema_dir"; printf '%s\\n' '${JSON.stringify({definitions:{ModelOffloadRuntimeOverride:{enum:full?["force_on","force_full","force_off"]:["force_on","force_off"]}}})}' > "$full_schema_dir/ClientRequest.json" ;;`
+      : "  app-server) exit 1 ;;",
     "  *) exit 0 ;;",
     "esac",
     "",
@@ -335,6 +339,7 @@ test("feature loader exposes every enforced branding and offload surface", () =>
           true,
         ],
         ["feature:hydex-offload:hydex-offload-composer-control", "webview-asset", "optional", true],
+        ["feature:hydex-offload:hydex-full-local-credit-admission", "webview-asset", "optional", true],
         [
           "feature:hydex-offload:hydex-product-mode-locale-labels",
           "extracted-app:post-webview",
@@ -553,6 +558,7 @@ test("descriptors target the semantic current bundle owners", () => {
       ["hydex-product-mode-label", "webview-asset"],
       ["hydex-product-mode-selected-label", "webview-asset"],
       ["hydex-offload-composer-control", "webview-asset"],
+      ["hydex-full-local-credit-admission", "webview-asset"],
       ["hydex-product-mode-locale-labels", "extracted-app:post-webview"],
     ],
   );
@@ -572,6 +578,8 @@ test("descriptors target the semantic current bundle owners", () => {
     true,
   );
   assert.equal(matchesHydexComposerContract(localComposerFixture()), true);
+  assert.equal(descriptors[5].pattern.test("composer-content-current.js"), true);
+  assert.equal(descriptors[5].pattern.test("usage-current.js"), false);
 });
 
 test("request bridge sends every Hydex override state on turn start", async () => {
@@ -655,7 +663,7 @@ test("composer patch adds an authoritative local control and next-turn update", 
     patched,
     /rounded-xl bg-surface-elevated-secondary p-1 text-default shadow-lg ring-1 ring-border/,
   );
-  assert.equal([...patched.matchAll(/"data-value":/g)].length, 3);
+  assert.equal([...patched.matchAll(/"data-value":/g)].length, 4);
   assert.equal(patched.includes(")(`select`,{"), false);
   assert.match(
     patched,
@@ -749,6 +757,7 @@ test("composer control renders an app-styled popover and persists choices", () =
     [
       ["button", "menuitemradio", true, "auto", "Hydex auto"],
       ["button", "menuitemradio", false, "force_on", "Hydex on"],
+      ["button", "menuitemradio", false, "force_full", "Full"],
       ["button", "menuitemradio", false, "force_off", "Hydex off"],
     ],
   );
@@ -845,6 +854,7 @@ test("feature descriptors patch every extracted webview surface", () => {
           ["feature:hydex-offload:hydex-product-mode-label", "applied"],
           ["feature:hydex-offload:hydex-product-mode-selected-label", "applied"],
           ["feature:hydex-offload:hydex-offload-composer-control", "applied"],
+          ["feature:hydex-offload:hydex-full-local-credit-admission", "applied"],
         ],
       );
       assert.match(
@@ -896,7 +906,196 @@ test("a missing enabled surface is reported as candidate-rejecting drift", () =>
           reason: report.patches[3].reason,
           status: "skipped-optional",
         },
+        {
+          featureId: "hydex-offload",
+          name: "feature:hydex-offload:hydex-full-local-credit-admission",
+          reason: report.patches[4].reason,
+          status: "skipped-optional",
+        },
       ]);
     });
   });
+});
+
+
+const {
+  applyHydexFullLocalCreditGatePatch,
+  matchesHydexFullLocalCreditGateContract,
+} = require("./patch.js");
+
+function fullLocalUsageFixture() {
+  return "function localUsage(e){let scope=e.scope,host=e.hostId,isLocal=scope.value.kind===`local`,guard=!0,other=!0,image=e.imageLimit??null,banner=!0,dismiss=()=>{},rate=e.rateLimit,warning=10,blocked=host===`local`&&guard||other,usageResult;(0,React.useEffect)(()=>{},[]);return usageResult={imageGenerationLimit:image,isUsageBannerEnabled:banner,onDismissImageGenerationLimit:dismiss,rateLimit:rate,rateLimitWarningThreshold:warning,sendBlocked:blocked},usageResult}";
+}
+
+function evaluateFullLocalUsage(mode, configured = false) {
+  const source = applyHydexFullLocalCreditGatePatch(fullLocalUsageFixture());
+  assert.notEqual(source, fullLocalUsageFixture());
+  const listeners = new Map();
+  const storage = makeMutableStorage(mode);
+  let notifications = 0;
+  const context = {
+    codexLinuxHydexFullLocalConfigured: configured,
+    localStorage: storage,
+    window: {
+      addEventListener(name, fn) { listeners.set(name, fn); },
+      removeEventListener(name) { listeners.delete(name); },
+    },
+    React: {
+      useEffect() {},
+      useSyncExternalStore(subscribe, read) { subscribe(() => { notifications++; }); return read(); },
+    },
+  };
+  const usage = vm.runInNewContext(source + ";localUsage", context);
+  return { usage, storage, listeners, notifications: () => notifications };
+}
+
+test("Full admits local turns at zero credits while retaining real account state", () => {
+  const { usage } = evaluateFullLocalUsage("force_full");
+  const rateLimit = { rate_limit: { allowed: false }, credits: { has_credits: false, balance: "0" } };
+  const result = usage({ scope: { value: { kind: "local" } }, hostId: "local", rateLimit });
+  assert.equal(result.sendBlocked, false);
+  assert.equal(result.isUsageBannerEnabled, false);
+  assert.equal(result.rateLimit, rateLimit);
+  assert.equal(result.rateLimitWarningThreshold, null);
+  assert.equal(usage({ scope: { value: { kind: "local" } }, hostId: "local", rateLimit, imageLimit: "image quota" }).imageGenerationLimit, "image quota");
+  assert.equal(usage({ scope: { value: { kind: "local" } }, hostId: "local", rateLimit, imageLimit: "image quota" }).isUsageBannerEnabled, true);
+});
+
+test("Full preserves hosted and remote submission restrictions", () => {
+  const { usage } = evaluateFullLocalUsage("force_full");
+  for (const [kind, hostId] of [["chatgpt", "local"], ["local", "remote-host"], ["cloud", "local"]]) {
+    assert.equal(usage({ scope: { value: { kind } }, hostId }).sendBlocked, true);
+  }
+  for (const mode of [null, "force_on", "force_off", "auto", "invalid"]) {
+    const { usage } = evaluateFullLocalUsage(mode);
+    assert.equal(usage({ scope: { value: { kind: "local" } }, hostId: "local" }).sendBlocked, true);
+  }
+});
+
+test("Full selection reacts immediately to local and cross-window changes", () => {
+  const { usage, storage, listeners, notifications } = evaluateFullLocalUsage("force_on");
+  const params = { scope: { value: { kind: "local" } }, hostId: "local" };
+  assert.equal(usage(params).sendBlocked, true);
+  storage.setItem("hydex.offloadOverride", "force_full");
+  listeners.get("hydex-offload-change")();
+  listeners.get("storage")();
+  assert.equal(notifications(), 2);
+  assert.equal(usage(params).sendBlocked, false);
+});
+
+test("Full credit admission is idempotent and rejects missing or ambiguous owners", () => {
+  const source = fullLocalUsageFixture();
+  const patched = applyHydexFullLocalCreditGatePatch(source);
+  assert.equal(applyHydexFullLocalCreditGatePatch(patched), patched);
+  assert.equal(matchesHydexFullLocalCreditGateContract(source), true);
+  assert.equal(matchesHydexFullLocalCreditGateContract(source + source), false);
+  assert.equal(applyHydexFullLocalCreditGatePatch(source + source), source + source);
+  const missing = source.replace("sendBlocked:blocked", "differentField:blocked");
+  assert.equal(applyHydexFullLocalCreditGatePatch(missing), missing);
+  new vm.Script(patched);
+});
+
+
+test("Auto follows configured Full admission, with explicit On and Off taking precedence", () => {
+  const params = {scope:{value:{kind:"local"}},hostId:"local"};
+  assert.equal(evaluateFullLocalUsage(null, true).usage(params).sendBlocked, false);
+  for (const mode of ["force_on", "force_off"]) {
+    assert.equal(evaluateFullLocalUsage(mode, true).usage(params).sendBlocked, true);
+  }
+});
+
+test("Full initializes thread helpers locally and preserves other config overrides", async () => {
+  const Client = evaluateRequestClient(applyHydexRequestBridgePatch(requestBridgeFixture()), makeStorage("force_full"));
+  const client = new Client(); client.hostId="local";
+  for (const method of ["thread/start", "thread/resume", "thread/fork"]) {
+    const result=await client.sendRequest(method,{config:{unrelated:"preserved"}},{});
+    assert.deepEqual(JSON.parse(JSON.stringify(result.params.config)),{
+      unrelated:"preserved","model_offload.enabled":true,"model_offload.mode":"full"
+    });
+  }
+});
+
+test("Only local config read can enable configured Full in Auto", async () => {
+  for (const host of ["local", "remote-host"]) {
+    globalThis.codexLinuxHydexFullLocalConfigured = false;
+    const Client = evaluateRequestClient(applyHydexRequestBridgePatch(requestBridgeFixture()), makeStorage(null));
+    const client=new Client();client.hostId=host;
+    client.sendConfigReadRequest=async()=>({config:{model_offload:{enabled:true,mode:"full"}}});
+    await client.sendRequest("config/read",{},{});
+    client.hostId="local";
+    const result=await client.sendRequest("thread/start",{},{});
+    assert.equal(result.params.config?.["model_offload.mode"],host==="local"?"full":undefined);
+  }
+  delete globalThis.codexLinuxHydexFullLocalConfigured;
+});
+
+
+test("stage hook rejects a matching legacy Hydex runtime without Full support", () => {
+  withTempDir(root => {
+    const target=path.join(root,"app/resources/codex");
+    const upstream=path.join(root,"upstream/resources/codex");
+    const legacy=path.join(root,"legacy-codex");
+    writeFakeCodex(target,"0.163.0-alpha.11.1");
+    writeFakeCodex(upstream,"0.163.0-alpha.11.1");
+    writeFakeCodex(legacy,"0.163.0-alpha.11.1",{hydex:true,full:false});
+    const before=fs.readFileSync(target);
+    const result=runStageHook(root,legacy);
+    assert.notEqual(result.status,0);
+    assert.match(result.stderr,/does not support the Full offload mode/);
+    assert.deepEqual(fs.readFileSync(target),before);
+  });
+});
+
+
+test("selected Hydex wordmark matching stays within its own product-mode branch", () => {
+  const source=productModeSelectedLabelFixture().replace(
+    "}else if(mode===`work`)",
+    "}else if(mode===`chatgpt`){visible=(0,jsx.jsx)(ChatGptWordmark,{\"aria-hidden\":`true`,className:`h-[1em] w-auto overflow-visible`,\"data-no-autosize\":!0})}else if(mode===`work`)"
+  );
+  const patched=applyHydexProductModeSelectedLabelPatch(source);
+  assert.notEqual(patched,source);
+  assert.equal(applyHydexProductModeSelectedLabelPatch(patched),patched);
+  assert.equal(matchesHydexProductModeSelectedLabelContract(patched),true);
+  assert.match(patched,/ChatGptWordmark/);
+});
+
+test("legacy partial controls are rejected by the Full UI contract", () => {
+  const composer=applyHydexComposerControlPatch(localComposerFixture()).replaceAll("force_full","legacy_full");
+  assert.equal(matchesHydexComposerContract(composer),false);
+  const bridge=applyHydexRequestBridgePatch(requestBridgeFixture()).replaceAll("codexLinuxHydexFullLocalConfigured","legacyConfigured");
+  assert.equal(matchesHydexRequestBridgeContract(bridge),false);
+});
+
+
+
+test("Full preference leaves remote and cloud request payloads unchanged", async () => {
+  const Client=evaluateRequestClient(applyHydexRequestBridgePatch(requestBridgeFixture()),makeStorage("force_full"));
+  const client=new Client();
+  for (const hostId of ["remote-host","cloud:test"]) {
+    client.hostId=hostId;
+    for (const method of ["turn/start","thread/settings/update","thread/start"]) {
+      const params={threadId:"existing",threadSettings:{model:"original"}};
+      const result=await client.sendRequest(method,params,{});
+      assert.equal(result.params,params);
+    }
+  }
+});
+
+
+test("composer control is only rendered for local hosts", () => {
+  const jsx = { Fragment: "fragment", jsx: (type, props) => ({type, props}), jsxs: (type, props) => ({type, props}) };
+  const context = {
+    jsx, Menu: "ModelMenu", createMessages: e => e, memo: {c: () => []}, props: {},
+    React: {useState: initial => [initial, () => {}]},
+    useModelSelection: () => ({
+      modelSettings: {model: "model", reasoningEffort: "low"},
+      selectComposerModelAndReasoningEffort() {}, setDefaultModelAndReasoningEffort() {}, setModelAndReasoningEffort() {},
+    }),
+  };
+  const render = vm.runInNewContext(applyHydexComposerControlPatch(localComposerFixture()) + ";localModelPicker", context);
+  for (const host of [undefined, "local", "remote-host", "cloud:test"]) {
+    const control = render({permissionsHostId: host}).props.children[1];
+    if (host == null || host === "local") assert.equal(control.type.name, CONTROL_MARKER);
+    else assert.equal(control, null);
+  }
 });
