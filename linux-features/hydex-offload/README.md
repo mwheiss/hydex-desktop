@@ -1,6 +1,6 @@
 # Hydex Offload Control
 
-This opt-in feature adds a compact `Hydex auto`, `Hydex on`, and `Hydex off`
+This opt-in feature adds a compact `Hydex auto`, `Hydex on`, `Full`, and `Hydex off`
 selector next to the local model picker. It applies the selection to Hydex's
 `modelOffloadOverride` app-server setting.
 
@@ -60,7 +60,19 @@ The selector stores its desktop-wide preference in
 |---|---|---|
 | `Hydex auto` | `null` | Clear the runtime override and follow Hydex config. |
 | `Hydex on` | `"force_on"` | Force eligible inference through the local offload provider. |
+| **Full** | `"force_full"` | Keep model inference, review, memory, and compaction local with no primary inference fallback. |
 | `Hydex off` | `"force_off"` | Force eligible inference through the primary provider. |
+
+Full lets the local composer submit at zero hosted credits. It preserves actual
+account balances, image-generation notices, remote/cloud admission rules, and
+approval decisions. Auto also permits local submission when the local backend's
+configuration explicitly enables `mode = "full"`. Selecting On or Off overrides
+that configured Full mode. Changes propagate immediately between the control
+and the credit-admission hook through an external-store subscription.
+
+Full initializes new local threads with Full mode before startup helpers run.
+It does not turn hosted-only services into local services. An unavailable local
+provider fails locally rather than using charged inference.
 
 Auto removes the local-storage key but deliberately sends a JSON `null`.
 Omitting the field would retain a thread's previous sticky override instead of
@@ -82,7 +94,7 @@ the webview's dark theme and render unreadable light-background options.
 
 ## Failure behavior
 
-Hydex rejects `force_on` when no valid local offload provider is configured.
+Hydex rejects `force_on` and `force_full` when no valid local offload provider is configured.
 The desktop preserves that error; it does not silently fall back to the primary
 provider.
 
