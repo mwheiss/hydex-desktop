@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const IDENT = "[A-Za-z_$][\\w$]*";
+const FULL_LOCAL_MARKER = "codexLinuxHydexFullLocalCreditGate";
 const REQUEST_MARKER = "codexLinuxHydexOffloadRequest";
 const CONTROL_MARKER = "codexLinuxHydexOffloadControl";
 const NEXT_TURN_MARKER = "codexLinuxHydexOffloadNextTurn";
@@ -68,7 +69,7 @@ function applyHydexProductModeLabelPatch(source) {
 
 function productModeSelectedLabelPattern() {
   return new RegExp(
-    `if\\(${IDENT}===\\\`codex\\\`\\)\\{${IDENT}=${IDENT}\\.codex;let ${IDENT};.{0,500}?` +
+    `if\\(${IDENT}===\\\`codex\\\`\\)\\{${IDENT}=${IDENT}\\.codex;let ${IDENT};(?:(?!}else).){0,500}?` +
       `(\\(0,(${IDENT})\\.jsx\\)\\(${IDENT},\\{"aria-hidden":\\\`true\\\`,` +
       `className:\\\`h-\\[1em\\] w-auto overflow-visible\\\`,` +
       `"data-no-autosize":!0\\}\\))`,
@@ -191,7 +192,9 @@ function requestBridgeMatches(source) {
 }
 
 function matchesHydexRequestBridgeContract(source) {
-  return source.includes(REQUEST_MARKER) || requestBridgeMatches(source).length === 1;
+  return source.includes(REQUEST_MARKER)
+    ? source.includes("codexLinuxHydexFullLocalConfigured") && source.includes("force_full")
+    : requestBridgeMatches(source).length === 1;
 }
 
 function applyHydexRequestBridgePatch(source) {
@@ -212,10 +215,18 @@ function applyHydexRequestBridgePatch(source) {
   const injection =
     `if((${methodVar}===\`turn/start\`||${methodVar}===\`thread/settings/update\`)&&${paramsVar}!=null){` +
     `let r=null;try{let e=localStorage.getItem(\`hydex.offloadOverride\`);` +
-    `r=e===\`force_on\`||e===\`force_off\`?e:null}catch{}` +
+    `r=e===\`force_on\`||e===\`force_full\`||e===\`force_off\`?e:null}catch{}` +
+    `if(r!==\`force_full\`||this.hostId==null||this.hostId===\`local\`){` +
     `${paramsVar}=${methodVar}===\`thread/settings/update\`&&${paramsVar}?.threadSettings!=null?` +
     `{...${paramsVar},threadSettings:{...${paramsVar}.threadSettings,modelOffloadOverride:r}}:` +
-    `{...${paramsVar},modelOffloadOverride:r}}/*${REQUEST_MARKER}*/`;
+    `{...${paramsVar},modelOffloadOverride:r}}}/*${REQUEST_MARKER}*/` +
+    `if(this.hostId===\`local\`&&${methodVar}===\`config/read\`){let v=await this.sendConfigReadRequest(${paramsVar},${match[3]});` +
+    `globalThis.codexLinuxHydexFullLocalConfigured=v?.config?.model_offload?.enabled===!0&&v?.config?.model_offload?.mode===\`full\`;` +
+    `try{window.dispatchEvent(new Event(\`hydex-offload-change\`))}catch{}return v}` +
+    `if(this.hostId===\`local\`&&(${methodVar}===\`thread/start\`||${methodVar}===\`thread/resume\`||${methodVar}===\`thread/fork\`)&&${paramsVar}!=null){` +
+    `let f=null;try{f=localStorage.getItem(\`hydex.offloadOverride\`)}catch{}` +
+    `if(f===\`force_full\`||(f!==\`force_on\`&&f!==\`force_off\`&&globalThis.codexLinuxHydexFullLocalConfigured===!0))` +
+    `${paramsVar}={...${paramsVar},config:{...${paramsVar}.config,"model_offload.enabled":!0,"model_offload.mode":\`full\`}}}`;
 
   return source.slice(0, match.index + match[0].length) +
     injection +
@@ -243,7 +254,9 @@ function composerContractMatches(source) {
 }
 
 function matchesHydexComposerContract(source) {
-  return source.includes(CONTROL_MARKER) || composerContractMatches(source).length === 1;
+  return source.includes(CONTROL_MARKER)
+    ? source.includes('"data-value":`force_full`')
+    : composerContractMatches(source).length === 1;
 }
 
 function uniqueAlias(region, method) {
@@ -343,6 +356,7 @@ function applyHydexComposerControlPatch(source) {
     `${passthrough.slice(0, -1)},/*${NEXT_TURN_MARKER}*/` +
     `setModelAndReasoningEffortForNextTurn:${nextTurnSetterVar}}`;
   const conversationVar = signature[5];
+  const hostVar = signature[8];
   const modelSelectionVar = selectionMatch[1];
   const modelSettingsVar = selectionMatch[2];
   const resultVar = resultMatches[0][1];
@@ -355,13 +369,13 @@ function applyHydexComposerControlPatch(source) {
   const helper =
     `/*${CONTROL_MARKER}*/` +
     `function codexLinuxHydexOffloadRead(){try{let e=localStorage.getItem(\`hydex.offloadOverride\`);` +
-    `return e===\`force_on\`||e===\`force_off\`?e:\`auto\`}catch{return\`auto\`}}` +
+    `return e===\`force_on\`||e===\`force_full\`||e===\`force_off\`?e:\`auto\`}catch{return\`auto\`}}` +
     `function ${CONTROL_MARKER}({onApply:e}){let[t,n]=(0,${reactAlias}.useState)(codexLinuxHydexOffloadRead),` +
     `[r,i]=(0,${reactAlias}.useState)(!1),a=(0,${reactAlias}.useRef)(null),` +
-    `o=(0,${reactAlias}.useRef)(null),s=t===\`force_on\`?\`Hydex on\`:t===\`force_off\`?\`Hydex off\`:\`Hydex auto\`,` +
-    `c=c=>{let l=c.currentTarget.dataset.value;if(l!==\`auto\`&&l!==\`force_on\`&&l!==\`force_off\`)return;` +
+    `o=(0,${reactAlias}.useRef)(null),s=t===\`force_full\`?\`Full\`:t===\`force_on\`?\`Hydex on\`:t===\`force_off\`?\`Hydex off\`:\`Hydex auto\`,` +
+    `c=c=>{let l=c.currentTarget.dataset.value;if(l!==\`auto\`&&l!==\`force_on\`&&l!==\`force_full\`&&l!==\`force_off\`)return;` +
     `n(l);try{l===\`auto\`?localStorage.removeItem(\`hydex.offloadOverride\`):` +
-    `localStorage.setItem(\`hydex.offloadOverride\`,l)}catch{}let u=l===\`auto\`?null:l;` +
+    `localStorage.setItem(\`hydex.offloadOverride\`,l);window.dispatchEvent(new Event(\`hydex-offload-change\`))}catch{}let u=l===\`auto\`?null:l;` +
     `try{Promise.resolve(e?.(u)).catch(()=>{})}catch{}o.current?.hidePopover(),a.current?.focus()},` +
     `l=()=>{let e=a.current,t=o.current;if(e==null||t==null)return;` +
     `if(t.matches(\`:popover-open\`)){t.hidePopover();return}let n=e.getBoundingClientRect();` +
@@ -392,6 +406,9 @@ function applyHydexComposerControlPatch(source) {
     `(0,${jsxAlias}.jsxs)(\`button\`,{type:\`button\`,role:\`menuitemradio\`,\"aria-checked\":t===\`force_on\`,` +
     `\"data-value\":\`force_on\`,onClick:c,className:f+(t===\`force_on\`?\` bg-primary-ghost-hover\`:\`\`),` +
     `children:[\`Hydex on\`,t===\`force_on\`?(0,${jsxAlias}.jsx)(\`span\`,{\"aria-hidden\":!0,children:\`✓\`}):null]}),` +
+    `(0,${jsxAlias}.jsxs)(\`button\`,{type:\`button\`,role:\`menuitemradio\`,\"aria-checked\":t===\`force_full\`,` +
+    `\"data-value\":\`force_full\`,onClick:c,className:f+(t===\`force_full\`?\` bg-primary-ghost-hover\`:\`\`),` +
+    `children:[\`Full\`,t===\`force_full\`?(0,${jsxAlias}.jsx)(\`span\`,{\"aria-hidden\":!0,children:\`✓\`}):null]}),` +
     `(0,${jsxAlias}.jsxs)(\`button\`,{type:\`button\`,role:\`menuitemradio\`,\"aria-checked\":t===\`force_off\`,` +
     `\"data-value\":\`force_off\`,onClick:c,className:f+(t===\`force_off\`?\` bg-primary-ghost-hover\`:\`\`),` +
     `children:[\`Hydex off\`,t===\`force_off\`?(0,${jsxAlias}.jsx)(\`span\`,{\"aria-hidden\":!0,children:\`✓\`}):null]})]})]})}`;
@@ -401,7 +418,8 @@ function applyHydexComposerControlPatch(source) {
     `{threadSettings:{modelOffloadOverride:e}})`;
   const replacementTail =
     `,(0,${jsxAlias}.jsxs)(\`span\`,{className:\`inline-flex min-w-0 items-center gap-1\`,` +
-    `children:[${resultVar},(0,${jsxAlias}.jsx)(${CONTROL_MARKER},{onApply:${onApply}})]})}`;
+    `children:[${resultVar},${hostVar}==null||${hostVar}===\`local\`?` +
+    `(0,${jsxAlias}.jsx)(${CONTROL_MARKER},{onApply:${onApply}}):null]})}`;
   const patchedRegion = region.slice(0, -originalTail.length) + replacementTail;
   const patchedPrefix = source.slice(0, passthroughStart) +
     patchedPassthrough +
@@ -409,6 +427,53 @@ function applyHydexComposerControlPatch(source) {
 
   return patchedPrefix + helper + patchedRegion + source.slice(functionEnd);
 }
+
+
+function fullLocalCreditGateMatches(source) {
+  const pattern = new RegExp(
+    String.raw`(${IDENT})=\{imageGenerationLimit:${IDENT},isUsageBannerEnabled:${IDENT},` +
+    `onDismissImageGenerationLimit:${IDENT},rateLimit:${IDENT},` +
+    `rateLimitWarningThreshold:${IDENT},sendBlocked:${IDENT}\}`, "g");
+  return [...source.matchAll(pattern)].flatMap(match => {
+    const start = source.lastIndexOf("function ", match.index);
+    if (start < 0) return [];
+    const opening = source.slice(start).match(new RegExp(String.raw`^function ${IDENT}\(${IDENT}\)\{`));
+    const tail = `,${match[1]}}`;
+    const end = source.indexOf(tail, match.index + match[0].length);
+    if (!opening || end < 0 || end - start > 12000) return [];
+    const region = source.slice(start, end + tail.length);
+    const scope = region.match(new RegExp("(" + IDENT + ")\\.value\\.kind===`local`"));
+    const host = region.match(new RegExp("(" + IDENT + ")===`local`&&" + IDENT + "\\|\\|"));
+    const react = uniqueAlias(region, "useEffect");
+    if (!scope || !host || !react) return [];
+    return [{ start, end: end + tail.length, opening: opening[0], region,
+      result: match[1], tail, scope: scope[1], host: host[1], react }];
+  });
+}
+
+function matchesHydexFullLocalCreditGateContract(source) {
+  return source.includes(FULL_LOCAL_MARKER) || fullLocalCreditGateMatches(source).length === 1;
+}
+
+function applyHydexFullLocalCreditGatePatch(source) {
+  if (source.includes(FULL_LOCAL_MARKER)) return source;
+  const matches = fullLocalCreditGateMatches(source);
+  if (matches.length !== 1) {
+    warn(`Expected one local usage-admission hook, found ${matches.length}`, "Hydex Full local credit admission");
+    return source;
+  }
+  const match = matches[0];
+  const helper = `/*${FULL_LOCAL_MARKER}*/` +
+    `function codexLinuxHydexFullLocalRead(){try{let e=localStorage.getItem(\`hydex.offloadOverride\`);if(e===\`force_full\`)return!0;if(e===\`force_on\`||e===\`force_off\`)return!1}catch{}return globalThis.codexLinuxHydexFullLocalConfigured===!0}` +
+    `function codexLinuxHydexFullLocalSubscribe(e){window.addEventListener(\`storage\`,e);window.addEventListener(\`hydex-offload-change\`,e);` +
+    `return()=>{window.removeEventListener(\`storage\`,e);window.removeEventListener(\`hydex-offload-change\`,e)}}`;
+  const hook = `let hydexFullLocal=(0,${match.react}.useSyncExternalStore)(codexLinuxHydexFullLocalSubscribe,codexLinuxHydexFullLocalRead,()=>!1);`;
+  const result = `,hydexFullLocal&&${match.scope}.value.kind===\`local\`&&${match.host}===\`local\`?` +
+    `{...${match.result},sendBlocked:!1,isUsageBannerEnabled:${match.result}.imageGenerationLimit!=null,rateLimitWarningThreshold:null}:${match.result}}`;
+  const region = match.opening + hook + match.region.slice(match.opening.length, -match.tail.length) + result;
+  return source.slice(0, match.start) + helper + region + source.slice(match.end);
+}
+
 
 const descriptors = [
   {
@@ -463,6 +528,17 @@ const descriptors = [
     apply: applyHydexComposerControlPatch,
   },
   {
+    id: "hydex-full-local-credit-admission",
+    phase: "webview-asset",
+    order: 20715,
+    ciPolicy: "optional",
+    pattern: /^(?:app-primary|composer-content)-[^.]+\.js$/,
+    assetMatch: matchesHydexFullLocalCreditGateContract,
+    missingDescription: "current local composer usage-admission hook",
+    skipDescription: "Hydex Full local credit admission",
+    apply: applyHydexFullLocalCreditGatePatch,
+  },
+  {
     id: "hydex-product-mode-locale-labels",
     phase: "extracted-app:post-webview",
     order: 20720,
@@ -472,6 +548,9 @@ const descriptors = [
 ];
 
 module.exports = {
+  FULL_LOCAL_MARKER,
+  applyHydexFullLocalCreditGatePatch,
+  matchesHydexFullLocalCreditGateContract,
   CONTROL_MARKER,
   NEXT_TURN_MARKER,
   PRODUCT_MODE_LOCALE_LABEL_MARKER,
