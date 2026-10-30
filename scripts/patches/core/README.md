@@ -13,6 +13,14 @@ resolves the blocker.
 
 ## `quit-confirmation-focus`
 
+The signed 26.1027.30824 bundle keeps both blockers, but its minifier now uses
+quoted message IDs and an anonymous Quit-registration IIFE with a ternary dialog
+result. Match the unique registration header rather than a nearby nested
+function, and keep the helper declarations inside that IIFE. Preserve upstream's
+pending-worktree checks, other Quit shortcuts and shutdown drains. Current signed
+module tests cover both repairs, syntax, idempotence and ambiguous-contract
+rejection; no critical-patch enforcement override is needed.
+
 The current signed stable package has two reproduced mandatory Linux blockers.
 One required descriptor validates both contracts before writing either module,
 so the clean-build policy has one auditable compound core mutation rather than

@@ -19,21 +19,39 @@ const HELPER_SOURCE =
   "return t.getAllWindows().find(e=>!e.isDestroyed()&&e.isVisible())??null}";
 
 const IDENT = "[A-Za-z_$][\\w$]*";
+const QUIT_ANCHOR = /messageId:(["`])desktop\.quitConfirmation\.quit\1/g;
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 function quitFunctionRange(source) {
-  const markers = [...source.matchAll(/messageId:`desktop\.quitConfirmation\.quit`/g)];
+  const markers = [...source.matchAll(QUIT_ANCHOR)];
   if (markers.length !== 1) {
     throw new Error("Expected exactly one official Quit confirmation anchor");
   }
 
-  const start = source.lastIndexOf("function ", markers[0].index);
-  const endMarker = source.indexOf("}function ", markers[0].index);
-  if (start < 0 || endMarker < 0) {
+  // Current official builds register Quit in an anonymous IIFE. Its callback
+  // contains other functions, so the nearest preceding `function` is unrelated.
+  const headers = [...source.matchAll(new RegExp(
+    `function(?: ${IDENT})?\\(\\{[^{}]*\\}\\)\\{`, "g",
+  ))].filter((match) => match.index < markers[0].index &&
+    /isWindows:/.test(match[0]) && /quitState:/.test(match[0]) &&
+    /windows:/.test(match[0]));
+  if (headers.length !== 1) {
+    throw new Error("Expected exactly one official Quit registration function");
+  }
+  const start = headers[0].index;
+  const anonymous = headers[0][0].startsWith("function(");
+  const endMarker = source.indexOf(
+    anonymous ? "})}({isWindows:" : "}function ", markers[0].index,
+  );
+  if (endMarker < 0) {
     throw new Error("Could not isolate official Quit handler");
   }
-  const end = endMarker + 1;
+  const end = endMarker + (anonymous ? 3 : 1);
   const body = source.slice(start, end);
-  if (!body.includes(".app.on(`before-quit`,") ||
+  if (!/\.app\.on\((["`])before-quit\1,/.test(body) ||
       !body.includes(".markAppQuitting()")) {
     throw new Error("Official Quit handler contract changed");
   }
@@ -42,13 +60,16 @@ function quitFunctionRange(source) {
 
 function applyQuitConfirmationFocus(source) {
   const { start, end, body } = quitFunctionRange(source);
-  const helperPresent = source.includes(`function ${HELPER_NAME}(`);
+  const helperPresent = body.includes(`function ${HELPER_NAME}(`);
   if (helperPresent) {
     if (body.includes("codexLinuxQuitPromptPending") &&
         !body.includes("showMessageBoxSync(")) {
       return source;
     }
     throw new Error("Incomplete Quit confirmation focus patch");
+  }
+  if (source.includes(`function ${HELPER_NAME}(`)) {
+    throw new Error("Quit confirmation helper is outside its registration function");
   }
 
   const headerEnd = body.indexOf("}){");
@@ -67,23 +88,24 @@ function applyQuitConfirmationFocus(source) {
   const quitState = binding("quitState");
 
   const beforeQuit = [...body.matchAll(
-    /([A-Za-z_$][\w$]*)\.app\.on\(`before-quit`,([A-Za-z_$][\w$]*)=>\{/g,
+    /([A-Za-z_$][\w$]*)\.app\.on\((["`])before-quit\2,([A-Za-z_$][\w$]*)=>\{/g,
   )];
   if (beforeQuit.length !== 1) {
     throw new Error("Expected one official before-quit handler");
   }
-  const [, appAlias, eventName] = beforeQuit[0];
-  const confirmation = new RegExp(
-    `if\\(${appAlias}\\.dialog\\.showMessageBoxSync\\((\\{[\\s\\S]*?\\})\\)!==0\\)` +
-      `\\{${eventName}\\.preventDefault\\(\\);return\\}` +
-      `${quitState}\\.markQuitApproved\\(\\),${IDENT}=!0,${windows}\\.markAppQuitting\\(\\)`,
-    "g",
-  );
-  if ([...body.matchAll(confirmation)].length !== 1) {
+  const [, appAlias, , eventName] = beforeQuit[0];
+  const dialog = `${escapeRegExp(appAlias)}\\.dialog\\.showMessageBoxSync\\((\\{[\\s\\S]*?\\})\\)`;
+  const prevent = `${escapeRegExp(eventName)}\\.preventDefault\\(\\)`;
+  const approve = `${escapeRegExp(quitState)}\\.markQuitApproved\\(\\),${IDENT}=!0,${escapeRegExp(windows)}\\.markAppQuitting\\(\\)`;
+  const confirmations = [
+    new RegExp(`if\\(${dialog}!==0\\)\\{${prevent};return\\}${approve}`, "g"),
+    new RegExp(`0!==${dialog}\\?${prevent}:\\(${approve}\\)`, "g"),
+  ].flatMap((pattern) => [...body.matchAll(pattern)].map((match) => ({ pattern, match })));
+  if (confirmations.length !== 1) {
     throw new Error("Expected one official synchronous Quit confirmation");
   }
 
-  let patchedBody = body.replace(confirmation, (_match, options) =>
+  let patchedBody = body.replace(confirmations[0].pattern, (_match, options) =>
     `${eventName}.preventDefault();codexLinuxQuitPromptPending=!0;` +
     `let codexLinuxParent=${HELPER_NAME}(${windows});` +
     `let codexLinuxOptions=${options};` +
@@ -100,7 +122,11 @@ function applyQuitConfirmationFocus(source) {
       `${eventName}.preventDefault();return}`,
   );
 
-  return source.slice(0, start) + HELPER_SOURCE + patchedBody + source.slice(end);
+  // Keep declarations inside the IIFE; inserting them before it would break
+  // the surrounding official comma expression.
+  patchedBody = patchedBody.slice(0, header.length) + HELPER_SOURCE +
+    patchedBody.slice(header.length);
+  return source.slice(0, start) + patchedBody + source.slice(end);
 }
 
 function patchRequiredCoreBlockers(extractedDir) {
@@ -113,7 +139,7 @@ function patchRequiredCoreBlockers(extractedDir) {
       source: fs.readFileSync(path.join(buildDir, name), "utf8"),
     }));
   const mainCandidates = modules.filter(({ source }) =>
-    source.includes("messageId:`desktop.quitConfirmation.quit`"));
+    [...source.matchAll(QUIT_ANCHOR)].length > 0);
   if (mainCandidates.length !== 1) {
     throw new Error("Expected exactly one official main-process Quit module");
   }

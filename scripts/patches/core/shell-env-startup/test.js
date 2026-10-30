@@ -8,6 +8,7 @@ const vm = require("node:vm");
 const {
   DEFER,
   applyShellEnvironmentStartup,
+  matchesShellEnvironment,
 } = require("./shell-env.js");
 
 // Independent reduced fixture of the signed shell loader contract.
@@ -99,13 +100,22 @@ test("matches renamed minified bindings without depending on the original identi
   new vm.Script(patched);
 });
 
+test("current quoted loader retains its body and gets exactly one deferral", () => {
+  const quoted = FIXTURE.replaceAll("`", '"');
+  assert.equal(matchesShellEnvironment(quoted), true);
+  const patched = applyShellEnvironmentStartup(quoted);
+  assert.equal(patched.replace(DEFER, ""), quoted);
+  assert.equal(applyShellEnvironmentStartup(patched), patched);
+  new vm.Script(patched);
+});
+
 test("applies to the signed official shell environment module", {
   skip: process.env.CODEX_SIGNED_EXTRACTED_APP == null,
 }, () => {
   const dir = path.join(process.env.CODEX_SIGNED_EXTRACTED_APP, ".vite", "build");
   const sources = fs.readdirSync(dir).filter((name) => name.endsWith(".js"))
     .map((name) => fs.readFileSync(path.join(dir, name), "utf8"))
-    .filter((source) => source.includes("`Failed to load shell env`"));
+    .filter(matchesShellEnvironment);
   assert.equal(sources.length, 1);
   const patched = applyShellEnvironmentStartup(sources[0]);
   assert.notEqual(patched, sources[0]);

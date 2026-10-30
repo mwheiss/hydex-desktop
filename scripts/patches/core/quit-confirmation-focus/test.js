@@ -7,6 +7,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
+const { matchesShellEnvironment } = require("../shell-env-startup/shell-env.js");
 
 const {
   applyQuitConfirmationFocus,
@@ -26,6 +27,21 @@ const OFFICIAL_BUNDLE =
 const OFFICIAL_SHELL =
   "async function load(a,b){let started=Date.now();electron.app.isPackaged||clean();" +
   "let abort=new AbortController;logger(`Failed to load shell env`,{resultSource:`load`})}";
+
+// Current 26.1027 registration: anonymous IIFE, quoted message IDs, nested
+// functions before/inside the dialog, pending-worktree guard and ternary result.
+const CURRENT_BUNDLE =
+  'function({isWindows:e,disableQuitConfirmationPrompt:t,quitState:r,windows:i,getPendingWorktrees:d}){' +
+  'let S=!1;l.app.on("before-quit",o=>{' +
+  'if(function({platform:e="linux"}={}){return e==="darwin"}()){o.preventDefault();return}' +
+  'let a=d()?.some(e=>"failed"!==e.phase&&e.conversationStartResult?.status!=="created")??!1;' +
+  'if(e||r.canQuitWithoutPrompt()||t||!a){S=!0,i.markAppQuitting();return}' +
+  '0!==l.dialog.showMessageBoxSync({message:"Quit?",buttons:[{messageId:"desktop.quitConfirmation.quit"},"Cancel"],' +
+  'detail:function({pending:e}){return e?"pending":"idle"}({pending:a})})?' +
+  'o.preventDefault():(r.markQuitApproved(),S=!0,i.markAppQuitting())}),' +
+  'l.app.on("will-quit",t=>{Promise.allSettled([flush(),save()]).then(()=>l.app.quit())})}' +
+  '({isWindows:params.isWindows,disableQuitConfirmationPrompt:false,quitState:params.quitState,' +
+  'windows:params.windows,getPendingWorktrees:params.getPendingWorktrees})';
 
 test("one required descriptor owns both portable core repairs", () => {
   assert.equal(descriptors.length, 1);
@@ -83,7 +99,8 @@ function window(id, { destroyed = false, visible = true } = {}) {
   };
 }
 
-function harness({ focused = window(7), primary = window(3), others = [] } = {}) {
+function harness({ focused = window(7), primary = window(3), others = [],
+  currentBundle = false, pendingWorktrees = [{ phase: "pending" }] } = {}) {
   const handlers = new Map();
   const dialogCalls = [];
   const errors = [];
@@ -130,11 +147,14 @@ function harness({ focused = window(7), primary = window(3), others = [] } = {})
     },
   };
   const register = vm.runInNewContext(
-    `${applyQuitConfirmationFocus(OFFICIAL_BUNDLE)};qrt`,
+    currentBundle
+      ? `(params)=>(${applyQuitConfirmationFocus(CURRENT_BUNDLE)})`
+      : `${applyQuitConfirmationFocus(OFFICIAL_BUNDLE)};qrt`,
     context,
   );
   register({
     isWindows: false,
+    getPendingWorktrees: () => pendingWorktrees,
     quitState: {
       canQuitWithoutPrompt: () => approved,
       markQuitApproved: () => { approved = true; },
@@ -174,7 +194,7 @@ test("fails closed when the official Quit confirmation changes or is ambiguous",
   );
   assert.throws(
     () => applyQuitConfirmationFocus(OFFICIAL_BUNDLE.replace("quitState:r", "quitStateChanged:r")),
-    /Official Quit binding changed: quitState/,
+    /Expected exactly one official Quit registration function/,
   );
   assert.throws(
     () => applyQuitConfirmationFocus(OFFICIAL_BUNDLE.replace("markQuitApproved", "approveQuit")),
@@ -239,6 +259,54 @@ test("falls back to another visible live window", async () => {
   assert.equal(app.accepted, 0);
 });
 
+test("current anonymous registration retains nested worktree detail and async approval", async () => {
+  const patched = applyQuitConfirmationFocus(CURRENT_BUNDLE);
+  assert.match(patched, /function\(\{[^}]+\}\)\{let codexLinuxQuitPromptPending/);
+  assert.match(patched, /conversationStartResult\?\.status!=="created"/);
+  assert.equal(applyQuitConfirmationFocus(patched), patched);
+  new vm.Script(`(${patched})`);
+  const app = harness({ currentBundle: true });
+  app.emitBeforeQuit();
+  app.emitBeforeQuit();
+  await tick();
+  assert.equal(app.prevented, 2);
+  assert.equal(app.dialogCalls.length, 1);
+  assert.equal(app.dialogCalls[0][1].detail, "pending");
+  app.answer(0);
+  await tick();
+  assert.equal(app.quitCalls, 1);
+  assert.equal(app.accepted, 1);
+  assert.deepEqual(app.errors, []);
+});
+
+test("current registration preserves cancellation and completed-worktree shortcut", async () => {
+  const app = harness({ currentBundle: true });
+  app.emitBeforeQuit();
+  await tick();
+  app.answer(1);
+  await tick();
+  assert.equal(app.quitCalls, 0);
+  assert.equal(app.accepted, 0);
+  app.emitBeforeQuit();
+  await tick();
+  assert.equal(app.dialogCalls.length, 2);
+  app.answer(1);
+  await tick();
+  const done = harness({ currentBundle: true,
+    pendingWorktrees: [{ phase: "failed" }, { conversationStartResult: { status: "created" } }] });
+  done.emitBeforeQuit();
+  await tick();
+  assert.equal(done.dialogCalls.length, 0);
+  assert.equal(done.accepted, 1);
+});
+
+test("current registration fails closed on changed or ambiguous approval contracts", () => {
+  assert.throws(() => applyQuitConfirmationFocus(CURRENT_BUNDLE.replace("0!==l.dialog", "1!==l.dialog")),
+    /Expected one official synchronous Quit confirmation/);
+  assert.throws(() => applyQuitConfirmationFocus(`${CURRENT_BUNDLE}${CURRENT_BUNDLE}`),
+    /exactly one official Quit confirmation anchor/);
+});
+
 test("applies both required repairs to uniquely anchored signed campaign modules", {
   skip: process.env.CODEX_SIGNED_EXTRACTED_APP == null,
 }, (t) => {
@@ -251,11 +319,9 @@ test("applies both required repairs to uniquely anchored signed campaign modules
       source: fs.readFileSync(path.join(buildDir, name), "utf8"),
     }));
   const candidates = modules.filter(({ source }) =>
-    source.includes("messageId:`desktop.quitConfirmation.quit`"));
+    /messageId:(["`])desktop\.quitConfirmation\.quit\1/.test(source));
   const shellCandidates = modules.filter(({ source }) =>
-    source.includes("`Failed to load shell env`") &&
-      source.includes("resultSource:`load`") &&
-      source.includes("new AbortController"));
+    matchesShellEnvironment(source));
   assert.equal(
     candidates.length,
     1,
@@ -272,13 +338,9 @@ test("applies both required repairs to uniquely anchored signed campaign modules
   assert.notEqual(patched, source);
   assert.match(patched, /function codexLinuxQuitDialogParent\(/);
   assert.match(patched, /codexLinuxQuitPromptPending=!0/);
-  assert.doesNotMatch(
-    patched.slice(
-      patched.lastIndexOf("function ", patched.indexOf("desktop.quitConfirmation.quit")),
-      patched.indexOf("}function ", patched.indexOf("desktop.quitConfirmation.quit")) + 1,
-    ),
-    /showMessageBoxSync\(/,
-  );
+  assert.equal(patched.split("showMessageBoxSync(").length,
+    source.split("showMessageBoxSync(").length - 1);
+  new vm.Script(patched);
   assert.equal(applyQuitConfirmationFocus(patched), patched);
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "signed-required-core-"));
