@@ -268,6 +268,24 @@ test("manifest defaults apply only until a local or explicit feature config exis
   assert.deepEqual(linuxFeaturesConfig({ featuresRoot }).enabled, []);
 });
 
+test("absent optional config applies manifest defaults without spurious warnings", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-feature-no-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const featuresRoot = path.join(root, "linux-features");
+  const featureDir = path.join(featuresRoot, "default-feature");
+  fs.mkdirSync(featureDir, { recursive: true });
+  fs.writeFileSync(path.join(featureDir, "README.md"), "# Default feature\n");
+  fs.writeFileSync(path.join(featureDir, "feature.json"), JSON.stringify({ id: "default-feature", defaultEnabled: true }));
+  const warnings = [];
+  t.mock.method(console, "warn", (...args) => warnings.push(args.map(String).join(" ")));
+  assert.deepEqual(linuxFeaturesConfig({ featuresRoot }).enabled, ["default-feature"]);
+  assert.deepEqual(warnings, []);
+  assert.throws(() => linuxFeaturesConfig({ featuresRoot, strictConfig: true }), /file does not exist/);
+  const explicit = path.join(root, "explicit.json");
+  fs.writeFileSync(explicit, "{}");
+  assert.throws(() => linuxFeaturesConfig({ featuresRoot, featuresConfigPath: explicit, strictConfig: true }), /enabled array/);
+});
+
 function makeFeatureRoot(root, featureManifest) {
   const featuresRoot = path.join(root, "linux-features");
   const featureDir = path.join(featuresRoot, "unsafe-link");
