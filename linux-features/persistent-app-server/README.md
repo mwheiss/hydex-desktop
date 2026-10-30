@@ -201,6 +201,14 @@ WebSocket frames. Desktop's dynamic `codex_app` transport is carried as a
 thread-scoped override; unrelated request configuration remains unchanged. It
 never invokes the raw byte tunnel for a stdio client.
 
+The upstream startup-policy check adds `--print-startup-config` and
+`--startup-client-info` to that proxy command. The adapter validates the same
+configured socket, removes only `proxy --sock <socket>`, and runs the packaged
+CLI's one-shot startup check directly. Its configuration overrides, JSON output,
+exit status, and managed `--startup-sign-out` action are preserved. The probe
+loads the actual organization policy without attaching to, starting, or restarting
+the persistent server. Other unknown server launch arguments remain errors.
+
 The service uses `Type=simple`; its Python helper execs the packaged CLI:
 
 ```text
