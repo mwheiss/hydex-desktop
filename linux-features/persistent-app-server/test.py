@@ -533,29 +533,35 @@ class Tests(unittest.TestCase):
             "'configRequirements':{'requirements':None}}))\n"
             "sys.exit(int(os.environ.get('PROBE_EXIT','0')))\n")
         identity = json.dumps({"name": "codex_desktop", "title": "Codex Desktop", "version": "26.1027.30824"})
-        for sign_out in (False, True):
-            for exit_code in (0, 31):
-                with self.subTest(sign_out=sign_out, exit_code=exit_code):
-                    prefix = ["-c", "features.code_mode_host=true"]
-                    suffix = ["--print-startup-config", "--startup-client-info", identity,
-                              "-c", 'model="configured-model"', "--enable", "code_mode_host"]
-                    if sign_out:
-                        suffix.append("--startup-sign-out")
-                    result = subprocess.run(
-                        [sys.executable, str(self.feature / "codex-vscode-proxy"), *prefix,
-                         "app-server", "proxy", "--sock", str(m.socket_path(config)), *suffix],
-                        text=True, capture_output=True, timeout=5,
-                        env={**os.environ, "PROBE_LOG": str(log), "PROBE_EXIT": str(exit_code)},
-                    )
-                    self.assertEqual(result.returncode, exit_code, result.stderr)
-                    self.assertEqual(json.loads(result.stdout), {
-                        "appServerVersion": "0.166.0-alpha.5.1",
-                        "configRequirements": {"requirements": None},
-                    })
-                    self.assertEqual(json.loads(log.read_text()), {
-                        "args": [*prefix, "app-server", *suffix], "home": config["codex_home"],
-                    })
-                    self.assertFalse(m.socket_path(config).exists())
+        commands = (
+            (["app-server", "proxy", "--sock", str(m.socket_path(config))], ["app-server"]),
+            (["app-server", "--analytics-default-enabled"], ["app-server", "--analytics-default-enabled"]),
+            (["app-server", "-c", "additional=true", "--analytics-default-enabled"],
+             ["app-server", "-c", "additional=true", "--analytics-default-enabled"]),
+        )
+        for command, forwarded in commands:
+            for sign_out in (False, True):
+                for exit_code in (0, 31):
+                    with self.subTest(command=command, sign_out=sign_out, exit_code=exit_code):
+                        prefix = ["-c", "features.code_mode_host=true"]
+                        suffix = ["--print-startup-config", "--startup-client-info", identity,
+                                  "-c", 'model="configured-model"', "--enable", "code_mode_host"]
+                        if sign_out:
+                            suffix.append("--startup-sign-out")
+                        result = subprocess.run(
+                            [sys.executable, str(self.feature / "codex-vscode-proxy"), *prefix, *command, *suffix],
+                            text=True, capture_output=True, timeout=5,
+                            env={**os.environ, "PROBE_LOG": str(log), "PROBE_EXIT": str(exit_code)},
+                        )
+                        self.assertEqual(result.returncode, exit_code, result.stderr)
+                        self.assertEqual(json.loads(result.stdout), {
+                            "appServerVersion": "0.166.0-alpha.5.1",
+                            "configRequirements": {"requirements": None},
+                        })
+                        self.assertEqual(json.loads(log.read_text()), {
+                            "args": [*prefix, *forwarded, *suffix], "home": config["codex_home"],
+                        })
+                        self.assertFalse(m.socket_path(config).exists())
 
     def test_desktop_startup_policy_probe_rejects_drift_and_wrong_socket(self):
         config = self.install()
@@ -575,6 +581,21 @@ class Tests(unittest.TestCase):
             [*prefix, socket_path, *flags, "--unknown-startup-flag"],
             [*prefix, socket_path, "--print-startup-config", "--startup-client-info"],
         ]
+        normalized = ["-c", "features.code_mode_host=true", "app-server", "--analytics-default-enabled"]
+        invalid.extend([
+            [*normalized, "--print-startup-config"],
+            [*normalized, "--startup-client-info", "{}", "--startup-sign-out"],
+            [*normalized, *flags, "--print-startup-config"],
+            [*normalized, *flags, "--analytics-default-enabled"],
+            [*normalized, *flags, "--listen", "unix://"],
+            [*normalized, *flags, "--sock", socket_path],
+            [*normalized, *flags, "--unknown-startup-flag"],
+            ["app-server", *flags],
+            ["app-server", "generate-json-schema", *flags],
+        ])
+        for command in ([*prefix, socket_path], normalized):
+            for identity in ("not-json", "[]", "null"):
+                invalid.append([*command, "--print-startup-config", "--startup-client-info", identity])
         for args in invalid:
             with self.subTest(args=args):
                 result = subprocess.run(
