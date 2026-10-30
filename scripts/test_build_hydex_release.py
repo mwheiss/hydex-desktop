@@ -17,7 +17,7 @@ SPEC.loader.exec_module(MODULE)
 
 
 class BuildHydexReleaseTests(unittest.TestCase):
-    def run_release(self, repo, validation, *, validate_only=False):
+    def run_release(self, repo, validation, *, validate_only=False, defer_latest=False):
         output = repo / "dist/release-2026.10.07.194202"
         output.mkdir(parents=True)
         version = "2026.10.07.194202"
@@ -38,6 +38,7 @@ class BuildHydexReleaseTests(unittest.TestCase):
             report=output / "release-report.json",
             plan_only=False,
             validate_only=validate_only,
+            defer_latest=defer_latest,
         )
 
         def build(command, cwd, *, env, capture):
@@ -86,6 +87,18 @@ class BuildHydexReleaseTests(unittest.TestCase):
             )
             self.assertTrue(json.loads(args.report.read_text())["validated"])
             self.assertEqual(list((repo / "dist").glob("release-*/*latest*")), [])
+
+    def test_deferred_release_keeps_previous_latest_for_runtime_acceptance(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            (repo / "dist").mkdir()
+            latest = repo / "dist/hydex-desktop-latest.pkg.tar.zst"
+            latest.symlink_to("previous.pkg.tar.zst")
+            args = self.run_release(repo, Mock(return_value={}), defer_latest=True)
+            self.assertEqual(latest.readlink(), Path("previous.pkg.tar.zst"))
+            report = json.loads(args.report.read_text())
+            self.assertTrue(report["validated"])
+            self.assertTrue(report["latestPromotionDeferred"])
 
     def test_failed_release_validation_keeps_previous_latest(self):
         with tempfile.TemporaryDirectory() as temporary:
