@@ -121,15 +121,21 @@ def desktop_proxy_config_args(args, socket_path):
 
 
 def desktop_startup_config_args(args, socket_path):
-    """Route the exact one-shot Desktop policy probe to the packaged CLI."""
+    """Validate either upstream one-shot policy-probe form without a service attach."""
     try:
         command_index = args.index("app-server")
     except ValueError:
         return None
-    expected = ["app-server", "proxy", "--sock", str(socket_path)]
-    if args[command_index:command_index + len(expected)] != expected:
-        return None
-    remaining = args[:command_index] + args[command_index + len(expected):]
+    proxy = args[command_index:command_index + 2] == ["app-server", "proxy"]
+    if proxy:
+        expected = ["app-server", "proxy", "--sock", str(socket_path)]
+        if args[command_index:command_index + len(expected)] != expected:
+            return None
+        remaining = args[:command_index] + args[command_index + len(expected):]
+        forwarded = args[:command_index] + ["app-server"] + args[command_index + len(expected):]
+    else:
+        remaining = args[:command_index] + args[command_index + 1:]
+        forwarded = args
     seen = set()
     index = 0
     while index < len(remaining):
@@ -140,21 +146,32 @@ def desktop_startup_config_args(args, socket_path):
             index += 2
         elif argument.startswith(("-c=", "--config=", "--enable=", "--disable=")):
             index += 1
-        elif argument in ("--print-startup-config", "--startup-sign-out"):
-            if argument in seen:
+        elif argument in ("--print-startup-config", "--startup-sign-out", "--analytics-default-enabled"):
+            if index < command_index or argument in seen:
+                return None
+            if argument == "--analytics-default-enabled" and proxy:
                 return None
             seen.add(argument)
             index += 1
         elif argument == "--startup-client-info":
-            if argument in seen or index + 1 >= len(remaining):
+            if index < command_index or argument in seen or index + 1 >= len(remaining):
+                return None
+            try:
+                identity = json.loads(remaining[index + 1])
+            except (TypeError, ValueError):
+                return None
+            if not isinstance(identity, dict):
                 return None
             seen.add(argument)
             index += 2
         else:
             return None
-    if not {"--print-startup-config", "--startup-client-info"} <= seen:
+    required = {"--print-startup-config", "--startup-client-info"}
+    if not proxy:
+        required.add("--analytics-default-enabled")
+    if not required <= seen:
         return None
-    return args[:command_index] + ["app-server"] + args[command_index + len(expected):]
+    return forwarded
 
 
 def cli_config_values(args, target_key):
