@@ -521,6 +521,71 @@ class Tests(unittest.TestCase):
         self.assertEqual(wrong_socket.returncode, 78)
         self.assertIn("refusing an unrecognized app-server launch", wrong_socket.stderr)
 
+    def test_desktop_startup_policy_probe_runs_packaged_cli_without_service_setup(self):
+        config = self.install()
+        log = self.root / "startup-policy.json"
+        self.feature.joinpath("manage.py").write_text("raise RuntimeError('must not ensure service')\n")
+        self.cli.write_text(
+            "#!/usr/bin/python3\nimport json,os,sys\n"
+            "with open(os.environ['PROBE_LOG'],'w') as f: "
+            "json.dump({'args':sys.argv[1:],'home':os.environ['CODEX_HOME']},f)\n"
+            "print(json.dumps({'appServerVersion':'0.166.0-alpha.5.1',"
+            "'configRequirements':{'requirements':None}}))\n"
+            "sys.exit(int(os.environ.get('PROBE_EXIT','0')))\n")
+        identity = json.dumps({"name": "codex_desktop", "title": "Codex Desktop", "version": "26.1027.30824"})
+        for sign_out in (False, True):
+            for exit_code in (0, 31):
+                with self.subTest(sign_out=sign_out, exit_code=exit_code):
+                    prefix = ["-c", "features.code_mode_host=true"]
+                    suffix = ["--print-startup-config", "--startup-client-info", identity,
+                              "-c", 'model="configured-model"', "--enable", "code_mode_host"]
+                    if sign_out:
+                        suffix.append("--startup-sign-out")
+                    result = subprocess.run(
+                        [sys.executable, str(self.feature / "codex-vscode-proxy"), *prefix,
+                         "app-server", "proxy", "--sock", str(m.socket_path(config)), *suffix],
+                        text=True, capture_output=True, timeout=5,
+                        env={**os.environ, "PROBE_LOG": str(log), "PROBE_EXIT": str(exit_code)},
+                    )
+                    self.assertEqual(result.returncode, exit_code, result.stderr)
+                    self.assertEqual(json.loads(result.stdout), {
+                        "appServerVersion": "0.166.0-alpha.5.1",
+                        "configRequirements": {"requirements": None},
+                    })
+                    self.assertEqual(json.loads(log.read_text()), {
+                        "args": [*prefix, "app-server", *suffix], "home": config["codex_home"],
+                    })
+                    self.assertFalse(m.socket_path(config).exists())
+
+    def test_desktop_startup_policy_probe_rejects_drift_and_wrong_socket(self):
+        config = self.install()
+        log = self.root / "unexpected-cli-call"
+        self.cli.write_text("#!/bin/sh\ntouch \"$PROBE_LOG\"\n")
+        self.feature.joinpath("manage.py").write_text("raise RuntimeError('must not ensure service')\n")
+        prefix = ["-c", "features.code_mode_host=true", "app-server", "proxy", "--sock"]
+        flags = ["--print-startup-config", "--startup-client-info", '{"name":"codex_desktop"}']
+        socket_path = str(m.socket_path(config))
+        invalid = [
+            [*prefix, str(self.root / "wrong.sock"), *flags],
+            [*prefix, socket_path, "--print-startup-config"],
+            [*prefix, socket_path, "--startup-client-info", "{}", "--startup-sign-out"],
+            [*prefix, socket_path, *flags, "--print-startup-config"],
+            [*prefix, socket_path, *flags, "--startup-client-info", "{}"],
+            [*prefix, socket_path, *flags, "--listen", "unix://"],
+            [*prefix, socket_path, *flags, "--unknown-startup-flag"],
+            [*prefix, socket_path, "--print-startup-config", "--startup-client-info"],
+        ]
+        for args in invalid:
+            with self.subTest(args=args):
+                result = subprocess.run(
+                    [sys.executable, str(self.feature / "codex-vscode-proxy"), *args],
+                    text=True, capture_output=True, timeout=5,
+                    env={**os.environ, "PROBE_LOG": str(log)},
+                )
+                self.assertEqual(result.returncode, 78, result.stderr)
+                self.assertIn("refusing an unrecognized app-server launch", result.stderr)
+                self.assertFalse(log.exists())
+
     def test_feature_selection_preserves_other_features_and_settings(self):
         repo = self.root / "repo"
         (repo / "linux-features").mkdir(parents=True)
