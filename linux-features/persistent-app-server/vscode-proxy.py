@@ -119,6 +119,44 @@ def desktop_proxy_config_args(args, socket_path):
     return remaining if config_overrides_only(remaining) else None
 
 
+
+def desktop_startup_config_args(args, socket_path):
+    """Route the exact one-shot Desktop policy probe to the packaged CLI."""
+    try:
+        command_index = args.index("app-server")
+    except ValueError:
+        return None
+    expected = ["app-server", "proxy", "--sock", str(socket_path)]
+    if args[command_index:command_index + len(expected)] != expected:
+        return None
+    remaining = args[:command_index] + args[command_index + len(expected):]
+    seen = set()
+    index = 0
+    while index < len(remaining):
+        argument = remaining[index]
+        if argument in ("-c", "--config", "--enable", "--disable"):
+            if index + 1 >= len(remaining):
+                return None
+            index += 2
+        elif argument.startswith(("-c=", "--config=", "--enable=", "--disable=")):
+            index += 1
+        elif argument in ("--print-startup-config", "--startup-sign-out"):
+            if argument in seen:
+                return None
+            seen.add(argument)
+            index += 1
+        elif argument == "--startup-client-info":
+            if argument in seen or index + 1 >= len(remaining):
+                return None
+            seen.add(argument)
+            index += 2
+        else:
+            return None
+    if not {"--print-startup-config", "--startup-client-info"} <= seen:
+        return None
+    return args[:command_index] + ["app-server"] + args[command_index + len(expected):]
+
+
 def cli_config_values(args, target_key):
     values = []
     index = 0
@@ -656,6 +694,13 @@ def main():
         fail(f"packaged Codex CLI is unavailable: {binary}")
 
     socket_path = codex_home / "app-server-control/app-server-control.sock"
+    startup_args = desktop_startup_config_args(args, socket_path)
+    if startup_args is not None:
+        # The CLI owns policy loading and managed sign-out. This one-shot command
+        # must neither attach to nor restart the persistent authority.
+        os.execve(binary, [str(binary), *startup_args],
+                  dict(os.environ, CODEX_HOME=str(codex_home)))
+        return
     config_args = desktop_proxy_config_args(args, socket_path)
     if (
         "app-server" in args
