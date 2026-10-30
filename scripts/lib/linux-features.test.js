@@ -51,7 +51,7 @@ test("internal accepts only omission or booleans for repository and local manife
   }
 });
 
-test("defaultEnabled accepts only omission or boolean false for repository, local, and internal features", (t) => {
+test("defaultEnabled accepts omission or booleans for repository, local, and internal features", (t) => {
   for (const origin of ["repo", "local", "internal"]) {
     for (const scenario of manifestCases.defaultEnabled) {
       const root = fs.mkdtempSync(path.join(os.tmpdir(), `codex-feature-default-${origin}-${scenario.label}-`));
@@ -71,7 +71,7 @@ test("defaultEnabled accepts only omission or boolean false for repository, loca
         });
       } else {
         const [feature] = discoverLinuxFeatureManifests({ featuresRoot: root });
-        assert.equal(feature.manifest.defaultEnabled, false);
+        assert.equal(feature.manifest.defaultEnabled, scenario.value === true);
         assert.deepEqual(loadEnabledLinuxFeatures({ featuresRoot: root }), []);
       }
     }
