@@ -303,6 +303,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temp-dir", type=Path, default=Path("/home/mheiss/.cache/hydex-build/tmp"))
     parser.add_argument("--max-build-threads", type=int, default=8)
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--defer-latest", action="store_true", help="Keep the previous latest alias while the validated package awaits runtime acceptance.")
     parser.add_argument("--plan-only", action="store_true")
     args = parser.parse_args()
     if not re.fullmatch(r"\d{4}\.\d{2}\.\d{2}\.\d{6}", args.package_version):
@@ -368,9 +369,10 @@ def main() -> None:
         },
         "artifacts": artifacts,
         "validated": True,
+        "latestPromotionDeferred": args.defer_latest,
     }
     write_report(args.report, report)
-    if not args.validate_only:
+    if not args.validate_only and not args.defer_latest:
         latest = promote_package(
             args.repo, expected_artifacts(args.output_dir, args.package_version)["pacman"]
         )
