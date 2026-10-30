@@ -109,15 +109,15 @@ let
   assertionsFail = evaluated: lib.any (item: !item.assertion) evaluated.config.assertions;
   invalidHomeFiles = map (cfg: assertionsFail (evalHome cfg)) invalidEnvironmentFileConfigs;
   invalidNixOSFiles = map (cfg: assertionsFail (evalNixOS cfg)) invalidEnvironmentFileConfigs;
-  accountSwitcherPackage = packages.codex-desktop.override {
+  accountSwitcherPackage = packages.hydex-desktop.override {
     linuxFeatureIds = [ "account-switcher" ];
   };
   # hasInfix builds a regex, whose pattern cannot carry Nix store context.
   # Only the comparison pattern loses context; the package keeps its dependency.
   secretToolBin = builtins.unsafeDiscardStringContext "${lib.getBin pkgs.libsecret}/bin";
   maximalPackages = [
-    packages.codex-desktop-maximal-directory-watch
-    packages.codex-desktop-maximal-shallow-watch
+    packages.hydex-desktop-maximal-directory-watch
+    packages.hydex-desktop-maximal-shallow-watch
   ];
 in
 assert lib.assertMsg
@@ -158,7 +158,7 @@ assert lib.assertMsg
 assert lib.assertMsg
   (accountSwitcherPackage.passthru.linuxFeatureIds == [ "account-switcher" ]
     && lib.hasInfix secretToolBin accountSwitcherPackage.installPhase
-    && !(lib.hasInfix secretToolBin packages.codex-desktop.installPhase))
+    && !(lib.hasInfix secretToolBin packages.hydex-desktop.installPhase))
   "Account switching must remain selectable with its conditional Secret Service CLI runtime";
 assert lib.assertMsg
   (!features.optionType.check [ "not-a-feature" ]
