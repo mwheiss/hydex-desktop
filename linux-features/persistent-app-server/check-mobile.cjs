@@ -22,8 +22,8 @@ function write(file, value, mode) {
 }
 try {
   const isolated = path.join(tmp, "linux-features/remote-mobile-control");
-  // Only this feature is copied. Sibling modules cannot accidentally satisfy
-  // imports, staging paths or shared-transport references in the fixture.
+  // Copy this feature and its generic asset helpers. No sibling feature can
+  // satisfy staging paths or shared-transport references in the fixture.
   fs.cpSync(mobile, isolated, { recursive: true, dereference: true });
   check("mobile has no declared shared-server dependency", () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(isolated, "feature.json"), "utf8"));
@@ -33,12 +33,17 @@ try {
     assert.equal(manifest.entrypoints.stageHook, "./stage.sh");
     assert.deepEqual(fs.readdirSync(path.join(tmp, "linux-features")), ["remote-mobile-control"]);
   });
+  for (const helper of ["assets.js", "minified-js.js"]) {
+    const relative = path.join("scripts/patches/lib", helper);
+    fs.mkdirSync(path.join(tmp, "scripts/patches/lib"), { recursive: true });
+    fs.copyFileSync(path.join(repo, relative), path.join(tmp, relative));
+  }
   const mobilePatch = require(path.join(isolated, "patch.js"));
   const transform = mobilePatch.applyLinuxRemoteMobileAppServerRemoteControlPatch;
   const accepts = mobilePatch.hasLinuxRemoteMobileLocalAppServerRemoteControlPatch;
   assert.equal(typeof transform, "function");
   assert.equal(typeof accepts, "function");
-  const plain = '"use strict";function launch(overrides){let base=[`-c`,`features.code_mode_host=true`];return overrides.length===0?[...base,`app-server`,`--analytics-default-enabled`]:[`app-server`,...base,...overrides,`--analytics-default-enabled`]}function trailing(){}';
+  const plain = "\"use strict\";function launch(overrides){let base=[\"-c\",\"features.code_mode_host=true\"];return 0===overrides.length?[...base,\"app-server\",\"--analytics-default-enabled\"]:[\"app-server\",...base,...overrides,\"--analytics-default-enabled\"]}function trailing(){}";
   let patched;
   check("actual mobile transform patches an ordinary stdio launch without shared transport", () => {
     patched = transform(plain);
@@ -65,7 +70,7 @@ try {
     assert.deepEqual(argv(proxy, [], "darwin"), ["-c", "features.code_mode_host=true", "app-server", "--analytics-default-enabled"]);
   });
   const extracted = path.join(tmp, "work/app-extracted");
-  const bundle = path.join(extracted, ".vite/build/plain-launch.js");
+  const bundle = path.join(extracted, ".vite/build/early-bootstrap.js");
   check("registered mobile descriptor applies without a shared-feature descriptor", () => {
     write(bundle, plain);
     const descriptor = mobilePatch.find(d => d.id === "linux-remote-mobile-app-server-remote-control");

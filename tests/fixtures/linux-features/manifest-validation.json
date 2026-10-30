@@ -18,7 +18,7 @@
   "defaultEnabled": [
     { "label": "omitted" },
     { "label": "false", "value": false },
-    { "label": "true", "value": true, "error": "defaultEnabled true is not allowed" },
+    { "label": "true", "value": true },
     { "label": "string-false", "value": "false", "error": "defaultEnabled must be a boolean" },
     { "label": "string-true", "value": "true", "error": "defaultEnabled must be a boolean" },
     { "label": "string-yes", "value": "yes", "error": "defaultEnabled must be a boolean" },
