@@ -252,8 +252,8 @@ function linuxFeaturesConfig(options = {}) {
       .filter((feature) => feature.manifest.defaultEnabled)
       .map((feature) => feature.id)
     : [];
-  const normalizedEnabled = normalizeEnabledFeatureIds(
-    config?.enabled,
+  const normalizedEnabled = config == null ? [] : normalizeEnabledFeatureIds(
+    config.enabled,
     configPath,
     { strict: options.strictConfig === true },
   );
