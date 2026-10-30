@@ -180,6 +180,7 @@ function syntheticMainBundle() {
       serializer: "TV",
     }),
     "function Owner(){this.remoteControlDeviceKeyClient=new wV(null),this.executionHostRegistry={}}",
+    "function oldRecovery(e){return e instanceof Error?e.message===`Remote control request failed (403): Remote-control client key material missing`:!1}",
     "async function mV({codexHome:e,hostConfig:n,logger:r=t.Jr()}){if(n.kind===`local`)try{await hV(i.default.join(e??t.Rr({hostConfig:n,preferWsl:t.Kr(n)}),pV))&&r.info(`Removed remote_control from config before app-server start`)}catch(e){r.warning(`Failed to remove remote_control before app-server start`,{safe:{},sensitive:{error:e}})}}",
   ].join("");
 }
@@ -197,6 +198,7 @@ function syntheticCurrentMainBundle() {
       serializer: "mz",
     }),
     "function Owner(){this.remoteControlDeviceKeyClient=new pz(null),this.executionHostRegistry={}}",
+    "function oldRecovery(e){return e instanceof Error?e.message===`Remote control request failed (403): Remote-control client key material missing`:!1}",
     "async function vV({codexHome:e,hostConfig:n,logger:r=t.Jr()}){if(n.kind===`local`)try{await yV(i.default.join(e??t.Rr({hostConfig:n,preferWsl:t.Kr(n)}),_V))&&r.info(`Removed remote_control from config before app-server start`)}catch(e){r.warning(`Failed to remove remote_control before app-server start`,{safe:{},sensitive:{error:e}})}}",
   ].join("");
 }
@@ -214,6 +216,7 @@ function syntheticCryptoAliasCollisionMainBundle() {
       serializer: "mz",
     }),
     "function Owner(){this.remoteControlDeviceKeyClient=new pz(null),this.executionHostRegistry={}}",
+    "function oldRecovery(e){return e instanceof Error?e.message===`Remote control request failed (403): Remote-control client key material missing`:!1}",
   ].join("");
 }
 
@@ -228,8 +231,8 @@ function captureWarns(callback) {
   }
 }
 
-function createPatchedDeviceKeyClient(configHome, moduleOverrides = {}, processEnv = {}) {
-  const patched = applyLinuxRemoteControlDeviceKeyPatch(syntheticMainBundle());
+function createPatchedDeviceKeyClient(configHome, moduleOverrides = {}, processEnv = {}, bundle = syntheticMainBundle()) {
+  const patched = applyLinuxRemoteControlDeviceKeyPatch(bundle);
   const context = {
     Buffer,
     clearTimeout,
@@ -1034,8 +1037,8 @@ test("remote mobile control feature exposes opt-in main-bundle and webview patch
       "feature:remote-mobile-control:linux-remote-mobile-active-status",
     ]);
     assert.deepEqual(descriptors.map((descriptor) => descriptor.phase), [
-      "main-bundle",
-      "main-bundle",
+      "extracted-app:pre-webview",
+      "extracted-app:pre-webview",
       "extracted-app:post-webview",
       "webview-asset",
       "webview-asset",
@@ -2614,7 +2617,7 @@ test("remote mobile feature patch report records feature metadata", () => {
       assert.notEqual(enablementBridgePatch.status, "already-applied");
       assert.ok(
         enablementBridgePatch.warnings.some((warning) =>
-          warning.includes("current remote-control enablement bridge anchors"),
+          warning.includes("app main bundle"),
         ),
       );
 
@@ -3581,8 +3584,9 @@ test("remote mobile control feature participates in ASAR patching and reports", 
   withTempFeatureRoot(["remote-mobile-control"], (root) => {
     withFeatureRootEnv(root, () => {
       const source = syntheticMainBundle();
-      const patched = patchMainBundleSource(source, null);
-      assert.match(patched, /codexLinuxRemoteControlDeviceKeyClient/);
+      // Main-process feature repairs now select their own unique chunk in the
+      // extracted-app phase; the generic main-bundle phase leaves it alone.
+      assert.equal(patchMainBundleSource(source, null), source);
 
       const tempApp = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-app-"));
       try {
@@ -3820,4 +3824,181 @@ test("remote mobile control feature participates in ASAR patching and reports", 
       }
     });
   });
+});
+
+
+test("current signed webpack device keys retain payload validation and protected signing", async (t) => {
+  const bundle = fs.readFileSync(path.join(__dirname, "fixtures/webpack-device-key-26.1027.js.txt"), "utf8");
+  const { result: patched, warnings } = captureWarnings(() => applyLinuxRemoteControlDeviceKeyPatch(bundle));
+  assert.notEqual(patched, bundle);
+  assert.deepEqual(warnings, []);
+  assert.equal(applyLinuxRemoteControlDeviceKeyPatch(patched), patched);
+  new vm.Script(patched);
+  const configHome = fs.mkdtempSync(path.join(os.tmpdir(), "current-device-key-"));
+  t.after(() => fs.rmSync(configHome, { recursive: true, force: true }));
+  const storage = createSafeStorage();
+  const client = createPatchedDeviceKeyClient(configHome, { electron: { safeStorage: storage.safeStorage } }, {}, bundle);
+  const key = await client.createDeviceKey("allow_os_protected_nonextractable");
+  const signature = await client.signDeviceKey(key.keyId, validConnectionPayload());
+  const bytes = Buffer.from(signature.signedPayloadBase64, "base64");
+  const { ignoredExtraField, ...expectedPayload } = validConnectionPayload();
+  assert.equal(ignoredExtraField, "not-signed");
+  assert.deepEqual(JSON.parse(bytes.toString()), {
+    domain: "codex-device-key-sign-payload/v1", payload: expectedPayload,
+  });
+  const publicKey = crypto.createPublicKey({ format: "der", type: "spki", key: Buffer.from(key.publicKeySpkiDerBase64, "base64") });
+  assert.equal(crypto.verify("sha256", bytes, publicKey, Buffer.from(signature.signatureDerBase64, "base64")), true);
+  assert.equal(storage.calls.encrypt.length, 1);
+  for (const [payload, error] of [
+    [validEnrollmentPayload({ nonce: "short" }), /Invalid remote-control device-key nonce/],
+    [validEnrollmentPayload({ audience: "wrong" }), /Invalid remote-control device-key enrollment audience/],
+    [validEnrollmentPayload({ deviceIdentitySha256Base64url: "short" }), /Invalid remote-control device-key SHA-256 digest/],
+    [validConnectionPayload({ scopes: ["wrong"] }), /Invalid remote-control device-key connection scopes/],
+  ]) await assert.rejects(() => client.signDeviceKey(key.keyId, payload), error);
+  const duplicate = bundle + bundle;
+  assert.equal(captureWarnings(() => applyLinuxRemoteControlDeviceKeyPatch(duplicate)).result, duplicate);
+});
+
+test("current main-process owners are unique across renamed webpack chunks", (t) => {
+  const descriptor = remoteMobilePatchDescriptors.find(({ id }) => id === "linux-remote-control-device-key");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "current-main-owners-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const directory = path.join(root, ".vite", "build"); fs.mkdirSync(directory, { recursive: true });
+  const bundle = fs.readFileSync(path.join(__dirname, "fixtures/webpack-device-key-26.1027.js.txt"), "utf8");
+  const file = path.join(directory, "early-bootstrap-random.js"); fs.writeFileSync(file, bundle);
+  assert.deepEqual(descriptor.apply(root), { changed: true });
+  assert.deepEqual(descriptor.apply(root), { changed: false });
+  const before = fs.readFileSync(file);
+  fs.copyFileSync(file, path.join(directory, "duplicate.js"));
+  assert.throws(() => descriptor.apply(root), /Expected one remote-control main-process owner, found 2/);
+  assert.deepEqual(fs.readFileSync(file), before);
+});
+
+test("current quoted revocation predicate retains every original recovery case", () => {
+  const source = 'function recover(e){return e instanceof Error&&("Remote control request failed (404): Remote-control client not found"===e.message||"Remote-control client has been revoked"===e.message||"Remote control request failed (401): Remote-control client enrollment is incomplete"===e.message||"Remote control request failed (403): Remote-control client key material missing"===e.message)}';
+  const patched = applyLinuxRemoteControlClientRevocationRecoveryPatch(source);
+  assert.notEqual(patched, source);
+  assert.equal(applyLinuxRemoteControlClientRevocationRecoveryPatch(patched), patched);
+  const recover = vm.runInNewContext(patched + ";recover", { Error });
+  for (const message of ["Remote-control client key material missing", "Remote-control client has been revoked",
+    "Remote control request failed (404): Remote-control client not found",
+    "Remote control request failed (401): Remote-control client enrollment is incomplete",
+    "Remote control request failed (403): Remote-control client key material missing"]) assert.equal(recover(new Error(message)), true);
+  assert.equal(recover(new Error("Remote control request failed (403): access denied")), false);
+  assert.equal(captureWarnings(() => applyLinuxRemoteControlClientRevocationRecoveryPatch(source + source)).result, source + source);
+});
+
+test("current quoted local launch preserves WSL and proxy ownership", () => {
+  const source = '"use strict";let A=["-c","features.code_mode_host=true"];function Q(e){return 0===e.length?[...A,"app-server","--analytics-default-enabled"]:["app-server",...A,...e,"--analytics-default-enabled"]}function wsl(){return["wsl.exe","app-server"]}';
+  const patched = applyLinuxRemoteMobileAppServerRemoteControlPatch(source);
+  assert.notEqual(patched, source);
+  assert.equal(applyLinuxRemoteMobileAppServerRemoteControlPatch(patched), patched);
+  const run = (platform, env) => vm.runInNewContext(patched + ";({Q,wsl})", { process: { platform, env } });
+  assert.deepEqual(Array.from(run("linux", {}).Q([])), ["-c", "features.code_mode_host=true", "app-server", "--remote-control", "--analytics-default-enabled"]);
+  const proxy = run("linux", { CODEX_REMOTE_CONTROL_APP_SERVER_MODE: "proxy", CODEX_REMOTE_CONTROL_APP_SERVER_PROXY_SOCKET: "%h/control.sock", HOME: "/private" });
+  assert.deepEqual(Array.from(proxy.Q(["-c", "a=true"])), ["-c", "features.code_mode_host=true", "-c", "a=true", "app-server", "proxy", "--sock", "/private/control.sock"]);
+  assert.deepEqual(Array.from(proxy.wsl()), ["wsl.exe", "app-server"]);
+  assert.deepEqual(Array.from(run("darwin", {}).Q([])), ["-c", "features.code_mode_host=true", "app-server", "--analytics-default-enabled"]);
+});
+
+test("catalog client identity resets setup only after the last other client is revoked", () => {
+  const source = syntheticCurrentRevokeSetupResetBundle().replace('[m]=i(`local_remote_control_client_id`)', 'm=i()[0],catalog={localRemoteControlClientId:m}');
+  const patched = applyLinuxRemoteControlClientRevokeSetupResetPatch(source);
+  assert.notEqual(patched, source);
+  assert.equal(applyLinuxRemoteControlClientRevokeSetupResetPatch(patched), patched);
+  const owner = vm.runInNewContext(patched + ";ni", {});
+  const app = owner({ mode: "manage" });
+  app.query.data = [{ clientId: "desktop_1" }, { clientId: "phone_1" }, { clientId: "phone_2" }];
+  app.handler("phone_1"); assert.equal(app.store.globalState["mobile-setup-completed"], true);
+  app.handler("phone_2"); assert.equal(app.store.globalState["mobile-setup-completed"], false);
+  const ambiguous = source.replace('catalog={localRemoteControlClientId:m}', 'catalog={localRemoteControlClientId:m},other={localRemoteControlClientId:m}');
+  assert.equal(captureWarnings(() => applyLinuxRemoteControlClientRevokeSetupResetPatch(ambiguous)).result, ambiguous);
+});
+
+test("current cloud-host hydration retains cloud discovery and local ordered item recovery", () => {
+  const source = syntheticCurrentConversationHydrationBundle().replace('this.manager.getHostId()!==`durable`', '!this.manager.isCloudHost');
+  const patched = applyLinuxRemoteMobileConversationHydrationPatch(source);
+  assert.notEqual(patched, source);
+  assert.equal(applyLinuxRemoteMobileConversationHydrationPatch(patched), patched);
+  const Lifecycle = vm.runInNewContext(patched + ";HydrationLifecycle", {});
+  for (const [host, isCloudHost, method, expected] of [
+    ["local", false, "item/started", true], ["local", false, "item/completed", true],
+    ["local", false, "turn/started", true], ["local", false, "unrelated", false],
+    ["cloud:new-kind", true, "turn/started", true], ["cloud:new-kind", true, "turn/completed", true],
+    ["cloud:new-kind", true, "item/started", false], ["remote-ssh:other", false, "turn/started", false],
+  ]) {
+    const lifecycle = new Lifecycle({ getHostId: () => host, isCloudHost, logger: { debug() {} } }, {
+      threadStore: { conversations: new Map(), isConversationSuppressed: () => false, hydrateActiveThread: () => new Promise(() => {}) },
+    }, () => {});
+    assert.equal(lifecycle.bufferNotification({ notification: { method, params: { threadId: "late-thread" } } }), expected, host + ":" + method);
+  }
+});
+
+test("current status subscription retains ternary cleanup and rejects duplicate owners", () => {
+  const source = syntheticAppServerManagerStatusBundle().replace('if(!a()){e[Symbol.dispose]();return}c=e,e.onRpcBroken(l)', 'a()?(c=e,e.onRpcBroken(l)):e[Symbol.dispose]()');
+  const patched = applyLinuxRemoteControlStatusReadGuardPatch(source);
+  assert.notEqual(patched, source);
+  assert.match(patched, /a\(\)\?\(c=e,e\.onRpcBroken\(l\)\):e\[Symbol\.dispose\]\(\)/);
+  assert.equal(applyLinuxRemoteControlStatusReadGuardPatch(patched), patched);
+  new vm.Script(patched);
+  assert.equal(captureWarnings(() => applyLinuxRemoteControlStatusReadGuardPatch(source + source)).result, source + source);
+});
+
+test("typed enablement connects only this installation and disposes its catalog subscription", async () => {
+  const legacy = syntheticAppMainEnablementBridgeBundle();
+  const source = legacy.replace('$o(`set-remote-control-connections-enabled`,{params:{enabled:o,oneToOnePairingInAppEnabled:i}})', 'bridge.remoteConnections.setRemoteControlEnabled({enabled:o,oneToOnePairingInAppEnabled:i})');
+  const patched = applyLinuxRemoteControlEnablementBridgePatch(source);
+  assert.notEqual(patched, source);
+  assert.equal(applyLinuxRemoteControlEnablementBridgePatch(patched), patched);
+  new vm.Script(patched);
+  for (const linux of [true, false]) {
+    let effect, disposed = 0; const calls = [], errors = [];
+    const api = {
+      setRemoteControlEnabled: async (params) => { calls.push({ enable: params }); return { remoteControlConnections: [
+        { hostId: "remote-control:self", installationId: "this-installation" },
+        { hostId: "remote-control:foreign", installationId: "other-installation" },
+        { hostId: "remote-ssh:self", installationId: "this-installation" },
+      ] }; },
+      catalog: { subscribe: async (listener) => { listener({ localRemoteControlInstallationId: "this-installation" }); return { [Symbol.dispose]: () => { disposed++; } }; } },
+      setAutoConnect: async (params) => { calls.push({ auto: params }); },
+      refreshRemoteControl: async () => { throw Error("unexpected refresh"); },
+    };
+    vm.runInNewContext(patched + ";OF()", { bridge: { remoteConnections: api }, Z: { c: () => [] },
+      sc: () => ({ checkGate: () => false, isLoading: false }),
+      Q: { useEffect: (callback) => { effect = callback; } }, q: { warning: (...args) => errors.push(args) },
+      navigator: { userAgent: linux ? "Linux" : "Macintosh" }, setTimeout, clearTimeout, Symbol,
+    });
+    effect(); await new Promise(setImmediate);
+    assert.equal(calls[0].enable.enabled, linux);
+    assert.equal(calls[0].enable.oneToOnePairingInAppEnabled, false);
+    assert.deepEqual(calls.filter((call) => call.auto).map((call) => ({ ...call.auto })), linux ? [{ hostId: "remote-control:self", autoConnect: true }] : []);
+    assert.equal(disposed, linux ? 1 : 0); assert.deepEqual(errors, []);
+  }
+});
+
+
+test("typed enablement times out missing identity and disposes a late subscription without connecting", async () => {
+  const source = syntheticAppMainEnablementBridgeBundle().replace('$o(`set-remote-control-connections-enabled`,{params:{enabled:o,oneToOnePairingInAppEnabled:i}})', 'bridge.remoteConnections.setRemoteControlEnabled({enabled:o,oneToOnePairingInAppEnabled:i})');
+  const patched = applyLinuxRemoteControlEnablementBridgePatch(source);
+  const duplicate = source + "/* another owner */".repeat(500) + source;
+  assert.equal(captureWarnings(() => applyLinuxRemoteControlEnablementBridgePatch(duplicate)).result, duplicate);
+  let effect, deadline, delay, listener, resolveSubscription, disposed = 0;
+  const calls = [], errors = [];
+  const api = {
+    setRemoteControlEnabled: async () => ({ remoteControlConnections: [{ hostId: "remote-control:self", installationId: "self" }] }),
+    catalog: { subscribe: (callback) => { listener = callback; return new Promise((resolve) => { resolveSubscription = resolve; }); } },
+    setAutoConnect: async (params) => { calls.push(params); },
+  };
+  vm.runInNewContext(patched + ";OF()", { bridge: { remoteConnections: api }, Z: { c: () => [] },
+    sc: () => ({ checkGate: () => false, isLoading: false }), Q: { useEffect: (callback) => { effect = callback; } },
+    q: { warning: (...args) => errors.push(args) }, navigator: { userAgent: "Linux" }, Symbol,
+    setTimeout: (callback, milliseconds) => { deadline = callback; delay = milliseconds; return 1; }, clearTimeout: () => {},
+  });
+  effect(); await new Promise(setImmediate);
+  assert.equal(delay, 5000); assert.deepEqual(calls, []);
+  deadline(); await new Promise(setImmediate);
+  listener({ localRemoteControlInstallationId: "self" });
+  resolveSubscription({ [Symbol.dispose]: () => { disposed++; } });
+  await new Promise(setImmediate);
+  assert.deepEqual(calls, []); assert.equal(disposed, 1); assert.deepEqual(errors, []);
 });

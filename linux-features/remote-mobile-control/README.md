@@ -1,5 +1,14 @@
 # Experimental Remote Mobile Control
 
+The signed 26.1027.30824 integration selects main-process chunks by unique
+contracts, including the inline device-key serializer, rather than a `main-*`
+filename. It reuses the official signing payload validation verbatim and keeps
+the existing Linux key-store protection and migration behavior. The typed
+Connections API reads identity through one bounded catalog subscription, disposes
+it on completion or timeout, and enables auto-connect only for this installation.
+Cloud event discovery retains the upstream `isCloudHost` classification while
+late local turn and item notifications use the existing ordered recovery queue.
+
 This feature is enabled by default for fresh native builds and can be disabled
 through an explicit local `linux-features/features.json`. OpenAI currently documents Remote hosts on
 macOS and Windows, with control from ChatGPT on iOS or Android and, when the
