@@ -690,6 +690,7 @@ test("composer control renders an app-styled popover and persists choices", () =
   const refs = [];
   let stateSlot = 0;
   const React = {
+    useEffect() {},
     useState(initializer) {
       const slot = stateSlot++;
       const value = typeof initializer === "function" ? initializer() : initializer;
@@ -757,7 +758,7 @@ test("composer control renders an app-styled popover and persists choices", () =
     [
       ["button", "menuitemradio", true, "auto", "Hydex auto"],
       ["button", "menuitemradio", false, "force_on", "Hydex on"],
-      ["button", "menuitemradio", false, "force_full", "Full"],
+      ["button", "menuitemradio", false, "force_full", "Hydex full"],
       ["button", "menuitemradio", false, "force_off", "Hydex off"],
     ],
   );
@@ -1098,4 +1099,154 @@ test("composer control is only rendered for local hosts", () => {
     if (host == null || host === "local") assert.equal(control.type.name, CONTROL_MARKER);
     else assert.equal(control, null);
   }
+});
+
+test("queued submissions apply the current Hydex routing before they can start", async () => {
+  const patched = applyPatchTwice(applyHydexRequestBridgePatch, requestBridgeFixture());
+  const Client = evaluateRequestClient(patched, makeStorage("force_full"));
+  for (const method of ["thread/queue/add", "thread/queue/update", "thread/queue/start"]) {
+    const client = new Client();
+    client.hostId = "local";
+    const calls = [];
+    let release;
+    const applied = new Promise(resolve => { release = resolve; });
+    client.enqueueRequest = (method, params, options) => {
+      calls.push({method, params, options});
+      return method === "thread/settings/update" ? applied : {method, params, options};
+    };
+    const params = {threadId: "prewarmed-thread", input: [{type: "text", text: "queued"}]};
+    const options = {timeoutMs: 5000, onOutcomeUnknown() {}};
+    const pending = client.sendRequest(method, params, options);
+    assert.deepEqual(calls, [{
+      method: "thread/settings/update",
+      params: {threadId: "prewarmed-thread", modelOffloadOverride: "force_full"},
+      options: undefined,
+    }]);
+    release({});
+    const result = await pending;
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].params, params);
+    assert.equal(result.params, params);
+    assert.equal(result.options, options);
+  }
+});
+
+test("a rejected Full routing update blocks queue dispatch", async () => {
+  const Client = evaluateRequestClient(
+    applyHydexRequestBridgePatch(requestBridgeFixture()), makeStorage("force_full"),
+  );
+  for (const method of ["thread/queue/add", "thread/queue/update", "thread/queue/start"]) {
+    const client = new Client();
+    client.hostId = "local";
+    const calls = [];
+    client.enqueueRequest = async (method, params) => {
+      calls.push({method, params});
+      throw new Error("Cannot enable local offload: provider is not configured");
+    };
+    await assert.rejects(client.sendRequest(method, {threadId: "thread"}), /provider is not configured/);
+    assert.deepEqual(calls.map(call => call.method), ["thread/settings/update"]);
+  }
+});
+
+test("queued routing follows On, Off, Auto, and an explicitly selected Full", async () => {
+  for (const [stored, expected] of [
+    ["force_full", "force_full"], ["force_on", "force_on"], ["force_off", "force_off"], [null, null],
+  ]) {
+    const Client = evaluateRequestClient(
+      applyHydexRequestBridgePatch(requestBridgeFixture()), makeStorage(stored),
+    );
+    const client = new Client();
+    client.hostId = "local";
+    const calls = [];
+    client.enqueueRequest = (method, params) => { calls.push({method, params}); return {}; };
+    await client.sendRequest("thread/queue/add", {threadId: "thread", clientUserMessageId: "message"});
+    assert.equal(calls[0].params.modelOffloadOverride, expected);
+    assert.deepEqual(calls[1].params, {threadId: "thread", clientUserMessageId: "message"});
+  }
+});
+
+test("queue routing leaves remote hosts and unrelated requests untouched", async () => {
+  const Client = evaluateRequestClient(
+    applyHydexRequestBridgePatch(requestBridgeFixture()), makeStorage("force_full"),
+  );
+  const client = new Client();
+  const calls = [];
+  client.enqueueRequest = (method, params) => { calls.push({method, params}); return {method, params}; };
+  for (const host of ["remote-host", "cloud:test"]) {
+    client.hostId = host;
+    for (const method of ["thread/queue/add", "thread/queue/update", "thread/queue/start"]) {
+      const params = {threadId: "thread"};
+      assert.equal((await client.sendRequest(method, params)).params, params);
+    }
+  }
+  client.hostId = "local";
+  await client.sendRequest("thread/queue/list", {threadId: "thread"});
+  await client.sendRequest("thread/queue/delete", {threadId: "thread"});
+  await client.sendRequest("thread/queue/reorder", {threadId: "thread"});
+  assert.equal(calls.length, 9);
+  assert.equal(calls.some(call => call.method === "thread/settings/update"), false);
+});
+
+test("the selected Full control uses the normalized Hydex full label", () => {
+  const patched = applyHydexComposerControlPatch(localComposerFixture());
+  const start = patched.indexOf(`/*${CONTROL_MARKER}*/`);
+  const helper = patched.slice(start, patched.indexOf("function localModelPicker", start));
+  const React = {
+    useEffect() {},
+    useState: initial => [typeof initial === "function" ? initial() : initial, () => {}],
+    useRef: initial => ({current: initial}),
+  };
+  const jsx = {jsx: (type, props) => ({type, props}), jsxs: (type, props) => ({type, props})};
+  const control = Function("React", "jsx", "localStorage", `${helper};return ${CONTROL_MARKER};`)(
+    React, jsx, makeStorage("force_full"),
+  );
+  assert.equal(control({}).props.children[0].props.children[0].props.children, "Hydex full");
+});
+
+test("a legacy request bridge missing queued routing fails its build contract", () => {
+  const patched = applyHydexRequestBridgePatch(requestBridgeFixture());
+  assert.equal(matchesHydexRequestBridgeContract(patched), true);
+  assert.equal(matchesHydexRequestBridgeContract(patched.replaceAll(
+    "codexLinuxHydexOffloadQueue", "legacyQueue",
+  )), false);
+});
+
+
+test("the selector follows same-window and cross-window routing changes and cleans up", () => {
+  const patched = applyHydexComposerControlPatch(localComposerFixture());
+  const start = patched.indexOf(`/*${CONTROL_MARKER}*/`);
+  const helper = patched.slice(start, patched.indexOf("function localModelPicker", start));
+  const storage = makeMutableStorage("force_full");
+  const listeners = new Map();
+  const effects = [];
+  const updates = [];
+  let stateSlot = 0;
+  const React = {
+    useEffect: effect => effects.push(effect),
+    useState(initial) {
+      const slot = stateSlot++;
+      return [typeof initial === "function" ? initial() : initial,
+        value => { if (slot === 0) updates.push(value); }];
+    },
+    useRef: initial => ({current: initial}),
+  };
+  const jsx = {jsx: (type, props) => ({type, props}), jsxs: (type, props) => ({type, props})};
+  const window = {
+    addEventListener: (name, callback) => listeners.set(name, callback),
+    removeEventListener: (name, callback) => { assert.equal(listeners.get(name), callback); listeners.delete(name); },
+  };
+  const control = Function("React", "jsx", "localStorage", "window", `${helper};return ${CONTROL_MARKER};`)(
+    React, jsx, storage, window,
+  );
+  control({});
+  assert.equal(effects.length, 1);
+  const cleanup = effects[0]();
+  assert.deepEqual(updates, ["force_full"]);
+  storage.setItem("hydex.offloadOverride", "force_off");
+  listeners.get("storage")();
+  storage.removeItem("hydex.offloadOverride");
+  listeners.get("hydex-offload-change")();
+  assert.deepEqual(updates, ["force_full", "force_off", "auto"]);
+  cleanup();
+  assert.equal(listeners.size, 0);
 });
