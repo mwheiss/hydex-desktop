@@ -1,6 +1,6 @@
 # Hydex Offload Control
 
-This opt-in feature adds a compact `Hydex auto`, `Hydex on`, `Full`, and `Hydex off`
+This opt-in feature adds a compact `Hydex auto`, `Hydex on`, `Hydex full`, and `Hydex off`
 selector next to the local model picker. It applies the selection to Hydex's
 `modelOffloadOverride` app-server setting.
 
@@ -60,7 +60,7 @@ The selector stores its desktop-wide preference in
 |---|---|---|
 | `Hydex auto` | `null` | Clear the runtime override and follow Hydex config. |
 | `Hydex on` | `"force_on"` | Force eligible inference through the local offload provider. |
-| **Full** | `"force_full"` | Keep model inference, review, memory, and compaction local with no primary inference fallback. |
+| **Hydex full** | `"force_full"` | Keep model inference, review, memory, and compaction local with no primary inference fallback. |
 | `Hydex off` | `"force_off"` | Force eligible inference through the primary provider. |
 
 Full lets the local composer submit at zero hosted credits. It preserves actual
@@ -80,8 +80,16 @@ returning to configured behavior.
 
 The request bridge injects the selection into `turn/start` so a new task's
 first turn is routed correctly. It also injects it into
-`thread/settings/update`. On an existing task, changing the selector calls the
-desktop's normal next-turn settings path immediately.
+`thread/settings/update`. Before local `thread/queue/add`, `thread/queue/update`,
+or `thread/queue/start` requests, it applies the selection through
+`thread/settings/update` and waits for the response. Queue add can immediately
+start an idle thread, so a rejected routing update stops the queue request.
+Queue payloads do not accept an offload override themselves. On an existing
+task, changing the selector calls the desktop's normal next-turn settings path
+immediately.
+
+The selector subscribes to same-window and cross-window preference changes so
+its visible mode matches the value used by the request bridge.
 
 The desktop-wide selector is authoritative for subsequent local app-server
 requests. It does not attempt to infer or display which provider handled a
