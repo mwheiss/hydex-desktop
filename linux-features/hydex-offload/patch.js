@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const IDENT = "[A-Za-z_$][\\w$]*";
 const FULL_LOCAL_MARKER = "codexLinuxHydexFullLocalCreditGate";
+const FULL_LOCAL_SUBMIT_MARKER = "codexLinuxHydexFullLocalSubmitGate";
 const REQUEST_MARKER = "codexLinuxHydexOffloadRequest";
 const QUEUE_MARKER = "codexLinuxHydexOffloadQueue";
 const CONTROL_MARKER = "codexLinuxHydexOffloadControl";
@@ -466,6 +467,54 @@ function matchesHydexFullLocalCreditGateContract(source) {
   return source.includes(FULL_LOCAL_MARKER) || fullLocalCreditGateMatches(source).length === 1;
 }
 
+function fullLocalPreferenceHelpers(marker) {
+  return `/*${marker}*/` +
+    `function codexLinuxHydexFullLocalRead(){try{let e=localStorage.getItem(\`hydex.offloadOverride\`);if(e===\`force_full\`)return!0;if(e===\`force_on\`||e===\`force_off\`)return!1}catch{}return globalThis.codexLinuxHydexFullLocalConfigured===!0}` +
+    `function codexLinuxHydexFullLocalSubscribe(e){window.addEventListener(\`storage\`,e);window.addEventListener(\`hydex-offload-change\`,e);` +
+    `return()=>{window.removeEventListener(\`storage\`,e);window.removeEventListener(\`hydex-offload-change\`,e)}}`;
+}
+
+function fullLocalSubmitGateMatches(source) {
+  const pattern = new RegExp(`(${IDENT})=(${IDENT})\\((${IDENT})===\`local\`&&(${IDENT})\\)`, "g");
+  return [...source.matchAll(pattern)].flatMap(match => {
+    const start = source.lastIndexOf("function ", match.index);
+    const end = source.indexOf("}function ", match.index);
+    if (start < 0 || end < 0 || end - start > 60_000) return [];
+    const region = source.slice(start, end + 1);
+    const opening = region.match(new RegExp(`^function ${IDENT}\\(${IDENT}\\)\\{`));
+    const scopeNames = [...new Set([...region.matchAll(new RegExp(`(${IDENT})\\.value\\.kind===\`local\``, "g"))].map(m => m[1]))];
+    const followNames = [...new Set([...region.matchAll(new RegExp(`else if\\((${IDENT})\\?\\.type===\`cloud\`\\)`, "g"))].map(m => m[1]))];
+    const react = uniqueAlias(region, "useRef");
+    const submit = region.match(new RegExp(`let (${IDENT})=[^;{}]{1,800}\\|\\|${match[1]}[,;]`));
+    if (!opening || scopeNames.length !== 1 || followNames.length !== 1 || !react || !submit ||
+        !region.includes(`submitDisabled:${submit[1]}`)) return [];
+    return [{start, end: end + 1, region, opening: opening[0], quota: match,
+      scope: scopeNames[0], follow: followNames[0], react}];
+  });
+}
+
+function matchesHydexFullLocalSubmitGateContract(source) {
+  return source.includes(FULL_LOCAL_SUBMIT_MARKER) || fullLocalSubmitGateMatches(source).length === 1;
+}
+
+function applyHydexFullLocalSubmitGatePatch(source) {
+  if (source.includes(FULL_LOCAL_SUBMIT_MARKER)) return source;
+  const matches = fullLocalSubmitGateMatches(source);
+  if (matches.length !== 1) {
+    warn(`Expected one local composer submit-admission gate, found ${matches.length}`, "Hydex Full local submit admission");
+    return source;
+  }
+  const match = matches[0];
+  const local = `hydexFullLocal&&${match.quota[3]}===\`local\`&&` +
+    `(${match.scope}.value.kind===\`local\`||${match.scope}.value.kind===\`new\`&&${match.scope}.value.cloudThreadPrototype!==!0)&&` +
+    `${match.follow}?.type!==\`cloud\``;
+  let region = match.region.replace(match.quota[0], `${match.quota[0]}&&!(${local})`);
+  region = match.opening +
+    `let hydexFullLocal=(0,${match.react}.useSyncExternalStore)(codexLinuxHydexFullLocalSubscribe,codexLinuxHydexFullLocalRead,()=>!1);` +
+    region.slice(match.opening.length);
+  return source.slice(0, match.start) + fullLocalPreferenceHelpers(FULL_LOCAL_SUBMIT_MARKER) + region + source.slice(match.end);
+}
+
 function applyHydexFullLocalCreditGatePatch(source) {
   if (source.includes(FULL_LOCAL_MARKER)) return source;
   const matches = fullLocalCreditGateMatches(source);
@@ -474,12 +523,9 @@ function applyHydexFullLocalCreditGatePatch(source) {
     return source;
   }
   const match = matches[0];
-  const helper = `/*${FULL_LOCAL_MARKER}*/` +
-    `function codexLinuxHydexFullLocalRead(){try{let e=localStorage.getItem(\`hydex.offloadOverride\`);if(e===\`force_full\`)return!0;if(e===\`force_on\`||e===\`force_off\`)return!1}catch{}return globalThis.codexLinuxHydexFullLocalConfigured===!0}` +
-    `function codexLinuxHydexFullLocalSubscribe(e){window.addEventListener(\`storage\`,e);window.addEventListener(\`hydex-offload-change\`,e);` +
-    `return()=>{window.removeEventListener(\`storage\`,e);window.removeEventListener(\`hydex-offload-change\`,e)}}`;
+  const helper = fullLocalPreferenceHelpers(FULL_LOCAL_MARKER);
   const hook = `let hydexFullLocal=(0,${match.react}.useSyncExternalStore)(codexLinuxHydexFullLocalSubscribe,codexLinuxHydexFullLocalRead,()=>!1);`;
-  const result = `,hydexFullLocal&&${match.scope}.value.kind===\`local\`&&${match.host}===\`local\`?` +
+  const result = `,hydexFullLocal&&(${match.scope}.value.kind===\`local\`||${match.scope}.value.kind===\`new\`&&${match.scope}.value.cloudThreadPrototype!==!0)&&${match.host}===\`local\`?` +
     `{...${match.result},sendBlocked:!1,isUsageBannerEnabled:${match.result}.imageGenerationLimit!=null,rateLimitWarningThreshold:null}:${match.result}}`;
   const region = match.opening + hook + match.region.slice(match.opening.length, -match.tail.length) + result;
   return source.slice(0, match.start) + helper + region + source.slice(match.end);
@@ -550,6 +596,17 @@ const descriptors = [
     apply: applyHydexFullLocalCreditGatePatch,
   },
   {
+    id: "hydex-full-local-submit-admission",
+    phase: "webview-asset",
+    order: 20716,
+    ciPolicy: "optional",
+    pattern: /^codex-composer-adapter-[^.]+\.js$/,
+    assetMatch: matchesHydexFullLocalSubmitGateContract,
+    missingDescription: "current local composer submit-admission gate",
+    skipDescription: "Hydex Full local submit admission",
+    apply: applyHydexFullLocalSubmitGatePatch,
+  },
+  {
     id: "hydex-product-mode-locale-labels",
     phase: "extracted-app:post-webview",
     order: 20720,
@@ -559,6 +616,9 @@ const descriptors = [
 ];
 
 module.exports = {
+  FULL_LOCAL_SUBMIT_MARKER,
+  applyHydexFullLocalSubmitGatePatch,
+  matchesHydexFullLocalSubmitGateContract,
   FULL_LOCAL_MARKER,
   applyHydexFullLocalCreditGatePatch,
   matchesHydexFullLocalCreditGateContract,
