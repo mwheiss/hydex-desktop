@@ -70,6 +70,11 @@ configuration explicitly enables `mode = "full"`. Selecting On or Off overrides
 that configured Full mode. Changes propagate immediately between the control
 and the credit-admission hook through an external-store subscription.
 
+The composer adapter's quota condition is patched before it contributes to the
+actual Send button's disabled state. This covers new and existing local threads.
+Other submission conditions, including pending setup, policy review and approvals,
+remain active. Search and other tool results retain their normal delivery path.
+
 Full initializes new local threads with Full mode before startup helpers run.
 It does not turn hosted-only services into local services. An unavailable local
 provider fails locally rather than using charged inference.
