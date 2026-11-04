@@ -340,6 +340,7 @@ test("feature loader exposes every enforced branding and offload surface", () =>
         ],
         ["feature:hydex-offload:hydex-offload-composer-control", "webview-asset", "optional", true],
         ["feature:hydex-offload:hydex-full-local-credit-admission", "webview-asset", "optional", true],
+        ["feature:hydex-offload:hydex-full-local-submit-admission", "webview-asset", "optional", true],
         [
           "feature:hydex-offload:hydex-product-mode-locale-labels",
           "extracted-app:post-webview",
@@ -559,6 +560,7 @@ test("descriptors target the semantic current bundle owners", () => {
       ["hydex-product-mode-selected-label", "webview-asset"],
       ["hydex-offload-composer-control", "webview-asset"],
       ["hydex-full-local-credit-admission", "webview-asset"],
+      ["hydex-full-local-submit-admission", "webview-asset"],
       ["hydex-product-mode-locale-labels", "extracted-app:post-webview"],
     ],
   );
@@ -838,6 +840,7 @@ test("feature descriptors patch every extracted webview surface", () => {
     withTempDir((extractedDir) => {
       writeWebviewAsset(extractedDir, "app-initial-current.js", requestBridgeFixture());
       writeWebviewAsset(extractedDir, "app-primary-current.js", localComposerFixture());
+      writeWebviewAsset(extractedDir, "codex-composer-adapter-current.js", fullLocalSubmitFixture());
       const report = createPatchReport();
       report.enabledFeatures = ["hydex-offload"];
 
@@ -856,6 +859,7 @@ test("feature descriptors patch every extracted webview surface", () => {
           ["feature:hydex-offload:hydex-product-mode-selected-label", "applied"],
           ["feature:hydex-offload:hydex-offload-composer-control", "applied"],
           ["feature:hydex-offload:hydex-full-local-credit-admission", "applied"],
+          ["feature:hydex-offload:hydex-full-local-submit-admission", "applied"],
         ],
       );
       assert.match(
@@ -913,6 +917,12 @@ test("a missing enabled surface is reported as candidate-rejecting drift", () =>
           reason: report.patches[4].reason,
           status: "skipped-optional",
         },
+        {
+          featureId: "hydex-offload",
+          name: "feature:hydex-offload:hydex-full-local-submit-admission",
+          reason: report.patches[5].reason,
+          status: "skipped-optional",
+        },
       ]);
     });
   });
@@ -922,7 +932,88 @@ test("a missing enabled surface is reported as candidate-rejecting drift", () =>
 const {
   applyHydexFullLocalCreditGatePatch,
   matchesHydexFullLocalCreditGateContract,
+  applyHydexFullLocalSubmitGatePatch,
+  matchesHydexFullLocalSubmitGateContract,
+  FULL_LOCAL_SUBMIT_MARKER,
 } = require("./patch.js");
+
+function fullLocalSubmitFixture() {
+  return "function localAdapter(e){let scope=e.scope,host=e.hostId,follow=e.followUp,kind=scope.value.kind===`local`?`thread`:`home`,quotaAtom={},readQuota=flag=>{onQuotaRead();return flag&&e.quotaBlocked},quota=readQuota(host===`local`&&quotaAtom);(0,React.useRef)(null);if(e.stop){}else if(follow?.type===`cloud`){}let blocked=e.pending||e.policyBlocked||e.approvalPending||quota,other;return{submitDisabled:blocked,kind}}function afterAdapter(){}";
+}
+
+function evaluateFullLocalSubmit(mode, configured = false) {
+  const source = applyHydexFullLocalSubmitGatePatch(fullLocalSubmitFixture());
+  assert.notEqual(source, fullLocalSubmitFixture());
+  const storage = makeMutableStorage(mode);
+  const listeners = new Map();
+  let reads = 0;
+  const context = {
+    localStorage: storage,
+    codexLinuxHydexFullLocalConfigured: configured,
+    onQuotaRead() { reads++; },
+    window: {
+      addEventListener(name, fn) { listeners.set(name, fn); },
+      removeEventListener(name) { listeners.delete(name); },
+    },
+    React: {
+      useRef() { return {current: null}; },
+      useSyncExternalStore(subscribe, read) { subscribe(() => {}); return read(); },
+    },
+  };
+  return {submit: vm.runInNewContext(source + ";localAdapter", context), storage, listeners, reads: () => reads};
+}
+
+test("Full clears the actual quota submit gate for fresh and existing local conversations", () => {
+  const {submit, reads} = evaluateFullLocalSubmit("force_full");
+  for (const kind of ["new", "local"]) {
+    const params = {scope: {value: {kind}}, hostId: "local", quotaBlocked: true};
+    assert.equal(submit(params).submitDisabled, false);
+    for (const blocker of ["pending", "policyBlocked", "approvalPending"]) {
+      assert.equal(submit({...params, [blocker]: true}).submitDisabled, true);
+    }
+  }
+  assert.equal(reads(), 8, "the original quota hook still runs on every render");
+});
+
+test("non-Full and cloud composers retain their quota submission gates", () => {
+  const local = {scope: {value: {kind: "local"}}, hostId: "local", quotaBlocked: true};
+  for (const mode of [null, "force_on", "force_off", "auto"]) {
+    assert.equal(evaluateFullLocalSubmit(mode).submit(local).submitDisabled, true);
+  }
+  const {submit} = evaluateFullLocalSubmit("force_full");
+  for (const params of [
+    {...local, scope: {value: {kind: "cloud"}}},
+    {...local, scope: {value: {kind: "chatgpt"}}},
+    {...local, scope: {value: {kind: "new", cloudThreadPrototype: true}}},
+    {...local, followUp: {type: "cloud"}},
+  ]) assert.equal(submit(params).submitDisabled, true);
+  const remote = {...local, hostId: "remote-host", policyBlocked: true};
+  assert.equal(submit(remote).submitDisabled, true);
+});
+
+test("the submit gate updates when Full changes and follows configured Auto", () => {
+  const params = {scope: {value: {kind: "local"}}, hostId: "local", quotaBlocked: true};
+  const {submit, storage, listeners} = evaluateFullLocalSubmit("force_on");
+  assert.equal(submit(params).submitDisabled, true);
+  storage.setItem("hydex.offloadOverride", "force_full");
+  listeners.get("hydex-offload-change")();
+  assert.equal(submit(params).submitDisabled, false);
+  assert.equal(evaluateFullLocalSubmit(null, true).submit(params).submitDisabled, false);
+  assert.equal(evaluateFullLocalSubmit("force_off", true).submit(params).submitDisabled, true);
+});
+
+test("submit admission is idempotent and refuses missing or ambiguous owners", () => {
+  const source = fullLocalSubmitFixture();
+  const patched = applyHydexFullLocalSubmitGatePatch(source);
+  assert.ok(patched.includes(FULL_LOCAL_SUBMIT_MARKER));
+  assert.equal(matchesHydexFullLocalSubmitGateContract(source), true);
+  assert.equal(applyHydexFullLocalSubmitGatePatch(patched), patched);
+  for (const drifted of [source + source, source.replace("submitDisabled:blocked", "differentField:blocked")]) {
+    assert.equal(matchesHydexFullLocalSubmitGateContract(drifted), false);
+    assert.equal(captureWarnings(() => applyHydexFullLocalSubmitGatePatch(drifted)).value, drifted);
+  }
+  new vm.Script(patched);
+});
 
 function fullLocalUsageFixture() {
   return "function localUsage(e){let scope=e.scope,host=e.hostId,isLocal=scope.value.kind===`local`,guard=!0,other=!0,image=e.imageLimit??null,banner=!0,dismiss=()=>{},rate=e.rateLimit,warning=10,blocked=host===`local`&&guard||other,usageResult;(0,React.useEffect)(()=>{},[]);return usageResult={imageGenerationLimit:image,isUsageBannerEnabled:banner,onDismissImageGenerationLimit:dismiss,rateLimit:rate,rateLimitWarningThreshold:warning,sendBlocked:blocked},usageResult}";
@@ -958,6 +1049,7 @@ test("Full admits local turns at zero credits while retaining real account state
   assert.equal(result.isUsageBannerEnabled, false);
   assert.equal(result.rateLimit, rateLimit);
   assert.equal(result.rateLimitWarningThreshold, null);
+  assert.equal(usage({ scope: {value: {kind: "new"}}, hostId: "local", rateLimit }).sendBlocked, false);
   assert.equal(usage({ scope: { value: { kind: "local" } }, hostId: "local", rateLimit, imageLimit: "image quota" }).imageGenerationLimit, "image quota");
   assert.equal(usage({ scope: { value: { kind: "local" } }, hostId: "local", rateLimit, imageLimit: "image quota" }).isUsageBannerEnabled, true);
 });
@@ -967,6 +1059,7 @@ test("Full preserves hosted and remote submission restrictions", () => {
   for (const [kind, hostId] of [["chatgpt", "local"], ["local", "remote-host"], ["cloud", "local"]]) {
     assert.equal(usage({ scope: { value: { kind } }, hostId }).sendBlocked, true);
   }
+  assert.equal(usage({scope: {value: {kind: "new", cloudThreadPrototype: true}}, hostId: "local"}).sendBlocked, true);
   for (const mode of [null, "force_on", "force_off", "auto", "invalid"]) {
     const { usage } = evaluateFullLocalUsage(mode);
     assert.equal(usage({ scope: { value: { kind: "local" } }, hostId: "local" }).sendBlocked, true);
