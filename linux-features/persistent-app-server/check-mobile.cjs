@@ -33,11 +33,12 @@ try {
     assert.equal(manifest.entrypoints.stageHook, "./stage.sh");
     assert.deepEqual(fs.readdirSync(path.join(tmp, "linux-features")), ["remote-mobile-control"]);
   });
-  for (const helper of ["assets.js", "minified-js.js"]) {
+  for (const helper of ["assets.js", "minified-js.js", "javascript-syntax.js"]) {
     const relative = path.join("scripts/patches/lib", helper);
     fs.mkdirSync(path.join(tmp, "scripts/patches/lib"), { recursive: true });
     fs.copyFileSync(path.join(repo, relative), path.join(tmp, relative));
   }
+  fs.copyFileSync(path.join(repo, "scripts/patches/integrity-error.js"), path.join(tmp, "scripts/patches/integrity-error.js"));
   const mobilePatch = require(path.join(isolated, "patch.js"));
   const transform = mobilePatch.applyLinuxRemoteMobileAppServerRemoteControlPatch;
   const accepts = mobilePatch.hasLinuxRemoteMobileLocalAppServerRemoteControlPatch;

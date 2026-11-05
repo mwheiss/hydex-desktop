@@ -306,7 +306,7 @@ function syntheticRemoteConnectionsSettingsCopyBundle() {
   return [
     syntheticCurrentVisibilityBundle(),
     "let a={id:\"settings.remoteConnections.tabs.controlThisMac\",defaultMessage:\"Control this Mac\",description:\"Tab label for settings that let other devices control this computer\"};",
-    "let b={id:\"settings.remoteControlConnections.devices.title\",defaultMessage:\"Devices that can control this Mac\",description:\"Header title for devices that can control this Mac\"};",
+    "let b={id:\"settings.remoteConnections.remoteControlClients.devices.title\",defaultMessage:\"Devices that can control this Mac\",description:\"Header title for devices that can control this Mac\"};",
     "let c={id:\"settings.remoteConnections.accessOtherDevices.header.title\",defaultMessage:\"Devices you can control from this Mac\",description:\"Header title for the devices this computer can access\"};",
     "let d={id:\"settings.remoteConnections.ssh.header.title\",defaultMessage:\"SSH connections from this Mac\",description:\"Header title for SSH connections from this Mac\"};",
     "let e={id:\"settings.remoteControlConnections.keepAwake.title\",defaultMessage:\"Keep this Mac awake\",description:\"Keep awake title\"};",
@@ -319,7 +319,7 @@ function syntheticMobileSetupDialogCopyBundle() {
     "let a={id:\"codexMobile.setupDialog.connected.lockedComputerUse.title\",defaultMessage:\"Use your Mac apps while locked\",description:\"Title for enabling Locked Computer Use after mobile setup\"};",
     "let b={id:\"codexMobile.setupDialog.connected.lockedComputerUse.description\",defaultMessage:\"Control Mac apps from your phone\",description:\"Description for enabling Locked Computer Use after mobile setup\"};",
     "let c={id:\"codexMobile.setupDialog.connected.computerUse.description\",defaultMessage:\"Let Codex control the apps on your Mac\",description:\"Description for enabling Computer Use after mobile setup\"};",
-    "let d={id:\"codexMobile.setupPage.initial.heading\",defaultMessage:\"Connect your phone to this Mac\",description:\"Heading for Codex mobile setup\"};",
+    "let d={id:\"codexMobile.setupDialog.initial.heading.desktop\",defaultMessage:\"Connect your phone to this Mac\",description:\"Heading for Codex mobile setup\"};",
   ].join("");
 }
 
@@ -1088,7 +1088,7 @@ test("remote mobile control feature exposes opt-in main-bundle and webview patch
       ["linux-remote-control-load-gate", "webview-asset"],
       ["linux-remote-control-feature-sync", "main-bundle"],
       ["linux-remote-control-visibility", "webview-asset"],
-      ["linux-remote-control-copy", "webview-asset"],
+      ["linux-remote-control-copy", "extracted-app:pre-webview"],
       ["linux-remote-control-settings-ux", "webview-asset"],
       ["linux-remote-control-client-revoke-setup-reset", "webview-asset"],
       ["linux-remote-connections-refresh", "webview-asset"],
@@ -1804,7 +1804,7 @@ test("reasoning-summary caller without the current Aeon override is rejected byt
 
 test("reasoning-summary caller with an unrelated override flag is rejected byte-identically", () => {
   const source = syntheticCurrentReasoningSummaryTurnStartBundle().replace(
-    "let b=n.context?.threadStartKind===`aeon`;",
+    'let b="aeon"===n.context?.threadStartKind;',
     "let b=!0;",
   );
   const { result, warnings } = captureWarnings(() => applyLinuxRemoteMobileReasoningSummaryPatch(source));
@@ -1814,14 +1814,14 @@ test("reasoning-summary caller with an unrelated override flag is rejected byte-
 
 test("current Aeon thread-start caller patches once and keeps request precedence", () => {
   const source = syntheticCurrentReasoningSummaryTurnStartBundle().replace(
-    "let b=n.context?.threadStartKind===`aeon`;",
-    "let b=n.context?.threadStartKind===`aeon`||NB(a.threadStartKind,a.threadSource);",
+    'let b="aeon"===n.context?.threadStartKind;',
+    'let b="aeon"===n.context?.threadStartKind||NB(a.threadStartKind,a.threadSource);',
   );
   const patched = applyLinuxRemoteMobileReasoningSummaryPatch(source);
   assert.notEqual(patched, source);
   assert.match(patched, /codexLinuxRemoteMobileReasoningSummaryNone/);
   assert.equal(applyLinuxRemoteMobileReasoningSummaryPatch(patched), patched);
-  assert.match(patched, /s\.summary!==void 0&&\(ye=s\.summary\)/);
+  assert.match(patched, /void 0!==s\.summary&&\(ye=s\.summary\)/);
 });
 
 test("duplicate reasoning-summary owner pairs are rejected byte-identically", () => {
@@ -2149,6 +2149,44 @@ test("Linux remote-control visibility patch handles current use-plugin gate shap
   const renamed = applyLinuxRemoteControlVisibilityPatch(source.replace("slingshotEnabled:t}){return t&&", "slingshotEnabled:n}){return n&&"));
   assert.doesNotThrow(() => new Function(renamed.replace(/export\{[^}]*\};?$/, "")));
   assert.equal(applyLinuxRemoteControlVisibilityPatch(patched), patched);
+});
+
+test("remote-control copy patches every rspack copy and is idempotent", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-copy-"));
+  const assets = path.join(root, "webview/assets/async");
+  fs.mkdirSync(assets, { recursive: true });
+  const apply = remoteMobilePatchDescriptors.find(({ id }) => id === "linux-remote-control-copy").apply;
+  try {
+    fs.writeFileSync(path.join(assets, "1.js"), syntheticRemoteConnectionsSettingsCopyBundle());
+    fs.writeFileSync(path.join(assets, "2.js"), syntheticRemoteConnectionsSettingsCopyBundle());
+    fs.writeFileSync(path.join(assets, "3.js"), syntheticMobileSetupDialogCopyBundle());
+    assert.equal(apply(root).changed, 3);
+    for (const name of ["1.js", "2.js", "3.js"]) {
+      assert.doesNotMatch(fs.readFileSync(path.join(assets, name), "utf8"), /this Mac/);
+    }
+    assert.equal(apply(root).changed, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote-control copy rejects missing or ambiguous owners before writing", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-copy-reject-"));
+  const assets = path.join(root, "webview/assets/async");
+  fs.mkdirSync(assets, { recursive: true });
+  const apply = remoteMobilePatchDescriptors.find(({ id }) => id === "linux-remote-control-copy").apply;
+  const first = path.join(assets, "1.js"), second = path.join(assets, "2.js");
+  const source = syntheticRemoteConnectionsSettingsCopyBundle();
+  try {
+    fs.writeFileSync(first, source);
+    assert.throws(() => apply(root), /Missing remote-control copy owner/);
+    assert.equal(fs.readFileSync(first, "utf8"), source);
+    fs.writeFileSync(second, syntheticMobileSetupDialogCopyBundle() + syntheticMobileSetupDialogCopyBundle());
+    assert.throws(() => apply(root), /Ambiguous remote-control copy owner/);
+    assert.equal(fs.readFileSync(first, "utf8"), source);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("Linux mobile setup copy does not refer to Mac-only Computer Use", () => {
