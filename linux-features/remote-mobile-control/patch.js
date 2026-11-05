@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { findMainProcessChunks, listWebviewScriptAssets } = require("../../scripts/patches/lib/assets.js");
+const { findMainProcessChunks, listWebviewScriptAssets, patchAssetFiles } = require("../../scripts/patches/lib/assets.js");
 const { findMatchingBrace } = require("../../scripts/patches/lib/minified-js.js");
 
 const DEVICE_KEY_CLIENT_MARKER = "codexLinuxRemoteControlDeviceKeyClient";
@@ -708,6 +708,43 @@ function replaceLinuxRemoteControlCopy(source) {
   return { patched, changed };
 }
 
+function applyLinuxRemoteControlCopyAssets(extractedDir) {
+  const assetsDir = path.join(extractedDir, "webview/assets");
+  const roles = [
+    'id:"settings.remoteConnections.remoteControlClients.devices.title"',
+    'id:"codexMobile.setupDialog.initial.heading.desktop"',
+  ];
+  const sources = listWebviewScriptAssets(extractedDir).map((name) => ({
+    name,
+    source: fs.readFileSync(path.join(assetsDir, name), "utf8"),
+  }));
+  for (const role of roles) {
+    if (!sources.some(({ source }) => source.includes(role))) {
+      throw new Error(`Missing remote-control copy owner: ${role}`);
+    }
+  }
+  const selected = sources
+    .filter(({ source }) => roles.some((role) => source.includes(role)))
+    .map(({ name }) => name);
+  // Rspack can duplicate a module into several chunks. Validate every copy
+  // before patchAssetFiles writes any of them.
+  const patchCopy = (source) => {
+    for (const role of roles) {
+      if (source.split(role).length > 2) {
+        throw new Error(`Ambiguous remote-control copy owner: ${role}`);
+      }
+    }
+    const patched = applyLinuxRemoteControlCopyPatch(source);
+    if (patched === source && !source.includes(REMOTE_CONTROL_COPY_MARKER)) {
+      throw new Error("Unrecognized remote-control copy contract");
+    }
+    return patched;
+  };
+  return patchAssetFiles(
+    extractedDir, null, patchCopy, "Could not find remote-control copy owners", selected,
+  );
+}
+
 function applyLinuxRemoteControlCopyPatch(source) {
   const hasMarker = source.includes(REMOTE_CONTROL_COPY_MARKER);
   const { patched, changed } = replaceLinuxRemoteControlCopy(source);
@@ -1192,9 +1229,10 @@ function applyLinuxRemoteMobileReasoningSummaryPatch(source) {
     const callerStart = source.lastIndexOf("async function ", match.index);
     if (callerStart === -1 || match.index - callerStart > 4_000) return false;
     const { aeonFlag, context, conversation } = match.groups;
+    const callable = "(?:[A-Za-z_$][\\w$]*|\\(0,[A-Za-z_$][\\w$]*\\.[A-Za-z_$][\\w$]*\\))";
     const flagPattern = new RegExp(
-      `(?:let |,)${escapeRegExp(aeonFlag)}=${escapeRegExp(context)}\\.context\\?\\.threadStartKind===\`aeon\`` +
-        `(?:\\|\\|[A-Za-z_$][\\w$]*\\(${escapeRegExp(conversation)}\\.threadStartKind,${escapeRegExp(conversation)}\\.threadSource\\))?[;,]`,
+      `(?:let |,)${escapeRegExp(aeonFlag)}="aeon"===${escapeRegExp(context)}\\.context\\?\\.threadStartKind` +
+        `(?:\\|\\|${callable}\\(${escapeRegExp(conversation)}\\.threadStartKind,${escapeRegExp(conversation)}\\.threadSource\\))?[;,]`,
       "u",
     );
     return flagPattern.test(source.slice(callerStart, match.index));
@@ -1305,13 +1343,10 @@ module.exports = [
   {
     // The remote connections settings page and the mobile setup dialog.
     id: "linux-remote-control-copy",
-    phase: "webview-asset",
-    assetNeedles: ['this Mac",description:"'],
+    phase: "extracted-app:pre-webview",
     order: 20_130,
     ciPolicy: "optional",
-    missingDescription: "remote-control settings or mobile setup bundle",
-    skipDescription: "Linux remote-control copy patch",
-    apply: applyLinuxRemoteControlCopyPatch,
+    apply: applyLinuxRemoteControlCopyAssets,
   },
   {
     id: "linux-remote-control-settings-ux",

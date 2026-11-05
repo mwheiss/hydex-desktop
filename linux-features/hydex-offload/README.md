@@ -120,9 +120,15 @@ bundles the same Codex version. If the official version advances first, the
 update fails closed until the desktop package is rebuilt with a corresponding
 Hydex binary.
 
-Both the request bridge and composer control are enforced when this feature is
-enabled. If either minified upstream contract drifts, candidate acceptance
-rejects the build rather than installing a partial integration.
+All nine patch descriptors are required when this feature is enabled. The
+current official rspack bundle splits the model picker, its next-turn updater,
+and the submit adapters into separate chunks. Every duplicated updater and
+submit adapter is validated and patched before any copy is written. Localized
+product labels are discovered in both entry and lazy-loaded catalogs.
+
+If an owner is missing, ambiguous, or would produce invalid JavaScript,
+candidate acceptance rejects the build. A second pass must preserve the
+patched app byte-for-byte.
 
 ## Test
 
