@@ -154,7 +154,7 @@ feature descriptor to appear exactly once in this table.
 | `linux-remote-control-load-gate` | `outbound-control` | Allows remote-control environments to load in Connections. |
 | `linux-remote-control-feature-sync` | `shared-boundary` | Enables `remote_control` in the main-process experimental feature sync only for the local app server and excludes Remote SSH, WSL, and cloud hosts. |
 | `linux-remote-control-visibility` | `outbound-control` | Exposes remote-control Connections UI when the server permits it. |
-| `linux-remote-control-copy` | `shared-boundary` | Rewrites Linux copy shared by host setup and outbound Connections. |
+| `linux-remote-control-copy` | `shared-boundary` | Rewrites Linux copy in every current settings and mobile-setup chunk, validating all copies before writing. |
 | `linux-remote-control-settings-ux` | `shared-boundary` | Adapts the shared Connections copy and outbound-control visibility without reviving the retired upstream SSH installer. |
 | `linux-remote-control-client-revoke-setup-reset` | `mobile-host` | Resets this host's mobile setup state (the `codex-mobile-has-connected-device` application state) only after the last external controller is removed. |
 | `linux-remote-connections-refresh` | `shared-boundary` | Refreshes the shared Connections list without starting or enabling any host runtime. |
