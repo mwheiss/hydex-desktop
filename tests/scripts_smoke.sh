@@ -80,7 +80,7 @@ desktop_fixture="$(mktemp -d "${TMPDIR:-/tmp}/hydex-desktop-entry-smoke.XXXXXX")
     printf '%s\n' '{"enabledFeatures":["desktop-new-window"],"patches":[{"name":"feature:desktop-new-window:second-instance","status":"applied"}]}' > "$report"
     PACKAGE_WITH_UPDATER=1 render_desktop_entry "$desktop_fixture/new-window-and-updater.desktop"
     PACKAGE_WITH_UPDATER=0 render_desktop_entry "$desktop_fixture/new-window-only.desktop"
-    filter_desktop_actions 0 < packaging/appimage/codex-desktop.desktop > "$desktop_fixture/appimage.desktop"
+    filter_desktop_actions 0 < packaging/appimage/hydex-desktop.desktop > "$desktop_fixture/appimage.desktop"
     sed -i 's/"applied"/"skipped-optional"/' "$report"
     PACKAGE_WITH_UPDATER=0 render_desktop_entry "$desktop_fixture/drifted.desktop"
 )
