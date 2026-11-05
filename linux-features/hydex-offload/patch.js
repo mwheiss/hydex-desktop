@@ -2,6 +2,9 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { findMatchingBrace } = require("../../scripts/patches/lib/minified-js.js");
+const { listWebviewScriptAssets } = require("../../scripts/patches/lib/assets.js");
+const { patchBreaksJavaScriptSyntax } = require("../../scripts/patches/lib/javascript-syntax.js");
 
 const IDENT = "[A-Za-z_$][\\w$]*";
 const FULL_LOCAL_MARKER = "codexLinuxHydexFullLocalCreditGate";
@@ -15,13 +18,79 @@ const PRODUCT_MODE_SELECTED_LABEL_MARKER = "codexLinuxHydexProductModeSelectedLa
 const PRODUCT_MODE_LOCALE_LABEL_MARKER = "codexLinuxHydexProductModeLocaleLabel";
 const HYDEX_PRODUCT_NAME = "Hydex";
 const PRODUCT_MODE_LABEL_SOURCE =
-  "id:`sidebarElectron.productMode.codex`,defaultMessage:`Codex`";
+  'id:"sidebarElectron.productMode.codex",defaultMessage:"Codex"';
 const PRODUCT_MODE_LABEL_PATCHED =
-  `id:\`sidebarElectron.productMode.codex\`,defaultMessage:\`Hydex\`/*${PRODUCT_MODE_LABEL_MARKER}*/`;
+  `id:"sidebarElectron.productMode.codex",defaultMessage:"Hydex"/*${PRODUCT_MODE_LABEL_MARKER}*/`;
 const PRODUCT_MODE_LOCALE_KEY = '"sidebarElectron.productMode.codex":';
-const PRODUCT_MODE_LOCALE_PATCHED =
-  `${PRODUCT_MODE_LOCALE_KEY}\`Hydex\`/*${PRODUCT_MODE_LOCALE_LABEL_MARKER}*/`;
 const PRODUCT_MODE_LOCALE_MARKER_COMMENT = `/*${PRODUCT_MODE_LOCALE_LABEL_MARKER}*/`;
+
+function enclosingFunction(source, position, maxLength = 80_000) {
+  const offset = Math.max(0, position - maxLength);
+  const headers = [...source.slice(offset, position + 1).matchAll(/\bfunction(?: [A-Za-z_$][\w$]*)?\(([^)]*)\)\{/g)];
+  for (const header of headers.reverse()) {
+    const start = offset + header.index, open = start + header[0].length - 1;
+    const end = findMatchingBrace(source, open);
+    if (end >= position && end - start <= maxLength) return {start, end: end + 1, open,
+      opening: source.slice(start, open + 1), argument: header[1], region: source.slice(start, end + 1)};
+  }
+  return null;
+}
+
+function localScopeNames(source) {
+  return [...new Set([...source.matchAll(new RegExp(`(?:(${IDENT})\\.value\\.kind===[\"\x60]local[\"\x60]|[\"\x60]local[\"\x60]===(${IDENT})\\.value\\.kind)`, "g"))].map(m => m[1] || m[2]))];
+}
+
+function nextTurnUpdaterMatches(source) {
+  const hook = new RegExp(`\\{modelSettings:(${IDENT}),setDefaultModelAndReasoningEffort:(${IDENT}),setModelAndReasoningEffort:(${IDENT}),setModelAndReasoningEffortForNextTurn:(${IDENT})\\}=`, "g");
+  return [...source.matchAll(hook)].flatMap(match => {
+    const owner = enclosingFunction(source, match.index);
+    if (!owner) return [];
+    const returned = new RegExp(`\\{modelSettings:${match[1]},setDefaultModelAndReasoningEffort:${match[2]},setModelAndReasoningEffort:${match[3]},selectComposerModelAndReasoningEffort:(${IDENT})\\}`, "g");
+    const results = [...owner.region.matchAll(returned)];
+    return results.length === 1 ? [{start: owner.start + results[0].index, original: results[0][0], setter: match[4]}] : [];
+  });
+}
+
+function matchesHydexNextTurnUpdaterContract(source) {
+  return source.includes(NEXT_TURN_MARKER) || nextTurnUpdaterMatches(source).length === 1;
+}
+
+function applyHydexNextTurnUpdaterPatch(source) {
+  if (source.includes(NEXT_TURN_MARKER)) return source;
+  const matches = nextTurnUpdaterMatches(source);
+  if (matches.length !== 1) { warn(`Expected one next-turn updater owner, found ${matches.length}`, "Hydex next-turn updater"); return source; }
+  const m = matches[0], replacement = m.original.slice(0,-1) + `,/*${NEXT_TURN_MARKER}*/setModelAndReasoningEffortForNextTurn:${m.setter}}`;
+  return source.slice(0,m.start) + replacement + source.slice(m.start+m.original.length);
+}
+
+function patchMatchingAssets(extractedDir, candidate, patch, description) {
+  const dir=path.join(extractedDir,"webview/assets"), pending=[];
+  for (const name of listWebviewScriptAssets(extractedDir)) {
+    const file=path.join(dir,name),source=fs.readFileSync(file,"utf8");
+    if (!candidate(source)) continue;
+    const result=patch(source);
+    if (result===source && !source.includes(NEXT_TURN_MARKER) && !source.includes(FULL_LOCAL_SUBMIT_MARKER)) throw Error(`Unresolved ${description} contract in ${name}`);
+    if (result!==source && patchBreaksJavaScriptSyntax(source,result)) throw Error(`Invalid ${description} syntax in ${name}`);
+    pending.push({file,name,source,result});
+  }
+  if (!pending.length) throw Error(`Could not find ${description} assets`);
+  for (const item of pending) if (item.result!==item.source) fs.writeFileSync(item.file,item.result);
+  return {matched:pending.length,changed:pending.some(item=>item.source!==item.result),targets:pending.map(item=>item.name)};
+}
+
+function applyHydexNextTurnUpdaterAssets(extractedDir) {
+  return patchMatchingAssets(extractedDir,source=>source.includes(NEXT_TURN_MARKER)||/\{modelSettings:[\w$]+,setDefaultModelAndReasoningEffort:[\w$]+,setModelAndReasoningEffort:[\w$]+,setModelAndReasoningEffortForNextTurn:[\w$]+\}=/.test(source),source=>{
+    if(!matchesHydexNextTurnUpdaterContract(source)) throw Error("Ambiguous next-turn updater owner");
+    return applyHydexNextTurnUpdaterPatch(source);
+  },"model selection next-turn updater");
+}
+
+function applyHydexFullLocalSubmitGateAssets(extractedDir) {
+  return patchMatchingAssets(extractedDir,source=>source.includes("localFollowUpPreparation:")&&source.includes("isNativeWork:")&&source.includes("submitDisabled:")&&/\b[\w$]+=(?:[\w$]+|\(0,[\w$]+\.[\w$]+\))\((?:"local"===[\w$]+|[\w$]+===`local`)&&[\w$]+(?:\.[\w$]+)?\)/.test(source),source=>{
+    if(!matchesHydexFullLocalSubmitGateContract(source)) throw Error("Ambiguous local submit-admission owner");
+    return applyHydexFullLocalSubmitGatePatch(source);
+  },"local Full submit admission");
+}
 
 function applyHydexProductNamePatch(extractedDir) {
   const packagePath = path.join(extractedDir, "package.json");
@@ -70,13 +139,8 @@ function applyHydexProductModeLabelPatch(source) {
 }
 
 function productModeSelectedLabelPattern() {
-  return new RegExp(
-    `if\\(${IDENT}===\\\`codex\\\`\\)\\{${IDENT}=${IDENT}\\.codex;let ${IDENT};(?:(?!}else).){0,500}?` +
-      `(\\(0,(${IDENT})\\.jsx\\)\\(${IDENT},\\{"aria-hidden":\\\`true\\\`,` +
-      `className:\\\`h-\\[1em\\] w-auto overflow-visible\\\`,` +
-      `"data-no-autosize":!0\\}\\))`,
-    "g",
-  );
+  return new RegExp(`if\\("codex"===${IDENT}\\)\\{(?:(?!}else).){0,1500}?` +
+    `(\\(0,(${IDENT})\\.jsx\\)\\(${IDENT},\\{"aria-hidden":"true",className:"h-\\[1em\\] w-auto overflow-visible","data-no-autosize":!0\\}\\))`, "g");
 }
 
 function productModeSelectedLabelContract(source) {
@@ -117,62 +181,22 @@ function applyHydexProductModeSelectedLabelPatch(source) {
 }
 
 function applyHydexProductModeLocalePatch(extractedDir) {
-  const assetsDir = path.join(extractedDir, "webview", "assets");
-  const matches = [];
-  for (const entry of fs.readdirSync(assetsDir, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith(".js")) continue;
-    const assetPath = path.join(assetsDir, entry.name);
-    const source = fs.readFileSync(assetPath, "utf8");
-    const keyCount = exactCount(source, PRODUCT_MODE_LOCALE_KEY);
-    if (keyCount === 0) continue;
-    const valueStart = source.indexOf(PRODUCT_MODE_LOCALE_KEY) + PRODUCT_MODE_LOCALE_KEY.length;
-    const valueEnd = source.indexOf("`", valueStart + 1);
-    const value = source.slice(valueStart + 1, valueEnd);
-    const patched = source.startsWith(PRODUCT_MODE_LOCALE_MARKER_COMMENT, valueEnd + 1);
-    if (
-      keyCount !== 1 ||
-      source[valueStart] !== "`" ||
-      valueEnd === -1 ||
-      value.includes("\\") ||
-      (patched && value !== HYDEX_PRODUCT_NAME)
-    ) {
-      throw new Error(
-        `Unexpected Codex product-mode locale contract in ${entry.name}: ` +
-          `${keyCount} key, value ${JSON.stringify(value)}, patched ${patched}`,
-      );
-    }
-    const replacementEnd = patched
-      ? valueEnd + 1 + PRODUCT_MODE_LOCALE_MARKER_COMMENT.length
-      : valueEnd + 1;
-    matches.push({
-      assetPath,
-      name: entry.name,
-      patched,
-      replacementEnd,
-      source,
-      valueStart,
-    });
+  const dir = path.join(extractedDir,"webview/assets"), matches=[];
+  for (const name of listWebviewScriptAssets(extractedDir)) {
+    const assetPath=path.join(dir,name), source=fs.readFileSync(assetPath,"utf8");
+    const count=exactCount(source,PRODUCT_MODE_LOCALE_KEY);
+    if (!count) continue;
+    const start=source.indexOf(PRODUCT_MODE_LOCALE_KEY)+PRODUCT_MODE_LOCALE_KEY.length;
+    const literal=source.slice(start).match(/^"(?:[^"\\]|\\.)*"/);
+    if (count!==1 || !literal) throw Error(`Unexpected Codex locale contract in ${name}`);
+    const value=JSON.parse(literal[0]), end=start+literal[0].length;
+    const marked=source.startsWith(PRODUCT_MODE_LOCALE_MARKER_COMMENT,end);
+    if (marked && value!==HYDEX_PRODUCT_NAME) throw Error(`Invalid Hydex locale marker in ${name}`);
+    matches.push({assetPath,source,start,end,name,marked});
   }
-  if (matches.length === 0) {
-    throw new Error("Could not find Codex product-mode locale catalogs");
-  }
-
-  let changed = false;
-  for (const match of matches) {
-    if (match.patched) continue;
-    fs.writeFileSync(
-      match.assetPath,
-      match.source.slice(0, match.valueStart - PRODUCT_MODE_LOCALE_KEY.length) +
-        PRODUCT_MODE_LOCALE_PATCHED +
-        match.source.slice(match.replacementEnd),
-    );
-    changed = true;
-  }
-  return {
-    changed,
-    matched: matches.length,
-    targets: matches.map((match) => match.name).sort(),
-  };
+  if (!matches.length) throw Error("Could not find Codex product-mode locale catalogs");
+  for (const m of matches) if (!m.marked) fs.writeFileSync(m.assetPath,m.source.slice(0,m.start)+JSON.stringify(HYDEX_PRODUCT_NAME)+PRODUCT_MODE_LOCALE_MARKER_COMMENT+m.source.slice(m.end));
+  return {changed:matches.some(m=>!m.marked),matched:matches.length,targets:matches.map(m=>m.name).sort()};
 }
 
 function warn(message, patchName) {
@@ -180,13 +204,7 @@ function warn(message, patchName) {
 }
 
 function requestBridgePattern() {
-  return new RegExp(
-    `async sendRequest\\((${IDENT}),(${IDENT}),(${IDENT})\\)\\{` +
-      `if\\(this\\.dispatchMessage==null\\)throw Error\\(` +
-      "`AppServerRequestClient is missing a message dispatcher`" +
-      `\\);`,
-    "g",
-  );
+  return new RegExp(`async sendRequest\\((${IDENT}),(${IDENT}),(${IDENT})\\)\\{if\\((?:null==this\\.dispatchMessage|this\\.dispatchMessage==null)\\)throw Error\\((?:"AppServerRequestClient is missing a message dispatcher"|\x60AppServerRequestClient is missing a message dispatcher\x60)\\);`,"g");
 }
 
 function requestBridgeMatches(source) {
@@ -243,22 +261,21 @@ function applyHydexRequestBridgePatch(source) {
 }
 
 function composerSignaturePattern() {
-  return new RegExp(
-    `function (${IDENT})\\(e\\)\\{let (${IDENT})=\\(0,(${IDENT})\\.c\\)\\(\\d+\\),` +
-      `\\{(?:allowAeonDraftModelSelection|serviceTierDefaults):(${IDENT}),conversationId:(${IDENT}),` +
-      `hideLabel:(${IDENT}),(?:home:${IDENT},)?permissionsCwdOverride:(${IDENT}),permissionsHostId:(${IDENT})\\}=e`,
-    "g",
-  );
+  return new RegExp(`function (${IDENT})\\((${IDENT})\\)\\{let [^;{}]{0,1500}?(${IDENT})=\\(0,(${IDENT})\\.c\\)\\(\\d+\\),\\{([^{}]+)\\}=\\2`,"g");
 }
 
 function composerContractMatches(source) {
-  return [...source.matchAll(composerSignaturePattern())].filter((match) => {
-    const region = source.slice(match.index, match.index + 30_000);
-    return (region.includes("data-codex-intelligence-trigger") || region.includes("triggerButton:")) &&
-      region.includes("composer.intelligenceDropdown.tooltip") &&
-      region.includes("selectComposerModelAndReasoningEffort") &&
-      region.includes("reasoningEffort") &&
-      region.includes("persistent");
+  return [...source.matchAll(composerSignaturePattern())].flatMap(match=>{
+    const props=match[5].split(",").map(item=>item.split(":"));
+    const allowed=new Set(["serviceTierDefaults","allowAeonDraftModelSelection","conversationId","hasThreadResumeFailed","hideLabel","home","isCodexHome","permissionsCwdOverride","permissionsHostId"]);
+    if (props.some(parts=>parts.length!==2 || !allowed.has(parts[0]) || !new RegExp(`^${IDENT}$`).test(parts[1])) || new Set(props.map(p=>p[0])).size!==props.length) return [];
+    const values=Object.fromEntries(props);
+    if (!(values.serviceTierDefaults||values.allowAeonDraftModelSelection) || !["conversationId","hideLabel","permissionsCwdOverride","permissionsHostId"].every(key=>values[key])) return [];
+    const end=findMatchingBrace(source,source.indexOf("{",match.index));
+    if (end<0 || end-match.index>80_000) return [];
+    const region=source.slice(match.index,end+1);
+    if (!region.includes("composer.intelligenceDropdown.tooltip") || !region.includes("selectComposerModelAndReasoningEffort")) return [];
+    return [{index:match.index,end:end+1,region,props:values}];
   });
 }
 
@@ -277,104 +294,21 @@ function uniqueAlias(region, method) {
 }
 
 function applyHydexComposerControlPatch(source) {
-  if (source.includes(CONTROL_MARKER) && source.includes(NEXT_TURN_MARKER)) return source;
-
-  const matches = composerContractMatches(source);
-  if (matches.length !== 1) {
-    warn(
-      `Expected one local Codex model picker, found ${matches.length}`,
-      "Hydex offload composer control patch",
-    );
-    return source;
-  }
-
-  const [signature] = matches;
-  const functionStart = signature.index;
-  const regionLimit = source.slice(functionStart, functionStart + 30_000);
-  const suffixPattern = new RegExp(
-    `\\}function ${IDENT}\\(e\\)\\{let\\{reasoningEffort:${IDENT}\\}=e;` +
-      `return ${IDENT}===\\\`persistent\\\`\\}`,
-  );
-  const suffixMatch = regionLimit.match(suffixPattern);
-  if (suffixMatch == null || suffixMatch.index == null) {
-    warn("Could not bound the local model picker", "Hydex offload composer control patch");
-    return source;
-  }
-
-  const functionEnd = functionStart + suffixMatch.index + 1;
-  const region = source.slice(functionStart, functionEnd);
-  const reactAlias = uniqueAlias(region, "useState");
-  const jsxAliases = [
-    ...region.matchAll(new RegExp(`\\(0,(${IDENT})\\.(?:jsx|jsxs)\\)\\(`, "g")),
-  ].map((match) => match[1]);
-  const uniqueJsxAliases = [...new Set(jsxAliases)];
-  const jsxAlias = uniqueJsxAliases.length === 1 ? uniqueJsxAliases[0] : null;
-  const modelHookPattern = new RegExp(
-    `\\{modelSettings:(${IDENT}),setDefaultModelAndReasoningEffort:(${IDENT}),` +
-      `setModelAndReasoningEffort:(${IDENT}),` +
-      `setModelAndReasoningEffortForNextTurn:(${IDENT})\\}=`,
-    "g",
-  );
-  const modelHookMatches = [...source.matchAll(modelHookPattern)];
-  const selectionPattern = new RegExp(
-    `let (${IDENT})=${IDENT}\\(${IDENT}\\),\\{modelSettings:(${IDENT}),` +
-      `selectComposerModelAndReasoningEffort:${IDENT},` +
-      `setDefaultModelAndReasoningEffort:${IDENT},` +
-      `setModelAndReasoningEffort:${IDENT}\\}=\\1,`,
-  );
-  const selectionMatch = region.match(selectionPattern);
-  const resultMatches = [
-    ...region.matchAll(new RegExp(`let (${IDENT});return`, "g")),
-  ].filter((match) => region.endsWith(`,${match[1]}}`));
-
-  if (
-    reactAlias == null ||
-    jsxAlias == null ||
-    modelHookMatches.length !== 1 ||
-    selectionMatch == null ||
-    resultMatches.length !== 1
-  ) {
-    warn("Could not resolve local model picker symbols", "Hydex offload composer control patch");
-    return source;
-  }
-
-  const [modelHookMatch] = modelHookMatches;
-  const modelHookStart = modelHookMatch.index;
-  const modelSettingsHookVar = modelHookMatch[1];
-  const defaultModelSetterVar = modelHookMatch[2];
-  const modelSetterVar = modelHookMatch[3];
-  const nextTurnSetterVar = modelHookMatch[4];
-  const passthroughPattern = new RegExp(
-    `\\{modelSettings:${modelSettingsHookVar},` +
-      `setDefaultModelAndReasoningEffort:${defaultModelSetterVar},` +
-      `setModelAndReasoningEffort:${modelSetterVar},` +
-      `selectComposerModelAndReasoningEffort:(${IDENT})\\}`,
-    "g",
-  );
-  const passthroughSearch = source.slice(modelHookStart, functionStart);
-  const passthroughMatches = [...passthroughSearch.matchAll(passthroughPattern)];
-  if (passthroughMatches.length !== 1) {
-    warn("Could not expose the next-turn model updater", "Hydex offload composer control patch");
-    return source;
-  }
-
-  const passthroughMatch = passthroughMatches[0];
-  const passthroughStart = modelHookStart + passthroughMatch.index;
-  const passthrough = passthroughMatch[0];
-  const patchedPassthrough =
-    `${passthrough.slice(0, -1)},/*${NEXT_TURN_MARKER}*/` +
-    `setModelAndReasoningEffortForNextTurn:${nextTurnSetterVar}}`;
-  const conversationVar = signature[5];
-  const hostVar = signature[8];
-  const modelSelectionVar = selectionMatch[1];
-  const modelSettingsVar = selectionMatch[2];
-  const resultVar = resultMatches[0][1];
-  const originalTail = `,${resultVar}}`;
-  if (!region.endsWith(originalTail)) {
-    warn("Could not resolve local model picker return", "Hydex offload composer control patch");
-    return source;
-  }
-
+  if (source.includes(CONTROL_MARKER)) return source;
+  const originalSource=source;
+  const initial=composerContractMatches(source);
+  if(initial.length!==1) {warn(`Expected one local Codex model picker, found ${initial.length}`,"Hydex offload composer control patch");return source;}
+  if (nextTurnUpdaterMatches(source).length===1) source=applyHydexNextTurnUpdaterPatch(source);
+  const matches=composerContractMatches(source);
+  if (matches.length!==1) {warn(`Expected one local Codex model picker, found ${matches.length}`,"Hydex offload composer control patch");return source;}
+  const signature=matches[0],functionStart=signature.index,functionEnd=signature.end,region=signature.region;
+  const reactAlias=uniqueAlias(region,"useState");
+  const aliases=[...new Set([...region.matchAll(new RegExp(`\\(0,(${IDENT})\\.(?:jsx|jsxs)\\)\\(`,"g"))].map(m=>m[1]))];
+  const jsxAlias=aliases.length===1?aliases[0]:null;
+  const selection=region.match(new RegExp(`let (${IDENT})=(?:\\(0,${IDENT}\\.${IDENT}\\)|${IDENT})\\(${IDENT}\\),\\{modelSettings:(${IDENT}),selectComposerModelAndReasoningEffort:${IDENT},setDefaultModelAndReasoningEffort:${IDENT},setModelAndReasoningEffort:${IDENT}\\}=\\1`));
+  const tail=region.match(new RegExp(`,(${IDENT})\\}$`));
+  if (!reactAlias || !jsxAlias || !selection || !tail || !new RegExp(`${tail?.[1]}=\\(0,${jsxAlias}\\.(?:jsx|jsxs)\\)\\(`).test(region)) {warn("Could not resolve local model picker symbols","Hydex offload composer control patch");return originalSource;}
+  const conversationVar=signature.props.conversationId,hostVar=signature.props.permissionsHostId,modelSelectionVar=selection[1],modelSettingsVar=selection[2],resultVar=tail[1],originalTail=tail[0];
   const helper =
     `/*${CONTROL_MARKER}*/` +
     `function codexLinuxHydexOffloadRead(){try{let e=localStorage.getItem(\`hydex.offloadOverride\`);` +
@@ -433,33 +367,18 @@ function applyHydexComposerControlPatch(source) {
     `children:[${resultVar},${hostVar}==null||${hostVar}===\`local\`?` +
     `(0,${jsxAlias}.jsx)(${CONTROL_MARKER},{onApply:${onApply}}):null]})}`;
   const patchedRegion = region.slice(0, -originalTail.length) + replacementTail;
-  const patchedPrefix = source.slice(0, passthroughStart) +
-    patchedPassthrough +
-    source.slice(passthroughStart + passthrough.length, functionStart);
-
-  return patchedPrefix + helper + patchedRegion + source.slice(functionEnd);
+  return source.slice(0,functionStart)+helper+patchedRegion+source.slice(functionEnd);
 }
 
 
 function fullLocalCreditGateMatches(source) {
-  const pattern = new RegExp(
-    String.raw`(${IDENT})=\{imageGenerationLimit:${IDENT},isUsageBannerEnabled:${IDENT},` +
-    `onDismissImageGenerationLimit:${IDENT},rateLimit:${IDENT},` +
-    `rateLimitWarningThreshold:${IDENT},sendBlocked:${IDENT}\}`, "g");
-  return [...source.matchAll(pattern)].flatMap(match => {
-    const start = source.lastIndexOf("function ", match.index);
-    if (start < 0) return [];
-    const opening = source.slice(start).match(new RegExp(String.raw`^function ${IDENT}\(${IDENT}\)\{`));
-    const tail = `,${match[1]}}`;
-    const end = source.indexOf(tail, match.index + match[0].length);
-    if (!opening || end < 0 || end - start > 12000) return [];
-    const region = source.slice(start, end + tail.length);
-    const scope = region.match(new RegExp("(" + IDENT + ")\\.value\\.kind===`local`"));
-    const host = region.match(new RegExp("(" + IDENT + ")===`local`&&" + IDENT + "\\|\\|"));
-    const react = uniqueAlias(region, "useEffect");
-    if (!scope || !host || !react) return [];
-    return [{ start, end: end + tail.length, opening: opening[0], region,
-      result: match[1], tail, scope: scope[1], host: host[1], react }];
+  const pattern=new RegExp(`(${IDENT})=\\{imageGenerationLimit:${IDENT},isUsageBannerEnabled:${IDENT},onDismissImageGenerationLimit:${IDENT},rateLimit:${IDENT},rateLimitWarningThreshold:${IDENT},sendBlocked:${IDENT}\\}`,"g");
+  return [...source.matchAll(pattern)].flatMap(match=>{
+    const owner=enclosingFunction(source,match.index,12_000);
+    if (!owner || !owner.region.endsWith(`,${match[1]}}`)) return [];
+    const scopes=localScopeNames(owner.region),host=owner.region.match(new RegExp(`(?:"local"===(${IDENT})|(${IDENT})===\x60local\x60)&&${IDENT}\\|\\|`)),react=uniqueAlias(owner.region,"useEffect");
+    if (scopes.length!==1 || !host || !react) return [];
+    return [{...owner,result:match[1],tail:`,${match[1]}}`,scope:scopes[0],host:host[1]||host[2],react}];
   });
 }
 
@@ -475,21 +394,15 @@ function fullLocalPreferenceHelpers(marker) {
 }
 
 function fullLocalSubmitGateMatches(source) {
-  const pattern = new RegExp(`(${IDENT})=(${IDENT})\\((${IDENT})===\`local\`&&(${IDENT})\\)`, "g");
-  return [...source.matchAll(pattern)].flatMap(match => {
-    const start = source.lastIndexOf("function ", match.index);
-    const end = source.indexOf("}function ", match.index);
-    if (start < 0 || end < 0 || end - start > 60_000) return [];
-    const region = source.slice(start, end + 1);
-    const opening = region.match(new RegExp(`^function ${IDENT}\\(${IDENT}\\)\\{`));
-    const scopeNames = [...new Set([...region.matchAll(new RegExp(`(${IDENT})\\.value\\.kind===\`local\``, "g"))].map(m => m[1]))];
-    const followNames = [...new Set([...region.matchAll(new RegExp(`else if\\((${IDENT})\\?\\.type===\`cloud\`\\)`, "g"))].map(m => m[1]))];
-    const react = uniqueAlias(region, "useRef");
-    const submit = region.match(new RegExp(`let (${IDENT})=[^;{}]{1,800}\\|\\|${match[1]}[,;]`));
-    if (!opening || scopeNames.length !== 1 || followNames.length !== 1 || !react || !submit ||
-        !region.includes(`submitDisabled:${submit[1]}`)) return [];
-    return [{start, end: end + 1, region, opening: opening[0], quota: match,
-      scope: scopeNames[0], follow: followNames[0], react}];
+  const pattern=new RegExp(`(${IDENT})=(?:(${IDENT})|\\(0,(${IDENT})\\.(${IDENT})\\))\\((?:"local"===(${IDENT})|(${IDENT})===\x60local\x60)&&${IDENT}(?:\\.${IDENT})?\\)`,"g");
+  return [...source.matchAll(pattern)].flatMap(match=>{
+    const owner=enclosingFunction(source,match.index,60_000);
+    if (!owner) return [];
+    const region=owner.region,scopeNames=localScopeNames(region),react=uniqueAlias(region,"useRef");
+    const followNames=[...new Set([...region.matchAll(new RegExp(`(${IDENT})\\?\\.type===["\x60]cloud["\x60]`,"g"))].map(m=>m[1]))];
+    const submitNames=[...new Set([...region.matchAll(new RegExp(`submitDisabled:(${IDENT})(?=[,}])`,"g"))].map(m=>m[1]))].filter(name=>new RegExp(`${name.replace(/\$/g,"\\$")}=[^;{}]{1,800}\\|\\|${match[1]}[,;]`).test(region));
+    if(scopeNames.length!==1 || followNames.length!==1 || submitNames.length!==1 || !react) return [];
+    return [{...owner,quota:match,host:match[5]||match[6],scope:scopeNames[0],follow:followNames[0],react}];
   });
 }
 
@@ -505,14 +418,15 @@ function applyHydexFullLocalSubmitGatePatch(source) {
     return source;
   }
   const match = matches[0];
-  const local = `hydexFullLocal&&${match.quota[3]}===\`local\`&&` +
+  const local = `hydexFullLocal&&${match.host}===\`local\`&&` +
     `(${match.scope}.value.kind===\`local\`||${match.scope}.value.kind===\`new\`&&${match.scope}.value.cloudThreadPrototype!==!0)&&` +
     `${match.follow}?.type!==\`cloud\``;
   let region = match.region.replace(match.quota[0], `${match.quota[0]}&&!(${local})`);
   region = match.opening +
     `let hydexFullLocal=(0,${match.react}.useSyncExternalStore)(codexLinuxHydexFullLocalSubscribe,codexLinuxHydexFullLocalRead,()=>!1);` +
     region.slice(match.opening.length);
-  return source.slice(0, match.start) + fullLocalPreferenceHelpers(FULL_LOCAL_SUBMIT_MARKER) + region + source.slice(match.end);
+  region = match.opening + fullLocalPreferenceHelpers(FULL_LOCAL_SUBMIT_MARKER) + region.slice(match.opening.length);
+  return source.slice(0, match.start) + region + source.slice(match.end);
 }
 
 function applyHydexFullLocalCreditGatePatch(source) {
@@ -527,8 +441,8 @@ function applyHydexFullLocalCreditGatePatch(source) {
   const hook = `let hydexFullLocal=(0,${match.react}.useSyncExternalStore)(codexLinuxHydexFullLocalSubscribe,codexLinuxHydexFullLocalRead,()=>!1);`;
   const result = `,hydexFullLocal&&(${match.scope}.value.kind===\`local\`||${match.scope}.value.kind===\`new\`&&${match.scope}.value.cloudThreadPrototype!==!0)&&${match.host}===\`local\`?` +
     `{...${match.result},sendBlocked:!1,isUsageBannerEnabled:${match.result}.imageGenerationLimit!=null,rateLimitWarningThreshold:null}:${match.result}}`;
-  const region = match.opening + hook + match.region.slice(match.opening.length, -match.tail.length) + result;
-  return source.slice(0, match.start) + helper + region + source.slice(match.end);
+  const region = match.opening + helper + hook + match.region.slice(match.opening.length, -match.tail.length) + result;
+  return source.slice(0, match.start) + region + source.slice(match.end);
 }
 
 
@@ -545,7 +459,7 @@ const descriptors = [
     phase: "webview-asset",
     order: 20700,
     ciPolicy: "optional",
-    pattern: /^app-(?:initial|shared)-[^.]+\.js$/,
+    assetNeedles: ["AppServerRequestClient is missing a message dispatcher"],
     assetMatch: matchesHydexRequestBridgeContract,
     missingDescription: "current app-server request bridge bundle",
     skipDescription: "Hydex offload request bridge patch",
@@ -556,7 +470,7 @@ const descriptors = [
     phase: "webview-asset",
     order: 20705,
     ciPolicy: "optional",
-    pattern: /^app-(?:primary|initial)-[^.]+\.js$/,
+    assetNeedles: ['id:"sidebarElectron.productMode.codex"'],
     assetMatch: matchesHydexProductModeLabelContract,
     missingDescription: "current Codex sidebar product-mode label bundle",
     skipDescription: "Hydex product-mode label patch",
@@ -567,18 +481,25 @@ const descriptors = [
     phase: "webview-asset",
     order: 20706,
     ciPolicy: "optional",
-    pattern: /^app-(?:primary|initial)-[^.]+\.js$/,
+    assetNeedles: ["h-[1em] w-auto overflow-visible", "data-no-autosize"],
     assetMatch: matchesHydexProductModeSelectedLabelContract,
     missingDescription: "current selected Codex product-mode wordmark bundle",
     skipDescription: "Hydex selected product-mode label patch",
     apply: applyHydexProductModeSelectedLabelPatch,
   },
   {
+    id: "hydex-offload-next-turn-updater",
+    phase: "extracted-app:pre-webview",
+    order: 20709,
+    ciPolicy: "optional",
+    apply: applyHydexNextTurnUpdaterAssets,
+  },
+  {
     id: "hydex-offload-composer-control",
     phase: "webview-asset",
     order: 20710,
     ciPolicy: "optional",
-    pattern: /^app-primary-[^.]+\.js$/,
+    assetNeedles: ["composer.intelligenceDropdown.tooltip", "permissionsHostId:", "selectComposerModelAndReasoningEffort:"],
     assetMatch: matchesHydexComposerContract,
     missingDescription: "current local Codex model picker bundle",
     skipDescription: "Hydex offload composer control patch",
@@ -589,7 +510,7 @@ const descriptors = [
     phase: "webview-asset",
     order: 20715,
     ciPolicy: "optional",
-    pattern: /^(?:app-primary|composer-content)-[^.]+\.js$/,
+    assetNeedles: ["imageGenerationLimit:", "isUsageBannerEnabled:", "rateLimitWarningThreshold:"],
     assetMatch: matchesHydexFullLocalCreditGateContract,
     missingDescription: "current local composer usage-admission hook",
     skipDescription: "Hydex Full local credit admission",
@@ -597,14 +518,10 @@ const descriptors = [
   },
   {
     id: "hydex-full-local-submit-admission",
-    phase: "webview-asset",
+    phase: "extracted-app:pre-webview",
     order: 20716,
     ciPolicy: "optional",
-    pattern: /^codex-composer-adapter-[^.]+\.js$/,
-    assetMatch: matchesHydexFullLocalSubmitGateContract,
-    missingDescription: "current local composer submit-admission gate",
-    skipDescription: "Hydex Full local submit admission",
-    apply: applyHydexFullLocalSubmitGatePatch,
+    apply: applyHydexFullLocalSubmitGateAssets,
   },
   {
     id: "hydex-product-mode-locale-labels",
@@ -616,6 +533,10 @@ const descriptors = [
 ];
 
 module.exports = {
+  applyHydexNextTurnUpdaterAssets,
+  applyHydexFullLocalSubmitGateAssets,
+  applyHydexNextTurnUpdaterPatch,
+  matchesHydexNextTurnUpdaterContract,
   FULL_LOCAL_SUBMIT_MARKER,
   applyHydexFullLocalSubmitGatePatch,
   matchesHydexFullLocalSubmitGateContract,

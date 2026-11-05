@@ -14,6 +14,7 @@ const {
   enabledFeatureFailuresFromReport,
 } = require("../../scripts/lib/patch-report.js");
 const {
+  applyExtractedAppPatchDescriptors,
   applyWebviewAssetPatchDescriptors,
   normalizePatchDescriptors,
 } = require("../../scripts/patches/engine.js");
@@ -67,31 +68,12 @@ function localComposerFixture() {
   ].join("");
 }
 
-function productModeSelectedLabelFixture() {
-  return [
-    "function productModeSelector(mode){let label=productModeLabels.chatGpt,visible=ChatGptWordmark;",
-    "if(mode===`codex`){label=productModeLabels.codex;let selected;cache[3]===Symbol.for(`react.memo_cache_sentinel`)?(selected=(0,jsx.jsx)(CodexWordmark,{\"aria-hidden\":`true`,className:`h-[1em] w-auto overflow-visible`,\"data-no-autosize\":!0}),cache[3]=selected):selected=cache[3],visible=selected}else if(mode===`work`){visible=ChatGptWordmark}",
-    "return(0,jsx.jsxs)(`span`,{children:[(0,jsx.jsx)(Message,{...label}),visible]})}",
-  ].join("");
-}
+function productModeSelectedLabelFixture() { return "function productModeSelector(mode){let label=productModeLabels.chatGpt,visible=ChatGptWordmark;if(\"codex\"===mode){let selected;label=productModeLabels.codex;cache[3]===Symbol.for(`react.memo_cache_sentinel`)?(selected=(0,jsx.jsx)(CodexWordmark,{\"aria-hidden\":\"true\",className:\"h-[1em] w-auto overflow-visible\",\"data-no-autosize\":!0}),cache[3]=selected):selected=cache[3],visible=selected}else if(mode===`work`){visible=ChatGptWordmark}return(0,jsx.jsxs)(`span`,{children:[(0,jsx.jsx)(Message,{...label}),visible]})}"; }
 
-function productModeLabelFixture() {
-  return [
-    "var productModeLabels=createMessages({",
-    "codex:{id:`sidebarElectron.productMode.codex`,defaultMessage:`Codex`,description:`Codex option in the sidebar mode selector`},",
-    "priority:{id:`sidebarElectron.priorityThreads.details.codex`,defaultMessage:`Codex`}",
-    "});",
-  ].join("");
-}
+function productModeLabelFixture() { return "var productModeLabels=createMessages({codex:{id:\"sidebarElectron.productMode.codex\",defaultMessage:\"Codex\",description:\"Codex option in the sidebar mode selector\"},priority:{id:`sidebarElectron.priorityThreads.details.codex`,defaultMessage:`Codex`}});"; }
 
 function localeProductModeFixture(label = "Codex", marker = "") {
-  return [
-    "export default {",
-    `"sidebarElectron.productMode.chatGpt":\`ChatGPT\`,`,
-    `"sidebarElectron.productMode.codex":\`${label}\`${marker},`,
-    `"sidebarElectron.productMode.codex.description.developer":\`Build, debug, and ship\``,
-    "};",
-  ].join("");
+  return 'export default {"sidebarElectron.productMode.chatGpt":"ChatGPT","sidebarElectron.productMode.codex":'+JSON.stringify(label)+marker+',"sidebarElectron.productMode.codex.description.developer":"Build, debug, and ship"};';
 }
 
 function chatComposerFixture() {
@@ -151,14 +133,13 @@ test("current composer ignores a nested memoized callback return", () => {
   new vm.Script(patched);
 });
 
-test("ambiguous composer return owners remain byte-identical", () => {
-  const source = localComposerFixture().replace(
-    "let result;return",
-    "const nested=()=>{let result;return result={value:1},result};let result;return",
-  );
+test("nested return variables do not obscure the owned composer return", () => {
+  const source = localComposerFixture().replace("let result;return", "const nested=()=>{let result;return result={value:1},result};let result;return");
   const { value, warnings } = captureWarnings(() => applyHydexComposerControlPatch(source));
-  assert.equal(value, source);
-  assert.ok(warnings.some((warning) => warning.includes("Could not resolve local model picker symbols")));
+  assert.notEqual(value, source);
+  assert.ok(value.includes("const nested=()=>{let result;return result={value:1},result}"));
+  assert.deepEqual(warnings, []);
+  new vm.Script(value);
 });
 
 test("a missing terminal composer return remains byte-identical", () => {
@@ -255,7 +236,7 @@ function hydexDescriptors(featuresRoot) {
 
 function writeWebviewAsset(extractedDir, name, source) {
   const assetsDir = path.join(extractedDir, "webview", "assets");
-  fs.mkdirSync(assetsDir, { recursive: true });
+  fs.mkdirSync(path.dirname(path.join(assetsDir,name)), { recursive: true });
   fs.writeFileSync(path.join(assetsDir, name), source);
 }
 
@@ -338,9 +319,10 @@ test("feature loader exposes every enforced branding and offload surface", () =>
           "optional",
           true,
         ],
+        ["feature:hydex-offload:hydex-offload-next-turn-updater", "extracted-app:pre-webview", "optional", true],
         ["feature:hydex-offload:hydex-offload-composer-control", "webview-asset", "optional", true],
         ["feature:hydex-offload:hydex-full-local-credit-admission", "webview-asset", "optional", true],
-        ["feature:hydex-offload:hydex-full-local-submit-admission", "webview-asset", "optional", true],
+        ["feature:hydex-offload:hydex-full-local-submit-admission", "extracted-app:pre-webview", "optional", true],
         [
           "feature:hydex-offload:hydex-product-mode-locale-labels",
           "extracted-app:post-webview",
@@ -391,7 +373,7 @@ test("Hydex patcher changes only the sidebar product-mode label", () => {
   assert.match(patched, new RegExp(PRODUCT_MODE_LABEL_MARKER));
   assert.match(
     patched,
-    /id:`sidebarElectron\.productMode\.codex`,defaultMessage:`Hydex`/,
+    /id:"sidebarElectron\.productMode\.codex",defaultMessage:"Hydex"/,
   );
   assert.match(
     patched,
@@ -461,7 +443,7 @@ test("Hydex patcher changes the product-mode label in every locale catalog", () 
       const source = fs.readFileSync(path.join(assetsDir, name), "utf8");
       assert.equal(
         source.includes(
-          '"sidebarElectron.productMode.codex":`Hydex`/*' +
+          '"sidebarElectron.productMode.codex":"Hydex"/*' +
             PRODUCT_MODE_LOCALE_LABEL_MARKER +
             "*/",
         ),
@@ -491,7 +473,7 @@ test("locale patch validates every catalog before changing any file", () => {
 
     assert.throws(
       () => applyHydexProductModeLocalePatch(root),
-      /Unexpected Codex product-mode locale contract in fr-FR-current\.js: 2 key/,
+      /Unexpected Codex locale contract in fr-FR-current\.js/,
     );
     assert.equal(fs.readFileSync(validPath, "utf8"), valid);
   });
@@ -558,21 +540,14 @@ test("descriptors target the semantic current bundle owners", () => {
       ["hydex-offload-request-bridge", "webview-asset"],
       ["hydex-product-mode-label", "webview-asset"],
       ["hydex-product-mode-selected-label", "webview-asset"],
+      ["hydex-offload-next-turn-updater", "extracted-app:pre-webview"],
       ["hydex-offload-composer-control", "webview-asset"],
       ["hydex-full-local-credit-admission", "webview-asset"],
-      ["hydex-full-local-submit-admission", "webview-asset"],
+      ["hydex-full-local-submit-admission", "extracted-app:pre-webview"],
       ["hydex-product-mode-locale-labels", "extracted-app:post-webview"],
     ],
   );
-  assert.equal(descriptors[1].pattern.test("app-initial-c8dbea294abe.js"), true);
-  assert.equal(descriptors[1].pattern.test("app-primary-7eef500906c5.js"), false);
-  assert.equal(descriptors[2].pattern.test("app-primary-7eef500906c5.js"), true);
-  assert.equal(descriptors[2].pattern.test("app-initial-c8dbea294abe.js"), true);
-  assert.equal(descriptors[1].pattern.test("app-shared-current.js"), true);
-  assert.equal(descriptors[3].pattern.test("app-primary-7eef500906c5.js"), true);
-  assert.equal(descriptors[3].pattern.test("app-initial-c8dbea294abe.js"), true);
-  assert.equal(descriptors[4].pattern.test("app-primary-7eef500906c5.js"), true);
-  assert.equal(descriptors[4].pattern.test("app-initial-c8dbea294abe.js"), false);
+  assert.deepEqual(descriptors[1].assetNeedles, ["AppServerRequestClient is missing a message dispatcher"]);
   assert.equal(matchesHydexRequestBridgeContract(requestBridgeFixture()), true);
   assert.equal(matchesHydexProductModeLabelContract(productModeLabelFixture()), true);
   assert.equal(
@@ -580,8 +555,7 @@ test("descriptors target the semantic current bundle owners", () => {
     true,
   );
   assert.equal(matchesHydexComposerContract(localComposerFixture()), true);
-  assert.equal(descriptors[5].pattern.test("composer-content-current.js"), true);
-  assert.equal(descriptors[5].pattern.test("usage-current.js"), false);
+  assert.ok(descriptors[5].assetNeedles.includes("composer.intelligenceDropdown.tooltip"));
 });
 
 test("request bridge sends every Hydex override state on turn start", async () => {
@@ -835,97 +809,40 @@ test("ambiguous local model pickers warn and remain byte-identical", () => {
   ]);
 });
 
-test("feature descriptors patch every extracted webview surface", () => {
-  withFeatureConfig(["hydex-offload"], (featuresRoot) => {
-    withTempDir((extractedDir) => {
-      writeWebviewAsset(extractedDir, "app-initial-current.js", requestBridgeFixture());
-      writeWebviewAsset(extractedDir, "app-primary-current.js", localComposerFixture());
-      writeWebviewAsset(extractedDir, "codex-composer-adapter-current.js", fullLocalSubmitFixture());
-      const report = createPatchReport();
-      report.enabledFeatures = ["hydex-offload"];
-
-      applyWebviewAssetPatchDescriptors(
-        extractedDir,
-        hydexDescriptors(featuresRoot),
-        {},
-        report,
-      );
-
-      assert.deepEqual(
-        report.patches.map((entry) => [entry.name, entry.status]),
-        [
-          ["feature:hydex-offload:hydex-offload-request-bridge", "applied"],
-          ["feature:hydex-offload:hydex-product-mode-label", "applied"],
-          ["feature:hydex-offload:hydex-product-mode-selected-label", "applied"],
-          ["feature:hydex-offload:hydex-offload-composer-control", "applied"],
-          ["feature:hydex-offload:hydex-full-local-credit-admission", "applied"],
-          ["feature:hydex-offload:hydex-full-local-submit-admission", "applied"],
-        ],
-      );
-      assert.match(
-        fs.readFileSync(path.join(extractedDir, "webview", "assets", "app-initial-current.js"), "utf8"),
-        new RegExp(REQUEST_MARKER),
-      );
-      assert.match(
-        fs.readFileSync(path.join(extractedDir, "webview", "assets", "app-primary-current.js"), "utf8"),
-        new RegExp(CONTROL_MARKER),
-      );
-      assert.deepEqual(enabledFeatureFailuresFromReport(report), []);
-    });
-  });
+test("feature descriptors patch every extracted surface in phase order", () => {
+  withFeatureConfig(["hydex-offload"], featuresRoot => withTempDir(extractedDir => {
+    fs.writeFileSync(path.join(extractedDir,"package.json"), JSON.stringify({productName:"Codex"}));
+    writeWebviewAsset(extractedDir,"async/bridge-current.js",requestBridgeFixture());
+    writeWebviewAsset(extractedDir,"async/picker-current.js",localComposerFixture());
+    writeWebviewAsset(extractedDir,"async/adapter-current.js",fullLocalSubmitFixture());
+    writeWebviewAsset(extractedDir,"async/en-current.js",localeProductModeFixture());
+    const report=createPatchReport(); report.enabledFeatures=["hydex-offload"];
+    const patches=hydexDescriptors(featuresRoot);
+    applyExtractedAppPatchDescriptors(extractedDir,patches,{},report,"extracted-app:pre-webview");
+    applyWebviewAssetPatchDescriptors(extractedDir,patches,{},report);
+    applyExtractedAppPatchDescriptors(extractedDir,patches,{},report,"extracted-app:post-webview");
+    assert.equal(report.patches.length,9);
+    assert.ok(report.patches.every(entry=>entry.status==="applied"));
+    assert.deepEqual(enabledFeatureFailuresFromReport(report),[]);
+    assert.match(fs.readFileSync(path.join(extractedDir,"webview/assets/async/bridge-current.js"),"utf8"),new RegExp(REQUEST_MARKER));
+    assert.match(fs.readFileSync(path.join(extractedDir,"webview/assets/async/picker-current.js"),"utf8"),new RegExp(CONTROL_MARKER));
+  }));
 });
 
-test("a missing enabled surface is reported as candidate-rejecting drift", () => {
-  withFeatureConfig(["hydex-offload"], (featuresRoot) => {
-    withTempDir((extractedDir) => {
-      writeWebviewAsset(extractedDir, "app-initial-current.js", requestBridgeFixture());
-      const report = createPatchReport();
-      report.enabledFeatures = ["hydex-offload"];
-
-      const { warnings } = captureWarnings(() => applyWebviewAssetPatchDescriptors(
-        extractedDir,
-        hydexDescriptors(featuresRoot),
-        {},
-        report,
-      ));
-
-      assert.ok(warnings.some((warning) => warning.includes("current Codex sidebar product-mode label bundle")));
-      assert.ok(warnings.some((warning) => warning.includes("current selected Codex product-mode wordmark bundle")));
-      assert.ok(warnings.some((warning) => warning.includes("current local Codex model picker bundle")));
-      assert.deepEqual(enabledFeatureFailuresFromReport(report), [
-        {
-          featureId: "hydex-offload",
-          name: "feature:hydex-offload:hydex-product-mode-label",
-          reason: report.patches[1].reason,
-          status: "skipped-optional",
-        },
-        {
-          featureId: "hydex-offload",
-          name: "feature:hydex-offload:hydex-product-mode-selected-label",
-          reason: report.patches[2].reason,
-          status: "skipped-optional",
-        },
-        {
-          featureId: "hydex-offload",
-          name: "feature:hydex-offload:hydex-offload-composer-control",
-          reason: report.patches[3].reason,
-          status: "skipped-optional",
-        },
-        {
-          featureId: "hydex-offload",
-          name: "feature:hydex-offload:hydex-full-local-credit-admission",
-          reason: report.patches[4].reason,
-          status: "skipped-optional",
-        },
-        {
-          featureId: "hydex-offload",
-          name: "feature:hydex-offload:hydex-full-local-submit-admission",
-          reason: report.patches[5].reason,
-          status: "skipped-optional",
-        },
-      ]);
+test("a missing enabled surface rejects the candidate", () => {
+  withFeatureConfig(["hydex-offload"], featuresRoot=>withTempDir(extractedDir=>{
+    fs.writeFileSync(path.join(extractedDir,"package.json"),JSON.stringify({productName:"Codex"}));
+    writeWebviewAsset(extractedDir,"async/bridge-current.js",requestBridgeFixture());
+    const report=createPatchReport(); report.enabledFeatures=["hydex-offload"];
+    const patches=hydexDescriptors(featuresRoot);
+    captureWarnings(()=>{
+      applyExtractedAppPatchDescriptors(extractedDir,patches,{},report,"extracted-app:pre-webview");
+      applyWebviewAssetPatchDescriptors(extractedDir,patches,{},report);
+      applyExtractedAppPatchDescriptors(extractedDir,patches,{},report,"extracted-app:post-webview");
     });
-  });
+    const failed=enabledFeatureFailuresFromReport(report).map(entry=>entry.name.replace("feature:hydex-offload:","")).sort();
+    assert.deepEqual(failed,["hydex-offload-next-turn-updater","hydex-product-mode-label","hydex-product-mode-selected-label","hydex-offload-composer-control","hydex-full-local-credit-admission","hydex-full-local-submit-admission","hydex-product-mode-locale-labels"].sort());
+  }));
 });
 
 
@@ -938,7 +855,7 @@ const {
 } = require("./patch.js");
 
 function fullLocalSubmitFixture() {
-  return "function localAdapter(e){let scope=e.scope,host=e.hostId,follow=e.followUp,kind=scope.value.kind===`local`?`thread`:`home`,quotaAtom={},readQuota=flag=>{onQuotaRead();return flag&&e.quotaBlocked},quota=readQuota(host===`local`&&quotaAtom);(0,React.useRef)(null);if(e.stop){}else if(follow?.type===`cloud`){}let blocked=e.pending||e.policyBlocked||e.approvalPending||quota,other;return{submitDisabled:blocked,kind}}function afterAdapter(){}";
+  return "function localAdapter(e){let scope=e.scope,host=e.hostId,follow=e.followUp,kind=scope.value.kind===`local`?`thread`:`home`,quotaAtom={},readQuota=flag=>{onQuotaRead();return flag&&e.quotaBlocked},quota=readQuota(host===`local`&&quotaAtom);(0,React.useRef)(null);if(e.stop){}else if(follow?.type===`cloud`){}let blocked=e.pending||e.policyBlocked||e.approvalPending||quota,other;return{submitDisabled:blocked,kind,isNativeWork:!0,localFollowUpPreparation:null}}function afterAdapter(){}";
 }
 
 function evaluateFullLocalSubmit(mode, configured = false) {
@@ -1342,4 +1259,38 @@ test("the selector follows same-window and cross-window routing changes and clea
   assert.deepEqual(updates, ["force_full", "force_off", "auto"]);
   cleanup();
   assert.equal(listeners.size, 0);
+});
+
+const {applyHydexNextTurnUpdaterAssets,applyHydexFullLocalSubmitGateAssets}=require('./patch.js');
+
+test('Full credit admission remains valid inside an inline rspack hook',()=>{
+  const original='const useUsage='+fullLocalUsageFixture().replace('function localUsage(e)','function(e)')+';';
+  const patched=applyHydexFullLocalCreditGatePatch(original);
+  assert.notEqual(patched,original);
+  new vm.Script(patched);
+  const usage=vm.runInNewContext(patched+';useUsage',{
+    localStorage:{getItem:()=> 'force_full'},
+    window:{addEventListener(){},removeEventListener(){}},
+    React:{useEffect(){},useSyncExternalStore(subscribe,read){return read();}},
+  });
+  assert.equal(usage({scope:{value:{kind:'local'}},hostId:'local'}).sendBlocked,false);
+});
+
+test('split model updater copies are all patched and remain idempotent',()=>{
+  withTempDir(root=>{
+    for(const name of ['async/first.js','async/second.js'])writeWebviewAsset(root,name,localComposerFixture());
+    assert.equal(applyHydexNextTurnUpdaterAssets(root).matched,2);
+    for(const name of ['async/first.js','async/second.js'])assert.ok(fs.readFileSync(path.join(root,'webview/assets',name),'utf8').includes(NEXT_TURN_MARKER));
+    assert.equal(applyHydexNextTurnUpdaterAssets(root).changed,false);
+  });
+});
+
+test('submit-gate asset preflight rejects an ambiguous copy before changing another copy',()=>{
+  withTempDir(root=>{
+    const original=fullLocalSubmitFixture();
+    writeWebviewAsset(root,'async/first.js',original);
+    writeWebviewAsset(root,'async/second.js',original+original);
+    assert.throws(()=>applyHydexFullLocalSubmitGateAssets(root),/Ambiguous local submit-admission/);
+    assert.equal(fs.readFileSync(path.join(root,'webview/assets/async/first.js'),'utf8'),original);
+  });
 });
