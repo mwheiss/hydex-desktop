@@ -657,6 +657,73 @@ test("composer patch adds an authoritative local control and next-turn update", 
   assert.doesNotThrow(() => new vm.Script(patched));
 });
 
+// Upstream rspack imports use short names that can also name helper-local state
+// and refs. Evaluate the injected component using those actual import bindings.
+for (const [reactAlias, jsxAlias] of [
+  ["g", "o"], // Signed 26.1029.61003: JSX import o was shadowed by the popover ref.
+  ...["e", "t", "n", "r", "i", "a", "o", "s", "c", "l", "u", "d", "f"]
+    .flatMap(alias => [[alias, "jsx"], ["React", alias]]),
+]) {
+  test(`minified import aliases ${reactAlias}/${jsxAlias} render and apply offload choices`, () => {
+    const source = localComposerFixture()
+      .replaceAll("React.", `${reactAlias}.`)
+      .replaceAll("jsx.", `${jsxAlias}.`);
+    const patched = applyHydexComposerControlPatch(source);
+    assert.notEqual(patched, source);
+    assert.equal(applyHydexComposerControlPatch(patched), patched);
+    const helperStart = patched.indexOf(`/*${CONTROL_MARKER}*/`);
+    const helperSource = patched.slice(helperStart, patched.indexOf("function localModelPicker", helperStart));
+    const effects = [];
+    const listeners = new Map();
+    const hooks = {
+      useEffect: effect => effects.push(effect),
+      useState: initial => [typeof initial === "function" ? initial() : initial, () => {}],
+      useRef: initial => ({current: initial}),
+    };
+    const runtime = {
+      jsx: (type, props) => ({type, props}),
+      jsxs: (type, props) => ({type, props}),
+    };
+    const storage = makeMutableStorage();
+    const control = Function(reactAlias, jsxAlias, "localStorage", "window",
+      `${helperSource};return ${CONTROL_MARKER};`)(hooks, runtime, storage, {
+      addEventListener: (name, callback) => listeners.set(name, callback),
+      removeEventListener: name => listeners.delete(name),
+      dispatchEvent() {},
+    });
+    const applied = [];
+    const tree = control({onApply: value => applied.push(value)});
+    assert.equal(tree.type, "span");
+    const [trigger, menu] = tree.props.children;
+    assert.equal(trigger.props.children[0].props.children, "Hydex auto");
+    assert.equal(menu.props.children.length, 4);
+    const cleanup = effects[0]();
+    assert.equal(listeners.size, 2);
+    for (const [index, value] of [[2, "force_full"], [1, "force_on"], [3, "force_off"], [0, null]]) {
+      menu.props.children[index].props.onClick({currentTarget: {dataset: {
+        value: value ?? "auto",
+      }}});
+      assert.equal(storage.value(), value);
+      assert.equal(applied.at(-1), value);
+    }
+    cleanup();
+    assert.equal(listeners.size, 0);
+  });
+}
+
+test("older Full controls without isolated imports fail the build contract", () => {
+  const patched = applyHydexComposerControlPatch(localComposerFixture());
+  assert.equal(matchesHydexComposerContract(patched), true);
+  const legacy = patched
+    .replace(`const ${CONTROL_MARKER}=(function(codexLinuxHydexReact,codexLinuxHydexJsx){return `, "")
+    .replace("})(React,jsx);", "")
+    .replaceAll("codexLinuxHydexReact", "React")
+    .replaceAll("codexLinuxHydexJsx", "jsx");
+  new vm.Script(legacy);
+  assert.equal(matchesHydexComposerContract(legacy), false);
+  assert.equal(applyHydexComposerControlPatch(legacy), legacy);
+});
+
 test("composer control renders an app-styled popover and persists choices", () => {
   const patched = applyHydexComposerControlPatch(localComposerFixture());
   const helperStart = patched.indexOf(`/*${CONTROL_MARKER}*/`);
