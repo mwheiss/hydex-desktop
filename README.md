@@ -331,6 +331,7 @@ legacy `codex-remote-control` service name to `hydex-remote-control`.
 | `remote-trust-race-workaround` | Narrow inotify workaround for generated Remote exact-path trust races | [Docs](linux-features/remote-trust-race-workaround/README.md) |
 | `shallow-repository-watches` | Avoid recursive main-thread walks for transient repository previews | [Docs](linux-features/shallow-repository-watches/README.md) |
 | `shared-app-server-socket` | Share one protocol-transparent Unix app-server socket | [Docs](linux-features/shared-app-server-socket/README.md) |
+| `chatgpt-conversation-api` | Expose native ChatGPT history and Projects over private MCP, with exact-batch native approval and best-effort undo; mutations default off | [Docs](linux-features/chatgpt-conversation-api/README.md) |
 | `start-minimized-to-tray` | Add opt-in General settings to start hidden in the tray, either on every launch or only at login autostart | [Docs](linux-features/start-minimized-to-tray/README.md) |
 | `thorium-chrome-plugin` | Add Thorium to the official bundled Chrome integration | [Docs](linux-features/thorium-chrome-plugin/README.md) |
 | `tray-usage` | Show usage remaining in the Linux system-tray menu | [Docs](linux-features/tray-usage/README.md) |
