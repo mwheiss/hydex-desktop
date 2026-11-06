@@ -179,7 +179,9 @@ An uncertain/interrupted operation is first read back: if its exact proposed
 state is present, it is recorded verified without a repeat; otherwise it stays
 paused for reconciliation. Unknown Project creation results never trigger
 another blind creation. Desktop shutdown aborts work and preserves journaled
-intent/results. A new owner marks running jobs interrupted before recovery.
+intent/results. Cleanup starts in `will-quit`, after upstream's native Quit
+confirmation accepts shutdown; cancelling a Quit prompt leaves the API active.
+A new owner marks running jobs interrupted before recovery.
 
 Undo creates and approves an inverse plan in reverse operation order. It
 restores only recorded verified changes and fails on intervening edits.
