@@ -14,7 +14,7 @@ const { normalize, retrieve, conversationState, projectRecord } = require("./run
 const { tools, dispatch, validate } = require("./runtime/tools.js");
 const { listen, connect } = require("./runtime/ipc.js");
 const { jsonLines, send } = require("./runtime/wire.js");
-const { PREFIX, RendererBackend, nativeApproval } = require("./runtime/desktop.js");
+const { PREFIX, RendererBackend, nativeApproval, install: installDesktop } = require("./runtime/desktop.js");
 const { installRenderer, installPreload } = require("./renderer.js");
 const patch = require("./patch.js");
 const { CONTEXT, MockBackend, tree, message, clone } = require("./fixtures/backend.js");
@@ -405,6 +405,37 @@ test("native approval requires an affirmative click and separate shared-destinat
   assert.equal(await approve({ id: "plan", hash: "sha", context: CONTEXT, operations: [op("move")] }, { kind: "execute", shared: [{ id: "g-p-shared" }] }), false);
   assert.equal(dialogs.length, 2); assert.equal(dialogs[0].defaultId, 0); assert.equal(dialogs[1].cancelId, 0);
   assert.match(dialogs[0].detail, /sha/);
+});
+test("cancelling native Quit leaves the API active; accepted Quit drains it in will-quit", async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "hydex-conversation-lifecycle-"));
+  const previous = process.env.XDG_RUNTIME_DIR;
+  process.env.XDG_RUNTIME_DIR = directory;
+  const app = new EventEmitter(), handlers = new Map();
+  app.getPath = () => path.join(directory, "user-data");
+  let finishQuit;
+  const quit = new Promise(resolve => { finishQuit = resolve; });
+  app.quit = finishQuit;
+  const desktop = installDesktop({ electron: { app, ipcMain: {
+    handle: (name, handler) => handlers.set(name, handler), removeHandler: name => handlers.delete(name),
+  } }, isTrustedIpcEvent: () => false, settings: { mutationsEnabled: false } });
+  t.after(async () => {
+    await desktop.close();
+    delete globalThis[Symbol.for("hydex.chatgpt-conversation-api.v1")];
+    if (previous === undefined) delete process.env.XDG_RUNTIME_DIR; else process.env.XDG_RUNTIME_DIR = previous;
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  await desktop.ready;
+  const discovery = path.join(directory, "hydex-chatgpt-conversation-api/bridge.json");
+  assert.equal(app.listenerCount("before-quit"), 0);
+  app.emit("before-quit", { preventDefault() {} });
+  assert.equal(fs.existsSync(discovery), true);
+  assert.equal(handlers.has(PREFIX + "hello"), true);
+  let prevented = false;
+  app.emit("will-quit", { preventDefault() { prevented = true; } });
+  await quit;
+  assert.equal(prevented, true);
+  assert.equal(fs.existsSync(discovery), false);
+  assert.equal(handlers.has(PREFIX + "hello"), false);
 });
 test("IPC directory and files are private, duplicate owners are rejected, and the adapter can reconnect", async t => {
   const { service, directory } = fixture(t), bridgeDir = path.join(directory, "bridge");
