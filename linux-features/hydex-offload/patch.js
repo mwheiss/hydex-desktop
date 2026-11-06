@@ -261,7 +261,7 @@ function applyHydexRequestBridgePatch(source) {
 }
 
 function composerSignaturePattern() {
-  return new RegExp(`function (${IDENT})\\((${IDENT})\\)\\{let [^;{}]{0,1500}?(${IDENT})=\\(0,(${IDENT})\\.c\\)\\(\\d+\\),\\{([^{}]+)\\}=\\2`,"g");
+  return new RegExp(`function(?: (${IDENT}))?\\((${IDENT})\\)\\{let [^;{}]{0,1500}?(${IDENT})=\\(0,(${IDENT})\\.c\\)\\(\\d+\\),\\{([^{}]+)\\}=\\2`,"g");
 }
 
 function composerContractMatches(source) {
@@ -275,7 +275,7 @@ function composerContractMatches(source) {
     if (end<0 || end-match.index>80_000) return [];
     const region=source.slice(match.index,end+1);
     if (!region.includes("composer.intelligenceDropdown.tooltip") || !region.includes("selectComposerModelAndReasoningEffort")) return [];
-    return [{index:match.index,end:end+1,region,props:values}];
+    return [{index:match.index,end:end+1,region,props:values,named:match[1]!=null}];
   });
 }
 
@@ -369,7 +369,11 @@ function applyHydexComposerControlPatch(source) {
     `children:[${resultVar},${hostVar}==null||${hostVar}===\`local\`?` +
     `(0,${jsxAlias}.jsx)(${CONTROL_MARKER},{onApply:${onApply}}):null]})}`;
   const patchedRegion = region.slice(0, -originalTail.length) + replacementTail;
-  return source.slice(0,functionStart)+helper+patchedRegion+source.slice(functionEnd);
+  // Current rspack exports the picker as an anonymous function value. Keep
+  // the helper in a one-time closure around that value, so its React component
+  // identity survives renders and the surrounding export remains an expression.
+  const replacement = signature.named ? helper + patchedRegion : `(()=>{${helper}return ${patchedRegion}})()`;
+  return source.slice(0,functionStart)+replacement+source.slice(functionEnd);
 }
 
 
