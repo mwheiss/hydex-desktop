@@ -13,6 +13,12 @@ selection, the ordinary installer, feature patching, Hydex injection, and RHEL
 compatibility paths. Rejection at the dummy ASAR boundary is expected. Do not
 configure the live package to use this SCM fixture.
 
+The explicit Hydex native release profile in `features.json` also includes the
+ChatGPT conversation API. Its private local read bridge is packaged, while
+mutation execution and shared-Project moves stay disabled. Codex MCP registration
+remains an explicit user configuration step; see
+[`chatgpt-conversation-api`](../linux-features/chatgpt-conversation-api/README.md).
+
 The maintained release procedure, package-source migration rule, and readback
 gates live in
 `.codex/skills/hydex-plugin-refresh/references/copr.md` in the Hydex source

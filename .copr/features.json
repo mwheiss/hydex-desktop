@@ -3,6 +3,13 @@
     "remote-mobile-control",
     "hydex-offload",
     "persistent-app-server",
-    "remote-trust-race-workaround"
-  ]
+    "remote-trust-race-workaround",
+    "chatgpt-conversation-api"
+  ],
+  "settings": {
+    "chatgpt-conversation-api": {
+      "mutationsEnabled": false,
+      "sharedProjectMovesEnabled": false
+    }
+  }
 }

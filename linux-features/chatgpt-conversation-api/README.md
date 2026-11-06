@@ -10,6 +10,10 @@ rebuild using the repository's signed Linux package process. Reads become
 available when the feature is enabled. Backend mutations remain disabled unless
 `settings.chatgpt-conversation-api.mutationsEnabled` is explicitly `true`.
 Every mutation batch then needs an actual native desktop approval dialog.
+The explicit Hydex native release profile includes this private read bridge;
+both mutation settings remain false. Generic source builds still require
+selection of the disabled-by-default feature, and Codex MCP registration is
+always an explicit user step.
 Shared or unknown-access Project moves additionally require
 `sharedProjectMovesEnabled: true` and a distinct native access-authorization
 dialog. No tool accepts a model's assertion that consent was granted.

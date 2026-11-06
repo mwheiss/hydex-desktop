@@ -2,7 +2,7 @@
 
 ## Verified source and ownership
 
-Implementation started from checkout commit
+Initial implementation started from checkout commit
 `8d26b54439498506b5057a4f2f25d40e30a27efb` of `mwheiss/hydex-desktop`,
 whose upstream is `ilysenko/codex-desktop-linux`. The source now distributes the
 signed official Linux package. Older generated output in `codex-app/` is not
@@ -15,7 +15,10 @@ The repository's normal installer fetched and verified current signed stable
 metadata, verified the package, and applied this feature. Its required
 `quit-confirmation-focus` core descriptor failed against that package. The
 installer correctly rejected the candidate; this feature does not bypass that
-gate or claim an accepted application build.
+gate or claim an accepted application build. The subsequent Hydex full refresh
+replays onto upstream `5e0a33793a3924067953f9a0fee691a47a26a60c`, including
+the upstream Quit repair. Its signed-package inspection now passes with the
+conversation API and the four required Hydex integration features enabled.
 
 The renderer has an existing `Request` service exported alongside
 `getChatGptRequestProfile`. Its requests pass through the desktop HTTP service,
@@ -208,9 +211,11 @@ No live-account history reads or mutations have been performed for this
 implementation. A running feature-enabled desktop with the user's existing
 session still needs read-only acceptance. A live mutation remains subject to
 separate explicit authorization, beginning with one reversible operation.
-Arm64 shares the source but has not been live-validated. The current unrelated
-required-core build failure must be resolved before an accepted latest-package
-candidate can be installed.
+Arm64 shares the source but has not been live-validated. The initial required-core
+patch failure is resolved by the subsequent upstream replay. Native release
+build, package and publication acceptance are recorded separately in the full
+refresh's release reports; a successful ASAR inspection alone is not a package
+or live-account acceptance result.
 
 ## Research leads
 

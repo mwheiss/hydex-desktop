@@ -7,7 +7,7 @@
 | Baseline reproduction in original unchanged checkout | Same six failures under inherited `umask 077` | Five broader-suite permission fixtures assume `umask 022`; the read-aloud path failure persists independently |
 | Real Codex MCP client acceptance | Passed with Hydex CLI `0.166.0-alpha.6` | Ephemeral Codex config/thread, discovery of all 15 tools, complete synthetic inventory and retrieval, approval denial, approved moves/renames, backend verification and undo |
 | Official ASAR compatibility | Passed | Freshly verified package `26.1103.31037`, both read-only and mutation-enabled settings; main/preload/renderer anchors, idempotence and syntax |
-| Full normal candidate build with this feature alone | Rejected by an existing required core patch | `quit-confirmation-focus`: `Expected exactly one official main-process Quit module`; this feature's descriptor applied successfully |
+| Initial normal candidate build with this feature alone | Rejected by an existing required core patch | `quit-confirmation-focus`: `Expected exactly one official main-process Quit module`; this feature's descriptor applied successfully |
 | Live account reads/mutations | Not performed | Requires a running feature-enabled accepted application; a live mutation additionally requires explicit separate authorization |
 
 The ASAR compatibility audit does not disable core patches or claim that the
@@ -24,3 +24,13 @@ Arm64, actual desktop launch with an authenticated account, and a single
 explicitly authorized reversible live mutation remain unverified. No user's
 existing Codex configuration, authentication files, installed application or
 ChatGPT conversations were changed.
+
+The subsequent full Hydex refresh replays the Desktop onto upstream
+`5e0a33793a3924067953f9a0fee691a47a26a60c`, including the Quit repair. The
+signed `26.1103.31037` ASAR inspection passes all five selected features:
+29 descriptors applied and one was already applied. A narrowly matched
+anonymous model-picker export repair preserves a stable React control identity
+and passes 84 offload-feature tests. The release profile includes the API read
+bridge with both mutation settings false. This inspection resolves the original
+core-patch blocker; final native build/publication remains governed by the
+separate release reports.
