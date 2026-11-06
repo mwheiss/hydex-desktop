@@ -1,0 +1,15 @@
+{
+  "id": "chatgpt-conversation-api",
+  "title": "ChatGPT Conversation API",
+  "description": "Opt-in desktop-owned ChatGPT history and Project access through a private MCP bridge, with native batch approval and a durable operation journal.",
+  "defaultEnabled": false,
+  "entrypoints": { "patchDescriptors": "./patch.js" },
+  "resources": [
+    { "source": "runtime", "target": ".codex-linux/features/chatgpt-conversation-api", "mode": "0644" }
+  ],
+  "packageDependencies": {
+    "deb": ["nodejs"],
+    "rpm": ["nodejs"],
+    "pacman": ["nodejs"]
+  }
+}

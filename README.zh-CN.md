@@ -294,6 +294,7 @@ Nix 用户应从 profile、Home Manager 配置或 NixOS module 中删除该包�
 | `remote-trust-race-workaround` | 针对 Remote 生成路径精确信任竞态的窄范围 inotify workaround | [文档](linux-features/remote-trust-race-workaround/README.md) |
 | `shallow-repository-watches` | 避免临时 repo preview 在主线程递归遍历 | [文档](linux-features/shallow-repository-watches/README.md) |
 | `shared-app-server-socket` | 共享 protocol-transparent Unix app-server socket | [文档](linux-features/shared-app-server-socket/README.md) |
+| `chatgpt-conversation-api` | 通过私有 MCP 访问原生 ChatGPT 历史和 Projects，支持原生批量审批及尽力撤销；修改操作默认关闭 | [文档](linux-features/chatgpt-conversation-api/README.md) |
 | `start-minimized-to-tray` | 在常规设置中添加默认关闭的启动到系统托盘选项，可选择每次启动或仅登录自动启动时隐藏窗口 | [文档](linux-features/start-minimized-to-tray/README.md) |
 | `thorium-chrome-plugin` | 为官方 Chrome integration 添加 Thorium | [文档](linux-features/thorium-chrome-plugin/README.md) |
 | `tray-usage` | 在 Linux 系统托盘菜单显示剩余用量 | [文档](linux-features/tray-usage/README.md) |
