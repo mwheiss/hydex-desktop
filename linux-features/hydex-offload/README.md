@@ -126,6 +126,11 @@ and the submit adapters into separate chunks. Every duplicated updater and
 submit adapter is validated and patched before any copy is written. Localized
 product labels are discovered in both entry and lazy-loaded catalogs.
 
+The injected selector captures React and JSX imports in a separate closure.
+Minified upstream import names must not be shadowed by selector state, refs, or
+event-handler variables. Render tests exercise the current signed bundle's short
+import names and each helper-local name, including mode changes and cleanup.
+
 If an owner is missing, ambiguous, or would produce invalid JavaScript,
 candidate acceptance rejects the build. A second pass must preserve the
 patched app byte-for-byte.

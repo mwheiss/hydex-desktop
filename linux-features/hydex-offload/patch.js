@@ -281,7 +281,8 @@ function composerContractMatches(source) {
 
 function matchesHydexComposerContract(source) {
   return source.includes(CONTROL_MARKER)
-    ? source.includes('"data-value":`force_full`') && source.includes("Hydex full")
+    ? source.includes(`const ${CONTROL_MARKER}=(function(codexLinuxHydexReact,codexLinuxHydexJsx){return function ${CONTROL_MARKER}(`) &&
+      source.includes('"data-value":`force_full`') && source.includes("Hydex full")
     : composerContractMatches(source).length === 1;
 }
 
@@ -313,9 +314,9 @@ function applyHydexComposerControlPatch(source) {
     `/*${CONTROL_MARKER}*/` +
     `function codexLinuxHydexOffloadRead(){try{let e=localStorage.getItem(\`hydex.offloadOverride\`);` +
     `return e===\`force_on\`||e===\`force_full\`||e===\`force_off\`?e:\`auto\`}catch{return\`auto\`}}` +
-    `function ${CONTROL_MARKER}({onApply:e}){let[t,n]=(0,${reactAlias}.useState)(codexLinuxHydexOffloadRead),` +
-    `[r,i]=(0,${reactAlias}.useState)(!1),a=(0,${reactAlias}.useRef)(null),` +
-    `o=(0,${reactAlias}.useRef)(null),s=t===\`force_full\`?\`Hydex full\`:t===\`force_on\`?\`Hydex on\`:t===\`force_off\`?\`Hydex off\`:\`Hydex auto\`,` +
+    `const ${CONTROL_MARKER}=(function(codexLinuxHydexReact,codexLinuxHydexJsx){return function ${CONTROL_MARKER}({onApply:e}){let[t,n]=(0,codexLinuxHydexReact.useState)(codexLinuxHydexOffloadRead),` +
+    `[r,i]=(0,codexLinuxHydexReact.useState)(!1),a=(0,codexLinuxHydexReact.useRef)(null),` +
+    `o=(0,codexLinuxHydexReact.useRef)(null),s=t===\`force_full\`?\`Hydex full\`:t===\`force_on\`?\`Hydex on\`:t===\`force_off\`?\`Hydex off\`:\`Hydex auto\`,` +
     `c=c=>{let l=c.currentTarget.dataset.value;if(l!==\`auto\`&&l!==\`force_on\`&&l!==\`force_full\`&&l!==\`force_off\`)return;` +
     `n(l);try{l===\`auto\`?localStorage.removeItem(\`hydex.offloadOverride\`):` +
     `localStorage.setItem(\`hydex.offloadOverride\`,l);window.dispatchEvent(new Event(\`hydex-offload-change\`))}catch{}let u=l===\`auto\`?null:l;` +
@@ -332,32 +333,33 @@ function applyHydexComposerControlPatch(source) {
     `d=e=>i(e.currentTarget.matches(\`:popover-open\`)),f=\`flex w-full cursor-interaction items-center ` +
     `justify-between rounded-lg px-3 py-2 text-left text-sm text-default outline-none ` +
     `hover:bg-primary-ghost-hover focus-visible:bg-primary-ghost-hover\`;` +
-    `(0,${reactAlias}.useEffect)(()=>{let e=()=>n(codexLinuxHydexOffloadRead());e();` +
+    `(0,codexLinuxHydexReact.useEffect)(()=>{let e=()=>n(codexLinuxHydexOffloadRead());e();` +
     `window.addEventListener(\`storage\`,e);window.addEventListener(\`hydex-offload-change\`,e);` +
     `return()=>{window.removeEventListener(\`storage\`,e);window.removeEventListener(\`hydex-offload-change\`,e)}},[]);` +
-    `return(0,${jsxAlias}.jsxs)(\`span\`,{className:\`relative inline-flex\`,children:[` +
-    `(0,${jsxAlias}.jsxs)(\`button\`,{ref:a,type:\`button\`,\"aria-haspopup\":\`menu\`,\"aria-expanded\":r,` +
+    `return(0,codexLinuxHydexJsx.jsxs)(\`span\`,{className:\`relative inline-flex\`,children:[` +
+    `(0,codexLinuxHydexJsx.jsxs)(\`button\`,{ref:a,type:\`button\`,\"aria-haspopup\":\`menu\`,\"aria-expanded\":r,` +
     `\"aria-label\":\`Hydex offload\`,title:\`Hydex offload\`,onClick:l,` +
     `className:\`h-token-button-composer flex max-w-[108px] shrink-0 cursor-interaction items-center ` +
     `justify-between gap-1 rounded-lg border border-default bg-primary px-2 text-sm text-default ` +
     `outline-none hover:bg-primary-ghost-hover focus-visible:ring-2 focus-visible:ring-ring\`,` +
-    `children:[(0,${jsxAlias}.jsx)(\`span\`,{className:\`truncate\`,children:s}),` +
-    `(0,${jsxAlias}.jsx)(\`span\`,{\"aria-hidden\":!0,className:\`text-tertiary\`,children:\`⌄\`})]}),` +
-    `(0,${jsxAlias}.jsxs)(\`div\`,{ref:o,popover:\`auto\`,role:\`menu\`,\"aria-label\":\`Hydex offload\`,` +
+    `children:[(0,codexLinuxHydexJsx.jsx)(\`span\`,{className:\`truncate\`,children:s}),` +
+    `(0,codexLinuxHydexJsx.jsx)(\`span\`,{\"aria-hidden\":!0,className:\`text-tertiary\`,children:\`⌄\`})]}),` +
+    `(0,codexLinuxHydexJsx.jsxs)(\`div\`,{ref:o,popover:\`auto\`,role:\`menu\`,\"aria-label\":\`Hydex offload\`,` +
     `onKeyDown:u,onToggle:d,className:\`min-w-40 rounded-xl bg-surface-elevated-secondary p-1 ` +
     `text-default shadow-lg ring-1 ring-border\`,style:{position:\`fixed\`,inset:\`auto\`,margin:0},children:[` +
-    `(0,${jsxAlias}.jsxs)(\`button\`,{type:\`button\`,role:\`menuitemradio\`,\"aria-checked\":t===\`auto\`,` +
+    `(0,codexLinuxHydexJsx.jsxs)(\`button\`,{type:\`button\`,role:\`menuitemradio\`,\"aria-checked\":t===\`auto\`,` +
     `\"data-value\":\`auto\`,onClick:c,className:f+(t===\`auto\`?\` bg-primary-ghost-hover\`:\`\`),` +
-    `children:[\`Hydex auto\`,t===\`auto\`?(0,${jsxAlias}.jsx)(\`span\`,{\"aria-hidden\":!0,children:\`✓\`}):null]}),` +
-    `(0,${jsxAlias}.jsxs)(\`button\`,{type:\`button\`,role:\`menuitemradio\`,\"aria-checked\":t===\`force_on\`,` +
+    `children:[\`Hydex auto\`,t===\`auto\`?(0,codexLinuxHydexJsx.jsx)(\`span\`,{\"aria-hidden\":!0,children:\`✓\`}):null]}),` +
+    `(0,codexLinuxHydexJsx.jsxs)(\`button\`,{type:\`button\`,role:\`menuitemradio\`,\"aria-checked\":t===\`force_on\`,` +
     `\"data-value\":\`force_on\`,onClick:c,className:f+(t===\`force_on\`?\` bg-primary-ghost-hover\`:\`\`),` +
-    `children:[\`Hydex on\`,t===\`force_on\`?(0,${jsxAlias}.jsx)(\`span\`,{\"aria-hidden\":!0,children:\`✓\`}):null]}),` +
-    `(0,${jsxAlias}.jsxs)(\`button\`,{type:\`button\`,role:\`menuitemradio\`,\"aria-checked\":t===\`force_full\`,` +
+    `children:[\`Hydex on\`,t===\`force_on\`?(0,codexLinuxHydexJsx.jsx)(\`span\`,{\"aria-hidden\":!0,children:\`✓\`}):null]}),` +
+    `(0,codexLinuxHydexJsx.jsxs)(\`button\`,{type:\`button\`,role:\`menuitemradio\`,\"aria-checked\":t===\`force_full\`,` +
     `\"data-value\":\`force_full\`,onClick:c,className:f+(t===\`force_full\`?\` bg-primary-ghost-hover\`:\`\`),` +
-    `children:[\`Hydex full\`,t===\`force_full\`?(0,${jsxAlias}.jsx)(\`span\`,{\"aria-hidden\":!0,children:\`✓\`}):null]}),` +
-    `(0,${jsxAlias}.jsxs)(\`button\`,{type:\`button\`,role:\`menuitemradio\`,\"aria-checked\":t===\`force_off\`,` +
+    `children:[\`Hydex full\`,t===\`force_full\`?(0,codexLinuxHydexJsx.jsx)(\`span\`,{\"aria-hidden\":!0,children:\`✓\`}):null]}),` +
+    `(0,codexLinuxHydexJsx.jsxs)(\`button\`,{type:\`button\`,role:\`menuitemradio\`,\"aria-checked\":t===\`force_off\`,` +
     `\"data-value\":\`force_off\`,onClick:c,className:f+(t===\`force_off\`?\` bg-primary-ghost-hover\`:\`\`),` +
-    `children:[\`Hydex off\`,t===\`force_off\`?(0,${jsxAlias}.jsx)(\`span\`,{\"aria-hidden\":!0,children:\`✓\`}):null]})]})]})}`;
+    `children:[\`Hydex off\`,t===\`force_off\`?(0,codexLinuxHydexJsx.jsx)(\`span\`,{\"aria-hidden\":!0,children:\`✓\`}):null]})]})]})}` +
+    `})(${reactAlias},${jsxAlias});`;
   const onApply =
     `${conversationVar}==null?void 0:e=>${modelSelectionVar}.setModelAndReasoningEffortForNextTurn(` +
     `${modelSettingsVar}.model,${modelSettingsVar}.reasoningEffort,` +
