@@ -111,6 +111,28 @@ test("home-aware service-tier composer preserves the local control contract", ()
   new vm.Script(patched);
 });
 
+test("anonymous rspack picker exports retain a stable local control component", () => {
+  const source = localComposerFixture()
+    .replace("function localModelPicker(e){", "var exported={M:function(e){")
+    .replace("function supportsPersistent", "};function supportsPersistent");
+  assert.equal(matchesHydexComposerContract(source), true);
+  const patched = applyHydexComposerControlPatch(source);
+  assert.notEqual(patched, source);
+  assert.equal(applyHydexComposerControlPatch(patched), patched);
+  new vm.Script(patched);
+  const jsx = { Fragment: "fragment", jsx: (type, props) => ({type, props}), jsxs: (type, props) => ({type, props}) };
+  const render = vm.runInNewContext(patched + ";exported.M", {
+    jsx, Menu: "ModelMenu", createMessages: e => e, memo: {c: () => []}, props: {},
+    React: {useState: initial => [initial, () => {}]},
+    useModelSelection: () => ({modelSettings: {model: "model", reasoningEffort: "low"},
+      selectComposerModelAndReasoningEffort() {}, setDefaultModelAndReasoningEffort() {}, setModelAndReasoningEffort() {}}),
+  });
+  const first = render({permissionsHostId: "local"}).props.children[1];
+  assert.equal(first.type, render({permissionsHostId: "local"}).props.children[1].type);
+  assert.equal(render({permissionsHostId: "remote"}).props.children[1], null);
+  assert.equal(matchesHydexComposerContract(source + source), false);
+});
+
 test("unknown or duplicate local composer props remain rejected", () => {
   for (const extra of ["unknown:extra,", "home:first,home:second,"]) {
     const source = localComposerFixture().replace("hideLabel:hide,", `hideLabel:hide,${extra}`);
