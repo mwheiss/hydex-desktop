@@ -34,3 +34,7 @@ and passes 84 offload-feature tests. The release profile includes the API read
 bridge with both mutation settings false. This inspection resolves the original
 core-patch blocker; final native build/publication remains governed by the
 separate release reports.
+
+The refresh additionally validates native lifecycle interaction: cancelling
+upstream's Quit prompt keeps the API socket and renderer bridge active; accepted
+Quit drains the service in `will-quit` and removes its owned runtime records.
