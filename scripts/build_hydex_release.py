@@ -80,7 +80,7 @@ def git(repo: Path, *arguments: str, check: bool = True) -> subprocess.Completed
     )
 
 
-def validate_features(config: Path) -> None:
+def validate_features(config: Path) -> set[str]:
     value = json.loads(config.read_text())
     enabled = set(value.get("enabled", []))
     missing = REQUIRED_FEATURES - enabled
@@ -88,6 +88,16 @@ def validate_features(config: Path) -> None:
     if missing or forbidden:
         raise SystemExit(
             f"invalid release feature selection: missing={sorted(missing)}, forbidden={sorted(forbidden)}"
+        )
+    return enabled
+
+
+def validate_candidate_features(enabled: set[str], config: Path) -> None:
+    expected = validate_features(config)
+    if enabled != expected:
+        raise SystemExit(
+            f"candidate feature set differs from explicit release config: "
+            f"actual={sorted(enabled)}, expected={sorted(expected)}"
         )
 
 
@@ -142,8 +152,13 @@ def validate_candidate(
     if not retained:
         raise SystemExit(f"candidate source commit has no retained remote ref: {source['commit']}")
     enabled = set(build_info.get("linuxFeatures", {}).get("enabled", []))
-    if enabled != REQUIRED_FEATURES:
-        raise SystemExit(f"candidate feature set is not exact: {sorted(enabled)}")
+    validate_candidate_features(enabled, args.features_config)
+    if "chatgpt-conversation-api" in enabled:
+        api = candidate / ".codex-linux" / "features" / "chatgpt-conversation-api"
+        for name in ("desktop.js", "mcp.js", "service.js", "tools.js", "journal.js",
+                     "normalize.js", "ipc.js", "common.js", "wire.js"):
+            if not (api / name).is_file():
+                raise SystemExit(f"candidate conversation API runtime is incomplete: {name}")
     rejected = [
         patch
         for patch in patch_report.get("patches", [])

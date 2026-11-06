@@ -153,6 +153,24 @@ class BuildHydexReleaseTests(unittest.TestCase):
         self.assertIn("remote-trust-race-workaround", MODULE.REQUIRED_FEATURES)
         MODULE.validate_features(config)
 
+    def test_explicit_api_selection_must_match_candidate_exactly(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            config = Path(temporary) / "features.json"
+            selected = MODULE.REQUIRED_FEATURES | {"chatgpt-conversation-api"}
+            config.write_text(json.dumps({"enabled": sorted(selected)}))
+            MODULE.validate_candidate_features(selected, config)
+            with self.assertRaisesRegex(SystemExit, "differs from explicit release config"):
+                MODULE.validate_candidate_features(MODULE.REQUIRED_FEATURES, config)
+            with self.assertRaisesRegex(SystemExit, "differs from explicit release config"):
+                MODULE.validate_candidate_features(selected | {"unknown-extra-feature"}, config)
+
+    def test_release_api_keeps_mutations_disabled(self):
+        config = MODULE_PATH.parents[1] / ".copr" / "features.json"
+        value = json.loads(config.read_text())
+        self.assertIn("chatgpt-conversation-api", value["enabled"])
+        self.assertIs(value["settings"]["chatgpt-conversation-api"]["mutationsEnabled"], False)
+        self.assertIs(value["settings"]["chatgpt-conversation-api"]["sharedProjectMovesEnabled"], False)
+
     def test_release_features_reject_missing_or_shared_socket(self):
         with tempfile.TemporaryDirectory() as temporary:
             config = Path(temporary) / "features.json"
