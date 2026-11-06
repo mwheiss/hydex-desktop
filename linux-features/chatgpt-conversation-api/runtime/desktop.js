@@ -162,7 +162,9 @@ function install({ electron, isTrustedIpcEvent, settings }) {
     await service?.close();
     await bridge?.close();
   };
-  electron.app.on("before-quit", event => {
+  // Upstream owns confirmation in before-quit. Only start shutdown after it
+  // accepts quit; cancelling that prompt must leave this integration alive.
+  electron.app.on("will-quit", event => {
     if (closed) return;
     event.preventDefault();
     if (closing) return;
