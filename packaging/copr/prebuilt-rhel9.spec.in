@@ -21,7 +21,7 @@ Provides:       chatgpt, codex, openai-codex, hydex, codex-code-mode-host, hydex
 Conflicts:      chatgpt, codex, codex-bin, codex-desktop, hydex, hydex-bin, openai-codex, openai-codex-autoup-bin, openai-codex-bin
 Obsoletes:      codex-desktop, hydex, hydex-bin, openai-codex-autoup-bin, openai-codex-bin
 
-Requires:       python3, systemd, xdg-utils
+Requires:       nodejs, python3, systemd, xdg-utils
 Requires:       libasound.so.2%{hydex_elf_suffix}, libatk-bridge-2.0.so.0%{hydex_elf_suffix}
 Requires:       libatk-1.0.so.0%{hydex_elf_suffix}, libatspi.so.0%{hydex_elf_suffix}, libcairo.so.2%{hydex_elf_suffix}, libcups.so.2%{hydex_elf_suffix}
 Requires:       libdbus-1.so.3%{hydex_elf_suffix}, libexpat.so.1%{hydex_elf_suffix}, libgdk_pixbuf-2.0.so.0%{hydex_elf_suffix}
