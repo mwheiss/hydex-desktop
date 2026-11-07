@@ -1,5 +1,7 @@
 import argparse
 import importlib.util
+import json
+import re
 import subprocess
 import tempfile
 import unittest
@@ -14,6 +16,17 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PublishDesktopCoprTests(unittest.TestCase):
+    def test_api_release_profile_preserves_node_dependency_in_every_tier(self):
+        repo = MODULE_PATH.parents[1]
+        profile = json.loads((repo / '.copr' / 'features.json').read_text())
+        self.assertIn('chatgpt-conversation-api', profile['enabled'])
+        for tier in MODULE.TIERS:
+            template = (repo / 'packaging' / 'copr' / tier.template).read_text()
+            if tier.split_cli:
+                template = template.split('%package -n hydex-desktop-cli-runtime', 1)[0]
+            requires = ','.join(re.findall(r'^Requires:\s+(.+)$', template, re.M))
+            self.assertIn('nodejs', [x.strip() for x in requires.split(',')], tier.name)
+
     def test_all_prebuilt_tiers_own_chatgpt_compatibility_surface(self):
         for tier in MODULE.TIERS:
             template = (
