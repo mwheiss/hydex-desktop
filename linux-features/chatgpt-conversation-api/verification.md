@@ -50,5 +50,29 @@ covers the native request loader being shadowed by a local account snapshot,
 plus partial-capture and binding-collision rejection. The adjacent suite passes
 all 51 tests, including strict native page-limit and Work-origin regressions,
 foreign-resource rejection in raw/normalized reads, and short-page history
-offset handling. This source result
-does not by itself establish installed live-account access.
+offset handling. This source result does not by itself establish installed
+live-account access.
+
+## Live native read validation on 2026-11-09
+
+An installed amd64 build from source
+`6c2e370bea2a329de231a0227ad91f2da53c0168`, using signed official package
+`26.1103.60933` and the matching Hydex CLI `0.167.0-alpha.3.2`, passed real
+account reads through the Codex MCP client. Verification covered authenticated
+context, Project listing, history/archive/Project inventory, and complete raw
+and normalized retrieval of an actual conversation. The verifier started zero
+model turns, executed no conversation mutations, and saved counts and hashes
+rather than transcript bodies.
+
+The scan exhausted its page chains. Account-wide completeness stayed `unknown`
+because backend totals changed during scanning and the Project directory has
+no authoritative total. This result is not a claim of immutable full-account
+coverage.
+
+The MCP catalog was available only from the dedicated trusted project's config;
+unrelated workspaces did not discover it. The explicit local build enabled
+mutations behind native approval for each exact execution/undo batch. Shared
+Project moves remained disabled. Native approval enforcement is covered by the
+synthetic tests; no live backend write was exercised. Arm64 live-account
+validation also remains unperformed. Earlier read-not-performed notes above
+describe the initial validation and are superseded by this read result.
