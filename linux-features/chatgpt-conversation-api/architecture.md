@@ -39,6 +39,10 @@ this runtime; `user_id` distinguishes users within a workspace. The API does
 not invent a separate global personal-account identifier. In particular,
 `user_id` pins `authenticatedUserId`, the native request principal. The legacy
 ChatGPT membership `userId` need not be the same identifier.
+Native `requiresAuth` describes a provider requirement, which remains true for a
+signed-in OpenAI provider. Readiness instead requires the loaded authenticated
+account/user, matching selected workspace and native token availability; the
+native Request service independently enforces that identity on each request.
 
 The existing sidebar feature proves that ChatGPT and Codex can be mixed in
 sidebar presentation. That presentation filter is not a data-access boundary.
