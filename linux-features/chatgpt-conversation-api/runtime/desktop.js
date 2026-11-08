@@ -23,6 +23,7 @@ class RendererBackend {
     this.electron = electron;
     this.isTrustedIpcEvent = isTrustedIpcEvent;
     this.renderers = new Map();
+    this.observedSenders = new WeakSet();
     this.pending = new Map();
     this.closed = false;
     const trusted = event => isTrustedIpcEvent(event) && event.senderFrame != null && event.senderFrame === event.sender.mainFrame;
@@ -31,10 +32,13 @@ class RendererBackend {
       const sender = event.sender;
       if (context !== null) context = contextOf(context);
       const previous = this.renderers.get(sender.id);
-      if (!previous) {
+      if (!this.observedSenders.has(sender)) {
+        this.observedSenders.add(sender);
         sender.once("destroyed", () => { this.renderers.delete(sender.id); this.rejectSender(sender); });
-        sender.on("did-start-navigation", (_event, _url, _isInPlace, isMainFrame) => {
-          if (isMainFrame) { this.renderers.delete(sender.id); this.rejectSender(sender); }
+        sender.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
+          // History/fragment navigation retains the authenticated renderer and
+          // does not rerun its account effect. Only a new document retires it.
+          if (isMainFrame && !isInPlace) { this.renderers.delete(sender.id); this.rejectSender(sender); }
         });
       }
       if (previous && !same(previous.context, context)) this.rejectSender(sender);
@@ -71,7 +75,10 @@ class RendererBackend {
   active() {
     if (this.closed) fail("DESKTOP_SHUTDOWN", "The desktop bridge is shutting down.");
     const renderers = [...this.renderers.values()].filter(r => r.context && !r.sender.isDestroyed());
-    if (!renderers.length) fail("SESSION_UNAVAILABLE", "Open the desktop and sign in to ChatGPT; the native account snapshot is not ready.");
+    if (!renderers.length) fail("SESSION_UNAVAILABLE", "Open the desktop and sign in to ChatGPT; the native account snapshot is not ready.", {
+      registered_renderers: this.renderers.size,
+      waiting_for_account: [...this.renderers.values()].filter(r => !r.context && !r.sender.isDestroyed()).length,
+    });
     if (renderers.some(r => !same(r.context, renderers[0].context))) fail("AMBIGUOUS_CONTEXT", "Desktop windows have different account/workspace identities; choose one active account first.");
     return renderers[0];
   }
