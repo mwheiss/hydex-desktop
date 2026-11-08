@@ -84,6 +84,7 @@ function patchRenderer(source) {
     "/conversation/id/{conversation_id}/rename", "/conversations/{conversation_id}/messages", 'Request.safePost("/projects"', "ChatGPT-Account-ID"]) {
     if (!source.includes(contract)) throw Error(`Conversation API drift: missing native contract ${contract}.`);
   }
+  if (!/exclude_conversation_origin:[^,{};]{1,120}"tpp"/.test(source)) throw Error("Conversation API drift: native Work-chat exclusion changed.");
   const { scope } = anchor.groups;
   // Capture the loader in its module factory. The account layout effect has a
   // local snapshot named like the minified require parameter in current Linux.

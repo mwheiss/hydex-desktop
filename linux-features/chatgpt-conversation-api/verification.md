@@ -48,5 +48,7 @@ tests keep authentication loading, token availability and native identity guards
 independent from that requirement. A patched-factory execution regression also
 covers the native request loader being shadowed by a local account snapshot,
 plus partial-capture and binding-collision rejection. The adjacent suite passes
-all 48 tests. This source result
+all 51 tests, including strict native page-limit and Work-origin regressions,
+foreign-resource rejection in raw/normalized reads, and short-page history
+offset handling. This source result
 does not by itself establish installed live-account access.
