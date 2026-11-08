@@ -107,9 +107,18 @@ isolate processes that already control that user.
 These are fixed relative routes passed through the existing authenticated
 `Request`, not a generic URL/request API exposed to MCP:
 
+Project directory pages use the native client's limit of 20, and Project
+conversation pages use 50. Larger public Project page limits are capped before
+calling the backend and retain the next cursor. The live endpoint rejects a
+directory limit of 100 with HTTP 422; zero embedded conversations is supported.
+History/archive pages use 50 and advance by the backend's reported page limit.
+The native exclusion value for Work chats is `tpp`; `codex` is not an accepted
+value for that query. Explicit Codex/Work origins are also filtered from Project
+inventory and rejected before raw, normalized or mutation-state output.
+
 | Capability | Native request |
 |---|---|
-| History/archive inventory | `GET /conversations`, offset/limit, `is_archived`, `hide_snorlax=false`, `exclude_conversation_origin=codex` |
+| History/archive inventory | `GET /conversations`, offset/limit, `is_archived`, `hide_snorlax=false`, `exclude_conversation_origin=tpp` |
 | Native Project directory | `GET /gizmos/snorlax/sidebar`, cursor/limit, `owned_only=false`, no embedded conversations |
 | Project contents | `GET /gizmos/{gizmo_id}/conversations`, cursor/limit, `owned_only=false` |
 | Project identity/access | `GET /gizmos/{gizmo_id_or_short_url}` |
