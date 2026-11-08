@@ -74,6 +74,11 @@ file is written; ambiguous, partial or drifted contracts fail closed. Reapplying
 the exact patch/settings is idempotent; a different setting requires a fresh
 official source build.
 
+The native request loader is captured in the authentication module factory,
+outside the account layout effect. That effect can shadow the minified loader
+parameter with its account snapshot. An execution fixture verifies the patched
+factory with this exact shadowing pattern; identity checks do not load HTTP.
+
 Most implementation lives in ordinary staged CommonJS modules. The small
 renderer/preload functions are serialized into their native bundles. The
 preload exposes only registration, request subscription and response delivery.
