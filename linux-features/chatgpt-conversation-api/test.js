@@ -561,6 +561,49 @@ const AUTH = 'cE1j(e,t,n){var g=n("AUTH");function sync(W,N,Z){let v=W.get(g.PO)
 const ROUTES = ['"/conversation/{conversation_id}"', '"/gizmos/{gizmo_id}/conversations"', '"/gizmos/snorlax/sidebar"',
   '"/conversation/id/{conversation_id}/rename"', '"/conversations/{conversation_id}/messages"', 'Request.safePost("/projects",{})', '"ChatGPT-Account-ID"'].join(";");
 const CHUNK = `export const __webpack_modules__={${REQUEST},${AUTH},routes(e,t,n){${ROUTES}}};`;
+test("patched module captures the request loader outside a shadowing account effect", async () => {
+  const accountAtom = {}, exports = {}, replies = [], hellos = [], calls = [];
+  let onRequest, requestLoads = 0;
+  const auth = {authMethod: "chatgpt", requiresAuth: true, hasChatGptToken: true,
+    userId: "membership-user", authenticatedUserId: CONTEXT.user_id,
+    accountId: CONTEXT.account_id, authenticatedAccountId: CONTEXT.account_id};
+  const scope = {get: atom => { assert.equal(atom, accountAtom); return auth; }, set() {}};
+  const nativeRequest = {safeGet: async (route, options) => {
+    assert.equal(route, "/conversation/{conversation_id}");
+    assert.deepEqual(clone(options.expectedIdentity), {accountId: CONTEXT.account_id, userId: CONTEXT.user_id});
+    options.assertRequestCurrent(); calls.push(route); return tree();
+  }};
+  const load = id => {
+    if (id === "AUTH") return {PO: accountAtom};
+    assert.equal(id, "Ghh3"); requestLoads++; return {Request: nativeRequest};
+  };
+  const bridge = {hello: async c => { hellos.push(clone(c)); },
+    onRequest: callback => { onRequest = callback; }, respond: async (_id, response) => { replies.push(clone(response)); }};
+  const shadowed = AUTH.replace("let v=", "let n=").replaceAll("v.authenticated", "n.authenticated");
+  const executable = shadowed.slice(0, -1) + ";t.sync=sync}";
+  const source = patch.patchRenderer(CHUNK.replace(AUTH, executable));
+  vm.runInNewContext(source.replace("export const __webpack_modules__=", "const modules=") +
+    ';modules.cE1j({},exports,load);exports.sync(scope,input,input.accountId);',
+  {exports, load, scope, input: {authMethod: "chatgpt", hasChatGptToken: true, userId: CONTEXT.user_id, accountId: CONTEXT.account_id},
+    j: {$S: {}}, abort() { throw Error("Unexpected account reset"); },
+    hydexConversationBridge: bridge, addEventListener() {}});
+  assert.deepEqual(hellos, [CONTEXT]);
+  await onRequest({id: "identity", context: CONTEXT, operation: "identity", args: {}});
+  assert.deepEqual(replies.at(-1).result, CONTEXT);
+  assert.equal(requestLoads, 0, "Identity does not load the HTTP service");
+  await onRequest({id: "read", context: CONTEXT, operation: "conversation", args: {id: "c1"}});
+  assert.equal(requestLoads, 1); assert.equal(calls.length, 1);
+  assert.equal(replies.at(-1).result.conversation_id, "c1");
+});
+test("request-loader collisions and partially patched factories fail closed", () => {
+  const patched = patch.patchRenderer(CHUNK);
+  const capture = 'const hydexConversationApiNativeRequestV1=()=>n("Ghh3").Request;';
+  assert.equal(patch.patchRenderer(patched), patched);
+  for (const source of [patched.replace(capture, ""), patched.replace(patch.MARK, ""),
+    CHUNK.replace('var g=n("AUTH")', 'const hydexConversationApiNativeRequestV1=0;var g=n("AUTH")')]) {
+    assert.throws(() => patch.patchRenderer(source));
+  }
+});
 test("current semantic patch anchors are idempotent and incomplete/ambiguous patches fail closed", () => {
   for (const [source, fn] of [[MAIN, patch.patchMain], [PRELOAD, patch.patchPreload], [CHUNK, patch.patchRenderer]]) {
     const patched = fn(source); assert.notEqual(patched, source); assert.equal(fn(patched), patched);

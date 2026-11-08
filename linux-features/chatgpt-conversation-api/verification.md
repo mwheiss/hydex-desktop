@@ -45,5 +45,8 @@ document navigation retiring it, and repeated reloads retaining a single set of
 lifecycle observers. Signed-in OpenAI providers retain `requiresAuth: true`;
 this provider requirement is not an unauthenticated-session flag. Regression
 tests keep authentication loading, token availability and native identity guards
-independent from that requirement. The adjacent suite passes all 46 tests. This source result
+independent from that requirement. A patched-factory execution regression also
+covers the native request loader being shadowed by a local account snapshot,
+plus partial-capture and binding-collision rejection. The adjacent suite passes
+all 48 tests. This source result
 does not by itself establish installed live-account access.
