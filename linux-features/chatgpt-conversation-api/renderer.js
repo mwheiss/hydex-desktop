@@ -34,7 +34,7 @@ function installRenderer(scope, accountAtom, getRequest) {
       const before = state.identity();
       if (!same(before, request.context)) throw error("CONTEXT_CHANGED");
       const a = request.args ?? {};
-      const client = state.getRequest();
+      const client = request.operation === "identity" ? null : state.getRequest();
       const assertRequestCurrent = () => { if (!same(before, state.identity())) throw error("CONTEXT_CHANGED"); };
       const options = extra => ({ ...extra, additionalHeaders: { "ChatGPT-Account-ID": before.workspace_id },
         expectedIdentity: { accountId: before.workspace_id, userId: before.user_id }, assertRequestCurrent,
