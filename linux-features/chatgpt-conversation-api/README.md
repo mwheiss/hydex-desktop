@@ -35,14 +35,38 @@ dialog. No tool accepts a model's assertion that consent was granted.
 The maximum batch size is 1000, minimum request spacing is 250 ms (500 ms by
 default), and mutations execute serially. Rate limits can increase spacing.
 
-After building and launching that application, register this MCP server manually
-in the Codex instance that should use it:
+After building and launching that application, register this MCP server in a
+dedicated trusted project's `.codex/config.toml`. This keeps it undiscoverable
+from other projects and excludes its schemas from the initial tool list:
 
 ```toml
 [mcp_servers.chatgpt_conversations]
 command = "node"
 args = ["/opt/hydex-desktop/.codex-linux/features/chatgpt-conversation-api/mcp.js"]
+omit_tools_from = ["direct"]
+enabled_tools = [
+  "chatgpt_get_status", "chatgpt_list_conversations",
+  "chatgpt_search_conversations", "chatgpt_get_conversation",
+  "chatgpt_list_projects", "chatgpt_get_inventory_status",
+  "chatgpt_get_job_status",
+]
 ```
+
+The installed Hydex runtime supports project configuration and deferred/Code
+Mode discovery. With this read-only allow-list, mutation and preview tools are
+absent from the project catalog. Models without tool search need Code Mode to
+access tools omitted from `direct`. Do not put this registration in the global
+config when project-only discovery is wanted. CLI chats can opt out with
+`-c mcp_servers.chatgpt_conversations.enabled=false`; the current Desktop has no
+separate per-chat switch for this custom stdio server.
+
+For approved writes, explicitly enable `mutationsEnabled` in the local Desktop
+build profile and add the preview/write/job tools to this project's allow-list
+(or omit the allow-list to expose the current full catalog). The convenience
+rename/move/archive/create tools only prepare plans. Execution and undo always
+require fresh native approval for the exact stored batch. Do not replace that
+approval with a secret argument or a model assertion. The release default stays
+read-only; `sharedProjectMovesEnabled` is a separate opt-in.
 
 For an unpackaged build, replace `/opt/hydex-desktop` with its app directory.
 The MCP adapter requires Node.js 20+ on the Codex process's PATH. Native deb,

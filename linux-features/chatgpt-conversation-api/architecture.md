@@ -36,7 +36,9 @@ authenticated identities agree, pins the native `expectedIdentity` and
 `ChatGPT-Account-ID`, and checks identity before and after the native call.
 `account_id` and `workspace_id` are both the native backend account identity in
 this runtime; `user_id` distinguishes users within a workspace. The API does
-not invent a separate global personal-account identifier.
+not invent a separate global personal-account identifier. In particular,
+`user_id` pins `authenticatedUserId`, the native request principal. The legacy
+ChatGPT membership `userId` need not be the same identifier.
 
 The existing sidebar feature proves that ChatGPT and Codex can be mixed in
 sidebar presentation. That presentation filter is not a data-access boundary.
@@ -75,6 +77,12 @@ Main-process IPC delegates to upstream sender validation and additionally
 requires the main frame. A renderer can reply only to its own outstanding
 random request ID. Different identities in separate windows produce an explicit
 ambiguous-context error.
+
+Main-frame document navigation retires the renderer registration and pending
+requests. In-page history/fragment navigation preserves it: the same document
+and account effect remain mounted, and every request still checks the current
+identity. Each webContents receives lifecycle observers only once, including
+across reloads.
 
 The socket directory is 0700; the socket, discovery capability and ownership
 record are 0600. Linux `/proc` process-start identities prevent PID-reuse

@@ -352,7 +352,7 @@ test("published input and output schemas validate the actual public results", as
   }
 });
 
-function nativeHarness(t) {
+function nativeHarness(t, authOverrides = {}) {
   const backend = new MockBackend(), handlers = new Map();
   const sender = new EventEmitter(); Object.assign(sender, { id: 1, mainFrame: {}, isDestroyed: () => false });
   const event = { sender, senderFrame: sender.mainFrame, trusted: true };
@@ -360,7 +360,7 @@ function nativeHarness(t) {
   const native = new RendererBackend({ electron, isTrustedIpcEvent: e => e.trusted === true });
   t.after(() => native.close());
   const accountAtom = {}, auth = { userId: CONTEXT.user_id, accountId: CONTEXT.workspace_id, authenticatedUserId: CONTEXT.user_id,
-    authenticatedAccountId: CONTEXT.account_id, hasChatGptToken: true, authMethod: "chatgpt", authLoading: false, accountLoading: false, requiresAuth: false };
+    authenticatedAccountId: CONTEXT.account_id, hasChatGptToken: true, authMethod: "chatgpt", authLoading: false, accountLoading: false, requiresAuth: false, ...authOverrides };
   let callback;
   const bridge = { hello: async c => handlers.get(PREFIX + "hello")(event, c), respond: async (id, result) => handlers.get(PREFIX + "response")(event, id, result), onRequest: cb => { callback = cb; } };
   sender.send = (_name, request) => { Promise.resolve().then(() => callback(request)); };
@@ -391,6 +391,26 @@ test("authenticated renderer bridge uses native request identity and trusted mai
   assert.equal(await handlers.get(PREFIX + "hello")({ ...event, senderFrame: {} }, CONTEXT), false);
   auth.authenticatedUserId = "other";
   await assert.rejects(native.identity(), code("CONTEXT_CHANGED"));
+});
+test("native request identity supports a distinct ChatGPT membership user ID", async t => {
+  const { native } = nativeHarness(t, { userId: "membership-user" });
+  assert.deepEqual(clone(await native.identity()), CONTEXT);
+  assert.equal((await native.call("conversation", { id: "c1" }, CONTEXT)).conversation_id, "c1");
+});
+test("in-page navigation preserves registration; document navigation retires it once", async t => {
+  const { native, sender, handlers, event } = nativeHarness(t);
+  sender.emit("did-start-navigation", {}, "app://-/local/thread", true, true);
+  assert.deepEqual(clone(await native.identity()), CONTEXT);
+  sender.emit("did-start-navigation", {}, "https://example.test/", false, false);
+  assert.deepEqual(clone(await native.identity()), CONTEXT);
+  for (let i = 0; i < 3; i++) {
+    sender.emit("did-start-navigation", {}, "app://-/", false, true);
+    assert.throws(() => native.active(), code("SESSION_UNAVAILABLE"));
+    await handlers.get(PREFIX + "hello")(event, CONTEXT);
+    assert.deepEqual(clone(await native.identity()), CONTEXT);
+  }
+  assert.equal(sender.listenerCount("did-start-navigation"), 1);
+  assert.equal(sender.listenerCount("destroyed"), 1);
 });
 test("preload exposes only typed bridge messaging and never generic IPC or JavaScript execution", () => {
   let exposed;
