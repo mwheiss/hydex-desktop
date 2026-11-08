@@ -8,7 +8,9 @@ function installRenderer(scope, accountAtom, getRequest) {
   const slot = "__hydexConversationApiRendererV1";
   const identity = () => {
     const a = scope.get(accountAtom);
-    if (!["chatgpt", "chatgptAuthTokens"].includes(a.authMethod) || a.authLoading || a.accountLoading || a.requiresAuth ||
+    // requiresAuth describes the provider's authentication requirement, not
+    // whether the current user is signed in. OpenAI keeps it true after login.
+    if (!["chatgpt", "chatgptAuthTokens"].includes(a.authMethod) || a.authLoading || a.accountLoading ||
         a.hasChatGptToken !== true || !a.userId || !a.authenticatedUserId || !a.accountId || !a.authenticatedAccountId ||
         a.accountId !== a.authenticatedAccountId) return null;
     // The native request principal can differ from the ChatGPT membership user

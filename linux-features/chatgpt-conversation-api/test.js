@@ -397,6 +397,21 @@ test("native request identity supports a distinct ChatGPT membership user ID", a
   assert.deepEqual(clone(await native.identity()), CONTEXT);
   assert.equal((await native.call("conversation", { id: "c1" }, CONTEXT)).conversation_id, "c1");
 });
+test("a signed-in OpenAI provider remains usable when it requires authentication", async t => {
+  const { native } = nativeHarness(t, { requiresAuth: true });
+  assert.deepEqual(clone(await native.identity()), CONTEXT);
+  assert.equal((await native.call("conversation", { id: "c1" }, CONTEXT)).conversation_id, "c1");
+});
+test("provider authentication requirements never replace a ready native identity", async t => {
+  for (const authOverrides of [
+    {authMethod: null, requiresAuth: false}, {authMethod: "apikey"},
+    {authLoading: true}, {accountLoading: true}, {hasChatGptToken: false},
+    {authenticatedUserId: null}, {authenticatedAccountId: "another-workspace"},
+  ]) {
+    const { native } = nativeHarness(t, authOverrides);
+    await assert.rejects(native.identity(), code("SESSION_UNAVAILABLE"));
+  }
+});
 test("in-page navigation preserves registration; document navigation retires it once", async t => {
   const { native, sender, handlers, event } = nativeHarness(t);
   sender.emit("did-start-navigation", {}, "app://-/local/thread", true, true);

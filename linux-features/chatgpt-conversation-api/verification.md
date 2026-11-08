@@ -42,5 +42,8 @@ Quit drains the service in `will-quit` and removes its owned runtime records.
 The 2026-11-08 session repair adds regression coverage for distinct membership
 and authenticated-request user IDs, in-page navigation preserving registration,
 document navigation retiring it, and repeated reloads retaining a single set of
-lifecycle observers. The adjacent suite passes all 44 tests. This source result
+lifecycle observers. Signed-in OpenAI providers retain `requiresAuth: true`;
+this provider requirement is not an unauthenticated-session flag. Regression
+tests keep authentication loading, token availability and native identity guards
+independent from that requirement. The adjacent suite passes all 46 tests. This source result
 does not by itself establish installed live-account access.
