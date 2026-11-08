@@ -2,6 +2,10 @@
 
 const { fail, redact } = require("./common.js");
 
+const foreignConversation = raw => ["codex", "tpp"].includes(raw?.conversation_origin) || ["codex", "tpp"].includes(raw?.source);
+function assertConversationScope(raw) {
+  if (foreignConversation(raw)) fail("RESOURCE_SCOPE_MISMATCH", "This resource is a Codex session or Work task, not an ordinary ChatGPT conversation.");
+}
 function pagination(raw) {
   const p = raw?.page_info;
   if (p == null) return { pending: false, declared: false };
@@ -11,6 +15,7 @@ function pagination(raw) {
   return { pending: p.has_previous_page || p.has_next_page, declared: true, ...p };
 }
 function conversationState(raw) {
+  assertConversationScope(raw);
   if (!raw || typeof raw !== "object" || typeof raw.title !== "string" || typeof raw.is_archived !== "boolean") {
     fail("UNSUPPORTED_FORMAT", "The backend did not supply authoritative title and archive state.");
   }
@@ -22,8 +27,8 @@ function conversationState(raw) {
   return { title: raw.title, project_id: membership[0] || null, archived: raw.is_archived };
 }
 function inventoryItem(raw, projectId) {
+  if (foreignConversation(raw)) return null;
   if (!raw || typeof raw.id !== "string" || typeof raw.title !== "string") fail("UNSUPPORTED_FORMAT", "Invalid inventory record.");
-  if (raw.conversation_origin === "codex" || raw.source === "codex") return null;
   return { id: raw.id, title: raw.title, created_at: raw.create_time ?? null, updated_at: raw.update_time ?? null,
     project_id: projectId ?? raw.gizmo_id ?? raw.conversation_template_id ?? raw.project_id ?? null,
     archived: typeof raw.is_archived === "boolean" ? raw.is_archived : null };
@@ -66,6 +71,7 @@ function messageRecord(message, node) {
     opaque_reasoning_fields: opaque, metadata: meta, raw_message: message };
 }
 function normalize(pages, { branch = "active", complete = true, header } = {}) {
+  pages.forEach(assertConversationScope);
   if (!["active", "all"].includes(branch)) fail("INVALID_ARGUMENT", "branch must be active or all.");
   if (!pages.length) fail("UNSUPPORTED_FORMAT", "No conversation response was supplied.");
   const first = header ?? pages[0];
@@ -133,6 +139,7 @@ async function retrieve(fetchPage, id, { mode = "normalized", branch = "active",
   if (!["raw", "normalized"].includes(mode)) fail("INVALID_ARGUMENT", "mode must be raw or normalized.");
   let pages = [await fetchPage(id, null, signal)];
   const initial = pages[0];
+  assertConversationScope(initial);
   const visited = new Set();
   let complete = true, limitation = null;
   if (Array.isArray(initial?.messages) && initial.page_info == null) {
@@ -158,6 +165,7 @@ async function retrieve(fetchPage, id, { mode = "normalized", branch = "active",
         if (error.code !== "UNSUPPORTED_PAGINATION" || mode !== "raw") throw error;
         complete = false; limitation = error.message; break;
       }
+      assertConversationScope(edge);
       if ((edge.conversation_id ?? edge.id ?? id) !== id) fail("CONTEXT_CHANGED", "Conversation pagination returned another conversation.");
       if (direction === "older") pages.unshift(edge); else pages.push(edge);
     }

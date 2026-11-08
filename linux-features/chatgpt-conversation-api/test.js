@@ -112,6 +112,20 @@ test("mutation state rejects missing membership and conflicts rather than treati
   raw.gizmo_id = null; raw.project_id = "g-p-one";
   assert.throws(() => conversationState(raw), code("UNSUPPORTED_FORMAT"));
 });
+test("Codex and Work origins are excluded from inventory, raw reads and mutation state", async () => {
+  const {inventoryItem} = require("./runtime/normalize.js");
+  for (const origin of ["codex", "tpp"]) {
+    const raw = {...tree(), conversation_origin: origin};
+    assert.equal(inventoryItem({id: "foreign", title: "Foreign", conversation_origin: origin}), null);
+    assert.throws(() => conversationState(raw), code("RESOURCE_SCOPE_MISMATCH"));
+    assert.throws(() => normalize([raw]), code("RESOURCE_SCOPE_MISMATCH"));
+    for (const mode of ["raw", "normalized"]) {
+      await assert.rejects(retrieve(async () => raw, "c1", {mode}), code("RESOURCE_SCOPE_MISMATCH"));
+      const first = {...tree(), page_info: {has_previous_page: true, has_next_page: false, start_cursor: "older"}};
+      await assert.rejects(retrieve(async (_id, page) => page ? raw : first, "c1", {mode}), code("RESOURCE_SCOPE_MISMATCH"));
+    }
+  }
+});
 test("inventory includes archives and every Project page beyond sidebar visibility; metadata scans do not fetch bodies", async t => {
   const { service, backend } = fixture(t);
   const first = await service.listConversations({ context: CONTEXT });
@@ -127,6 +141,40 @@ test("inventory includes archives and every Project page beyond sidebar visibili
   const projectList = await service.listProjects({ context: CONTEXT });
   assert.equal(projectList.items[0].membership.known_count, 9);
   assert.equal(projectList.items[0].membership.sources_exhausted, true);
+});
+test("Project reads and full inventory respect native endpoint page limits", async t => {
+  const {service, backend} = fixture(t);
+  const original = backend.call.bind(backend);
+  backend.call = async (operation, args, context) => {
+    if (operation === "projects" && args.limit > 20 || operation === "project_conversations" && args.limit > 50) {
+      throw new ApiError("BACKEND_ERROR", "Native endpoint rejected the page limit", {status: 422});
+    }
+    return original(operation, args, context);
+  };
+  assert.ok((await service.listProjects({context: CONTEXT})).items.length > 0);
+  assert.ok((await service.listProjects({context: CONTEXT, limit: 100})).items.length > 0);
+  const first = await service.listConversations({context: CONTEXT});
+  assert.equal((await finish(service, first.inventory_job_id)).status, "completed");
+  const result = await service.listConversations({context: CONTEXT});
+  assert.equal(result.items.length, 12);
+  assert.equal((await service.inventoryStatus({context: CONTEXT})).sources_exhausted, true);
+});
+test("history follows the backend page boundary when a nonterminal page is short", async t => {
+  const {service, backend} = fixture(t);
+  const original = backend.call.bind(backend), offsets = [];
+  backend.call = async (operation, args, context) => {
+    if (operation !== "list" || args.archived) return original(operation, args, context);
+    offsets.push(args.offset);
+    if (args.offset === 0) return {offset: 0, limit: 3, total: 4, items: [{id: "short-one", title: "One"}, {id: "short-two", title: "Two"}]};
+    assert.equal(args.offset, 3);
+    return {offset: 3, limit: 3, total: 4, items: [{id: "short-last", title: "Last"}]};
+  };
+  const first = await service.listConversations({context: CONTEXT});
+  assert.equal((await finish(service, first.inventory_job_id)).status, "completed");
+  const result = await service.listConversations({context: CONTEXT});
+  assert.deepEqual(offsets, [0, 3]);
+  assert.ok(result.items.some(item => item.id === "short-last"));
+  assert.equal(result.completeness, "unknown");
 });
 test("inventory/search cursors bind account, filter and revision and incremental sync scans every source", async t => {
   const { service } = fixture(t);
@@ -370,6 +418,7 @@ function nativeHarness(t, authOverrides = {}) {
     assert.equal(options.additionalHeaders["ChatGPT-Account-ID"], CONTEXT.workspace_id);
     assert.equal(options.retry, "never");
     const a = options.parameters?.path ?? {}, q = options.parameters?.query ?? {}, body = options.requestBody ?? {};
+    if (route === "/conversations") assert.equal(q.exclude_conversation_origin, "tpp", "Use the native Work-chat exclusion enum");
     const operation = route === "/conversations" ? "list" : route.endsWith("/sidebar") ? "projects"
       : route.endsWith("/rename") ? "rename" : route === "/projects" ? "create_project"
       : route.includes("gizmo_id_or_short_url") ? "project" : route.includes("/gizmos/") ? "project_conversations"
@@ -559,7 +608,7 @@ const PRELOAD = 'const x=require("electron");x.contextBridge.exposeInMainWorld("
 const REQUEST = 'Ghh3(e,t,n){n.d(t,{Request:()=>r,getChatGptRequestProfile:()=>p});const r={};function p(){}}';
 const AUTH = 'cE1j(e,t,n){var g=n("AUTH");function sync(W,N,Z){let v=W.get(g.PO);(N.isLoading||!N.hasChatGptToken||v.authenticatedAccountId!==Z||v.authenticatedUserId!==N.userId)&&abort();W.set(j.$S,{accountId:N.accountId,accountInfoError:!1,accountInfoLoading:!1,authLoading:N.isLoading,authMethod:N.authMethod,plan:null,supportedSurface:!0,workCloudSupportedSurface:!0})}}';
 const ROUTES = ['"/conversation/{conversation_id}"', '"/gizmos/{gizmo_id}/conversations"', '"/gizmos/snorlax/sidebar"',
-  '"/conversation/id/{conversation_id}/rename"', '"/conversations/{conversation_id}/messages"', 'Request.safePost("/projects",{})', '"ChatGPT-Account-ID"'].join(";");
+  '"/conversation/id/{conversation_id}/rename"', '"/conversations/{conversation_id}/messages"', 'Request.safePost("/projects",{})', '"ChatGPT-Account-ID"', '({exclude_conversation_origin:flag?void 0:"tpp"})'].join(";");
 const CHUNK = `export const __webpack_modules__={${REQUEST},${AUTH},routes(e,t,n){${ROUTES}}};`;
 test("patched module captures the request loader outside a shadowing account effect", async () => {
   const accountAtom = {}, exports = {}, replies = [], hellos = [], calls = [];

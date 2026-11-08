@@ -94,7 +94,7 @@ class ConversationService {
     let total = null, drift = false;
     let cursor = null;
     for (let n = 0; n < 10000; n++) {
-      const page = await this.call("projects", { cursor, limit: 100 }, context, { signal });
+      const page = await this.call("projects", { cursor, limit: 20 }, context, { signal });
       if (!Array.isArray(page?.items) || !(page.cursor == null || typeof page.cursor === "string")) fail("UNSUPPORTED_FORMAT", "Unrecognized Project pagination.");
       const advertised = Number.isSafeInteger(page.total) && page.total >= 0 ? page.total : null;
       if (total !== null && advertised !== total) drift = true;
@@ -111,13 +111,15 @@ class ConversationService {
     fail("INCOMPLETE_INVENTORY", "Project page safety limit reached.");
   }
   async projects(context, signal, onProgress) { return (await this.projectDirectory(context, signal, onProgress)).items; }
-  async listProjects({ context, cursor = null, limit = 100 }) {
+  async listProjects({ context, cursor = null, limit = 20 }) {
     await this.identity(context);
     limit = integer(limit, 1, 100);
     if (cursor !== null && (typeof cursor !== "string" || cursor.length > 4096)) fail("INVALID_ARGUMENT", "Invalid Project cursor.");
     // Bind an upstream cursor to this account rather than returning it bare.
     const token = cursor === null ? null : this.decodeCursor(cursor, context, "projects");
-    const page = await this.call("projects", { cursor: token?.upstream ?? null, limit }, context);
+    // Match the native sidebar client's accepted page size. Larger API limits
+    // remain compatible, with the remaining Projects available via the cursor.
+    const page = await this.call("projects", { cursor: token?.upstream ?? null, limit: Math.min(limit, 20) }, context);
     if (!Array.isArray(page?.items)) fail("UNSUPPORTED_FORMAT", "Unrecognized Project list.");
     const index = this.inventory && same(this.inventory.context, context) ? this.inventory : null;
     return { context, items: page.items.map(projectRecord).map(({ raw, ...p }) => {
@@ -191,7 +193,7 @@ class ConversationService {
         let offset = 0;
         const seen = new Set();
         for (let n = 0; n < 10000; n++) {
-          const page = await this.call("list", { archived, offset, limit: 100 }, context, { signal });
+          const page = await this.call("list", { archived, offset, limit: 50 }, context, { signal });
           if (!Array.isArray(page?.items) || page.offset !== offset || !Number.isSafeInteger(page.limit) || page.limit < 1) fail("UNSUPPORTED_FORMAT", "Unrecognized history pagination.");
           const total = Number.isSafeInteger(page.total) && page.total >= 0 ? page.total : null;
           if (scope.total !== null && total !== scope.total) index.drift = true;
@@ -208,7 +210,7 @@ class ConversationService {
             break;
           }
           if (!page.items.length) fail("INCOMPLETE_INVENTORY", "History ended before its advertised total.");
-          offset += page.items.length;
+          offset += page.limit;
         }
         if (!scope.exhausted) fail("INCOMPLETE_INVENTORY", "History page safety limit reached.");
       }
@@ -223,7 +225,7 @@ class ConversationService {
         const scope = { kind: "project", project_id: project.id, fetched: 0, total: null, exhausted: false, completeness: "unknown" };
         index.scopes.push(scope);
         for (let n = 0; n < 10000; n++) {
-          const page = await this.call("project_conversations", { id: project.id, cursor, limit: 100 }, context, { signal });
+          const page = await this.call("project_conversations", { id: project.id, cursor, limit: 50 }, context, { signal });
           if (!Array.isArray(page?.items) || !(page.cursor == null || typeof page.cursor === "string")) fail("UNSUPPORTED_FORMAT", "Unrecognized Project conversation pagination.");
           for (const item of page.items) {
             if (seenItems.has(item.id)) drift = true;

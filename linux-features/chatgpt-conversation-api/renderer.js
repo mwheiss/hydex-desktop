@@ -49,7 +49,7 @@ function installRenderer(scope, accountAtom, getRequest) {
         case "identity": result = before; break;
         case "list": result = await client.safeGet("/conversations", options({ parameters: { query: {
           offset: a.offset, limit: a.limit, order: "updated", is_archived: a.archived,
-          hide_snorlax: false, exclude_conversation_origin: "codex", expand: false,
+          hide_snorlax: false, exclude_conversation_origin: "tpp", expand: false,
         } } })); break;
         case "projects": result = await client.safeGet("/gizmos/snorlax/sidebar", options({ parameters: { query: {
           cursor: a.cursor ?? undefined, limit: a.limit, owned_only: false, conversations_per_gizmo: 0,
