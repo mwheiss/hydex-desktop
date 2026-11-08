@@ -9,9 +9,11 @@ function installRenderer(scope, accountAtom, getRequest) {
   const identity = () => {
     const a = scope.get(accountAtom);
     if (!["chatgpt", "chatgptAuthTokens"].includes(a.authMethod) || a.authLoading || a.accountLoading || a.requiresAuth ||
-        a.hasChatGptToken !== true || !a.userId || !a.accountId || !a.authenticatedAccountId ||
-        a.accountId !== a.authenticatedAccountId || a.userId !== a.authenticatedUserId) return null;
-    return { user_id: a.userId, account_id: a.authenticatedAccountId, workspace_id: a.accountId };
+        a.hasChatGptToken !== true || !a.userId || !a.authenticatedUserId || !a.accountId || !a.authenticatedAccountId ||
+        a.accountId !== a.authenticatedAccountId) return null;
+    // The native request principal can differ from the ChatGPT membership user
+    // ID. Match Request.expectedIdentity, as the upstream request callers do.
+    return { user_id: a.authenticatedUserId, account_id: a.authenticatedAccountId, workspace_id: a.accountId };
   };
   if (globalThis[slot]) {
     globalThis[slot].identity = identity;
