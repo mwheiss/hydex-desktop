@@ -72,6 +72,10 @@ and the credit-admission hook through an external-store subscription.
 
 The composer adapter's quota condition is patched before it contributes to the
 actual Send button's disabled state. This covers new and existing local threads.
+For signed Desktop 26.1103.60933, the patch verifies the quota flag's complete
+path through the usage-limit reason, filtered reason array, joined string and
+rendered `submitDisabledReasons` prop. A disconnected or ambiguous path rejects
+the build.
 Other submission conditions, including pending setup, policy review and approvals,
 remain active. Search and other tool results retain their normal delivery path.
 
