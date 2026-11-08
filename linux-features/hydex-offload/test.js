@@ -944,7 +944,7 @@ const {
 } = require("./patch.js");
 
 function fullLocalSubmitFixture() {
-  return "function localAdapter(e){let scope=e.scope,host=e.hostId,follow=e.followUp,kind=scope.value.kind===`local`?`thread`:`home`,quotaAtom={},readQuota=flag=>{onQuotaRead();return flag&&e.quotaBlocked},quota=readQuota(host===`local`&&quotaAtom);(0,React.useRef)(null);if(e.stop){}else if(follow?.type===`cloud`){}let blocked=e.pending||e.policyBlocked||e.approvalPending||quota,other;return{submitDisabled:blocked,kind,isNativeWork:!0,localFollowUpPreparation:null}}function afterAdapter(){}";
+  return 'function localAdapter(e){let scope=e.scope,host=e.hostId,follow=e.followUp,kind=scope.value.kind===`local`?`thread`:`home`,quotaAtom={},readQuota=flag=>{onQuotaRead();return flag&&e.quotaBlocked},quota=readQuota(host===`local`&&quotaAtom);(0,React.useRef)(null);if(e.stop){}else if(follow?.type===`cloud`){}let pending=e.pending&&"pending",policy=e.policyBlocked&&"policy-blocked",approval=e.approvalPending&&"approval-pending",quotaReason=quota&&"usage-limit";let reasons=[pending,policy,approval,quotaReason].filter(Boolean);let disabledReasons=reasons.join(",");return{submitDisabledReasons:disabledReasons,kind,isNativeWork:!0,localFollowUpPreparation:null}}function afterAdapter(){}';
 }
 
 function evaluateFullLocalSubmit(mode, configured = false) {
@@ -966,7 +966,11 @@ function evaluateFullLocalSubmit(mode, configured = false) {
       useSyncExternalStore(subscribe, read) { subscribe(() => {}); return read(); },
     },
   };
-  return {submit: vm.runInNewContext(source + ";localAdapter", context), storage, listeners, reads: () => reads};
+  const adapter = vm.runInNewContext(source + ";localAdapter", context);
+  return {submit: params => {
+    const result = adapter(params);
+    return {...result, submitDisabled: Boolean(result.submitDisabledReasons)};
+  }, storage, listeners, reads: () => reads};
 }
 
 test("Full clears the actual quota submit gate for fresh and existing local conversations", () => {
@@ -1014,11 +1018,24 @@ test("submit admission is idempotent and refuses missing or ambiguous owners", (
   assert.ok(patched.includes(FULL_LOCAL_SUBMIT_MARKER));
   assert.equal(matchesHydexFullLocalSubmitGateContract(source), true);
   assert.equal(applyHydexFullLocalSubmitGatePatch(patched), patched);
-  for (const drifted of [source + source, source.replace("submitDisabled:blocked", "differentField:blocked")]) {
+  for (const drifted of [source + source,
+    source.replace("submitDisabledReasons:disabledReasons", "differentField:disabledReasons"),
+    source.replace('quotaReason=quota&&"usage-limit"', 'quotaReason=anotherFlag&&"usage-limit"'),
+    source.replace("[pending,policy,approval,quotaReason]", "[pending,policy,approval]"),
+    source.replace('reasons.join(",")', 'otherReasons.join(",")'),
+  ]) {
     assert.equal(matchesHydexFullLocalSubmitGateContract(drifted), false);
     assert.equal(captureWarnings(() => applyHydexFullLocalSubmitGatePatch(drifted)).value, drifted);
   }
   new vm.Script(patched);
+});
+test("native disabled reasons preserve every non-quota blocker in Full", () => {
+  const {submit} = evaluateFullLocalSubmit("force_full");
+  const params = {scope: {value: {kind: "local"}}, hostId: "local", quotaBlocked: true};
+  assert.equal(submit(params).submitDisabledReasons, "");
+  assert.equal(submit({...params, pending: true, policyBlocked: true, approvalPending: true}).submitDisabledReasons,
+    "pending,policy-blocked,approval-pending");
+  assert.equal(evaluateFullLocalSubmit("force_on").submit(params).submitDisabledReasons, "usage-limit");
 });
 
 function fullLocalUsageFixture() {

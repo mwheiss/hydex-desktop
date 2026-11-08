@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { findMatchingBrace } = require("../../scripts/patches/lib/minified-js.js");
+const { findMatchingBrace, escapeRegExp } = require("../../scripts/patches/lib/minified-js.js");
 const { listWebviewScriptAssets } = require("../../scripts/patches/lib/assets.js");
 const { patchBreaksJavaScriptSyntax } = require("../../scripts/patches/lib/javascript-syntax.js");
 
@@ -86,7 +86,7 @@ function applyHydexNextTurnUpdaterAssets(extractedDir) {
 }
 
 function applyHydexFullLocalSubmitGateAssets(extractedDir) {
-  return patchMatchingAssets(extractedDir,source=>source.includes("localFollowUpPreparation:")&&source.includes("isNativeWork:")&&source.includes("submitDisabled:")&&/\b[\w$]+=(?:[\w$]+|\(0,[\w$]+\.[\w$]+\))\((?:"local"===[\w$]+|[\w$]+===`local`)&&[\w$]+(?:\.[\w$]+)?\)/.test(source),source=>{
+  return patchMatchingAssets(extractedDir,source=>source.includes("localFollowUpPreparation:")&&source.includes("isNativeWork:")&&source.includes("submitDisabledReasons:")&&/\b[\w$]+=(?:[\w$]+|\(0,[\w$]+\.[\w$]+\))\((?:"local"===[\w$]+|[\w$]+===`local`)&&[\w$]+(?:\.[\w$]+)?\)/.test(source),source=>{
     if(!matchesHydexFullLocalSubmitGateContract(source)) throw Error("Ambiguous local submit-admission owner");
     return applyHydexFullLocalSubmitGatePatch(source);
   },"local Full submit admission");
@@ -399,6 +399,17 @@ function fullLocalPreferenceHelpers(marker) {
     `return()=>{window.removeEventListener(\`storage\`,e);window.removeEventListener(\`hydex-offload-change\`,e)}}`;
 }
 
+function quotaDisabledReasonContract(region, flag) {
+  // Current signed Linux joins a cached reason list instead of OR-ing a
+  // submitDisabled boolean. Prove the entire quota-to-rendered-prop path.
+  const reasons = [...region.matchAll(new RegExp(`(${IDENT})=${escapeRegExp(flag)}&&"usage-limit";`, "g"))];
+  if (reasons.length !== 1) return false;
+  const lists = [...region.matchAll(new RegExp(`(${IDENT})=\\[(?:${IDENT},){0,32}${escapeRegExp(reasons[0][1])}\\]\\.filter\\(Boolean\\)`, "g"))];
+  if (lists.length !== 1) return false;
+  const joined = [...region.matchAll(new RegExp(`let (${IDENT})=${escapeRegExp(lists[0][1])}\\.join\\(","\\);`, "g"))];
+  return joined.length === 1 && region.split(`submitDisabledReasons:${joined[0][1]}`).length === 2;
+}
+
 function fullLocalSubmitGateMatches(source) {
   const pattern=new RegExp(`(${IDENT})=(?:(${IDENT})|\\(0,(${IDENT})\\.(${IDENT})\\))\\((?:"local"===(${IDENT})|(${IDENT})===\x60local\x60)&&${IDENT}(?:\\.${IDENT})?\\)`,"g");
   return [...source.matchAll(pattern)].flatMap(match=>{
@@ -406,8 +417,7 @@ function fullLocalSubmitGateMatches(source) {
     if (!owner) return [];
     const region=owner.region,scopeNames=localScopeNames(region),react=uniqueAlias(region,"useRef");
     const followNames=[...new Set([...region.matchAll(new RegExp(`(${IDENT})\\?\\.type===["\x60]cloud["\x60]`,"g"))].map(m=>m[1]))];
-    const submitNames=[...new Set([...region.matchAll(new RegExp(`submitDisabled:(${IDENT})(?=[,}])`,"g"))].map(m=>m[1]))].filter(name=>new RegExp(`${name.replace(/\$/g,"\\$")}=[^;{}]{1,800}\\|\\|${match[1]}[,;]`).test(region));
-    if(scopeNames.length!==1 || followNames.length!==1 || submitNames.length!==1 || !react) return [];
+    if(scopeNames.length!==1 || followNames.length!==1 || !quotaDisabledReasonContract(region, match[1]) || !react) return [];
     return [{...owner,quota:match,host:match[5]||match[6],scope:scopeNames[0],follow:followNames[0],react}];
   });
 }
