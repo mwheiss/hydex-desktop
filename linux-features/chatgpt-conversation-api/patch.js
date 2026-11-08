@@ -85,8 +85,18 @@ function patchRenderer(source) {
     if (!source.includes(contract)) throw Error(`Conversation API drift: missing native contract ${contract}.`);
   }
   const { scope } = anchor.groups;
-  const extra = `,(${installRenderer.toString()})(${scope},${current.groups.account},()=>${auth.require}(${JSON.stringify(requests[0].id)}).Request)${MARK}`;
-  return insert(source, anchor, extra);
+  // Capture the loader in its module factory. The account layout effect has a
+  // local snapshot named like the minified require parameter in current Linux.
+  const loader = "hydexConversationApiNativeRequestV1";
+  const capture = `const ${loader}=()=>${auth.require}(${JSON.stringify(requests[0].id)}).Request;`;
+  const bodyStart = auth.start + auth.source.indexOf("{") + 1;
+  const captured = source.startsWith(capture, bodyStart);
+  if (captured !== source.includes(MARK) || !captured && auth.source.includes(loader)) {
+    throw Error("Conversation API request loader is incomplete or collides with a native binding.");
+  }
+  const extra = `,(${installRenderer.toString()})(${scope},${current.groups.account},${loader})${MARK}`;
+  const next = insert(source, anchor, extra);
+  return captured ? next : next.slice(0, bodyStart) + capture + next.slice(bodyStart);
 }
 function patchExtracted(extractedDir, { feature } = {}) {
   const build = path.join(extractedDir, ".vite", "build");
