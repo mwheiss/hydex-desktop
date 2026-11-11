@@ -482,10 +482,26 @@ test("targeted metadata has explicit missing records and redacts credentials wit
 test("targeted metadata rejects unrelated records, duplicates, bodies and foreign origins", async t => {
   const {service,backend} = fixture(t);
   for (const rows of [[{id: "other",title: "Other"}], [{id: "c1",title: "One"},{id: "c1",title: "One"}],
-    [{id: "c1",title: "One",mapping: {}}], [{id: "c1",title: "One",conversation_origin: "tpp"}]]) {
+    [{id: "c1",title: "One",mapping: {root: {message: {content: "body"}}}}],
+    [{id: "c1",title: "One",messages: [{content: "body"}]}],
+    [{id: "c1",title: "One",messages: "body"}],
+    [{id: "c1",title: "One",conversation_origin: "tpp"}]]) {
     backend.hook = async op => op === "conversation_metadata" ? rows : undefined;
     await assert.rejects(service.getConversationMetadata({context: CONTEXT,id: "c1"}), e => ["UNSUPPORTED_FORMAT","RESOURCE_SCOPE_MISMATCH"].includes(e.code));
   }
+});
+test("targeted metadata accepts null and empty DTO body placeholders without discarding them", async t => {
+  const {service,backend} = fixture(t);
+  for (const placeholders of [{mapping: null, messages: null}, {mapping: {},messages: []}]) {
+    backend.hook = async op => op === "conversation_metadata" ? [{id: "c1",title: "One",update_time: 42,
+      is_archived: false,gizmo_id: null,...placeholders}] : undefined;
+    const result = await service.getConversationMetadata({context: CONTEXT,id: "c1"});
+    assert.equal(result.exists,true); assert.equal(result.metadata.updated_at,42);
+    assert.deepEqual(result.raw_metadata.mapping,placeholders.mapping);
+    assert.deepEqual(result.raw_metadata.messages,placeholders.messages);
+  }
+  assert.deepEqual(backend.calls.map(c=>c.operation),["conversation_metadata","conversation_metadata"]);
+  assert.equal(backend.mutations.length,0);
 });
 test("targeted metadata rejects unscoped, injected and mutation-shaped arguments", async t => {
   const {service,backend} = fixture(t);
