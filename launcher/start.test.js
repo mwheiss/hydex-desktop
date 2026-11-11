@@ -67,7 +67,7 @@ exit 7
 
 // The launcher reports usage from a background subshell that outlives
 // start.sh. A reporter still running when the test removed its root recreated
-// XDG_STATE_HOME/codex-desktop/usage-reporting under the removed root, found
+// XDG_STATE_HOME/hydex-desktop/usage-reporting under the removed root, found
 // the test's fake curl gone, and ran the curl on PATH, which sent a real count
 // to the production usage counter. The subshell inherits a spare pipe on
 // fd 3, and spawnSync returns only once every holder has closed it, so the
@@ -398,7 +398,7 @@ exit 22
   // The reporter reserved the day before the failed request, and it finished
   // before the run returned.
   assert.equal(
-    fs.readdirSync(path.join(failingRoot, "state/codex-desktop/usage-reporting")).length,
+    fs.readdirSync(path.join(failingRoot, "state/hydex-desktop/usage-reporting")).length,
     1,
   );
 });
