@@ -232,9 +232,14 @@ linux_features_root_path() {
     "$node_bin" "$helper" --features-root
 }
 
+remove_update_builder_python_cache() {
+    find "$1" -mindepth 1 -name __pycache__ -prune -exec rm -rf -- {} +
+}
+
 remove_update_builder_test_files() {
+    remove_update_builder_python_cache "$1"
     find "$1" -mindepth 1 \
-        \( -name test.js -o -name '*.test.js' -o -name '*.test-helpers.js' -o -name fixtures \) \
+        \( -name test.js -o -name '*.test.js' -o -name '*.test-helpers.js' -o -name 'test_*.py' -o -name fixtures \) \
         -prune -exec rm -rf -- {} +
 }
 
@@ -263,6 +268,7 @@ stage_update_builder_linux_features_tree() {
         [ -d "$source" ] || error "Missing enabled Linux feature: $feature_id ($source)"
         mkdir -p "$(dirname "$destination")"
         cp -a "$source" "$destination"
+        remove_update_builder_python_cache "$destination"
         # Checkout umasks can make tracked executables group-writable. Keep
         # private modes while preventing other users from changing build hooks.
         find "$destination" -type d -exec chmod go-w {} +

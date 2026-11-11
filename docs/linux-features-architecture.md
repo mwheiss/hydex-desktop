@@ -216,6 +216,8 @@ added only when unavoidable and must remain feature-agnostic.
 Sources stay inside the feature. Targets stay inside the app and cannot be the
 app root. Modes are quoted octal strings. Staged files are tracked so disabling
 a feature removes framework-owned files on the next rebuild.
+Directory resources omit generated Python `__pycache__` directories so test runs
+cannot change the packaged runtime through ignored interpreter bytecode.
 
 ## Runtime hooks
 

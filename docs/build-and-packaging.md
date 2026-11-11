@@ -283,6 +283,9 @@ feature selection/descriptors/resources, the ASAR toolchain, package templates,
 required build helpers, and already staged release executables for enabled
 native features. It excludes the full repository, Cargo workspaces, and
 disabled features, and never contains an app-runtime Node installation.
+Generated Python cache directories are omitted from enabled feature sources.
+Repository-owned Python `test_*.py` files are excluded with the other test-only
+inputs; private feature test sources retain their existing preservation policy.
 
 ## Cross-format validation
 

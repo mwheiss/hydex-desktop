@@ -963,7 +963,10 @@ function copyInstallFile(installDir, source, target, mode, labels = {}) {
   assertInstallParentInside(installDir, target, targetLabel);
   assertNoSymbolicLinksIfPresent(target, targetLabel);
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.cpSync(source, target, { recursive: true, force: true });
+  // Python creates these untracked directories during tests/imports. They are
+  // host/interpreter-specific output, never canonical feature resources.
+  fs.cpSync(source, target, { recursive: true, force: true,
+    filter: (entry) => path.basename(entry) !== "__pycache__" });
   if (mode != null) {
     chmodRecursive(target, mode);
   }
