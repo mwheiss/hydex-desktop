@@ -12,6 +12,7 @@ const { ConversationService } = require("../runtime/service.js");
 const { listen, connect } = require("../runtime/ipc.js");
 const { send, jsonLines } = require("../runtime/wire.js");
 const { MockBackend, CONTEXT } = require("./backend.js");
+const { tools } = require("../runtime/tools.js");
 
 async function codexClient(executable, directory, bridgeRoot) {
   const configDir = path.join(directory, "codex-config"); fs.mkdirSync(configDir, { mode: 0o700 });
@@ -48,8 +49,9 @@ async function codexClient(executable, directory, bridgeRoot) {
     const { thread } = await rpc("thread/start", { cwd: directory, ephemeral: true, model: "fixture-no-inference", modelProvider: "fixture", approvalPolicy: "never", sandbox: "read-only" });
     const catalog = await rpc("mcpServerStatus/list", { threadId: thread.id, serverName: "chatgpt_conversations", detail: "toolsAndAuthOnly" });
     const server = catalog.data.find(s => s.name === "chatgpt_conversations");
-    assert.equal(Object.keys(server?.tools ?? {}).length, 15, "Real Codex must discover every MCP tool");
-    return { identity, tool_count: 15,
+    assert.deepEqual(Object.keys(server?.tools ?? {}).sort(), tools.map(tool => tool.name).sort(),
+      "Real Codex must discover the complete current MCP catalog");
+    return { identity, tool_count: tools.length,
       call: async (tool, args) => {
         const response = await rpc("mcpServer/tool/call", { threadId: thread.id, server: "chatgpt_conversations", tool, arguments: args });
         return { result: response.structuredContent ?? JSON.parse(response.content[0].text), isError: response.isError };
@@ -85,6 +87,12 @@ async function demo({ codex } = {}) {
       throw Error("Fixture job did not finish.");
     };
     const status = await call("get_status"); assert.deepEqual(status.context, CONTEXT);
+    const metadataStart = backend.calls.length;
+    const metadata = await call("get_conversation_metadata", { context: CONTEXT, id: "c3" });
+    assert.equal(metadata.exists, true); assert.equal(metadata.metadata.id, "c3");
+    assert.equal(metadata.metadata.archived, true);
+    assert.deepEqual(backend.calls.slice(metadataStart).map(c => [c.operation, c.args]),
+      [["conversation_metadata", { id: "c3" }]]);
     const inventory = await call("list_conversations", { context: CONTEXT }); await finish(inventory.inventory_job_id);
     const all = await call("list_conversations", { context: CONTEXT }); assert.equal(all.items.length, 12);
     const full = await call("get_conversation", { context: CONTEXT, id: "c1", branch: "all" }); assert.equal(full.conversation.messages.length, 6);
@@ -102,6 +110,7 @@ async function demo({ codex } = {}) {
     const restored = await finish(undo.job_id); assert.equal(restored.status, "completed");
     assert.equal(backend.records.get("c1").title, "Conversation c1"); assert.equal(backend.records.get("c1").gizmo_id, null);
     return { consumer: codex ? "real_codex_app_server_mcp_client" : "local_ipc_client", codex: client.identity ?? null,
+      tool_count: client.tool_count ?? tools.length, targeted_metadata_verified: true,
       model_turns: 0, real_account_requests: 0, inventory: { conversations: all.items.length, completeness: all.completeness },
       message_kinds: [...new Set(full.conversation.messages.map(m => m.kind))], projects_in_first_page: projects.items.length,
       approval_denial_enforced: true, verified_operations: completed.entries.length, undo_status: restored.status,
