@@ -65,6 +65,9 @@ function installRenderer(scope, accountAtom, getRequest) {
           result = await client.safeGet(a.page ? "/conversations/{conversation_id}/messages" : "/conversation/{conversation_id}", options({
             parameters: { path: { conversation_id: a.id }, ...(a.page ? { query: { before: a.page.cursor, num_turns: 100, include_has_versions: true } } : {}) },
           })); break;
+        case "conversation_metadata": result = await client.safePost("/conversations/batch", options({
+          requestBody: { conversation_ids: [a.id] },
+        })); break;
         case "rename": result = await client.safePost("/conversation/id/{conversation_id}/rename", options({
           parameters: { path: { conversation_id: a.id } }, requestBody: { title: a.title },
         })); break;
