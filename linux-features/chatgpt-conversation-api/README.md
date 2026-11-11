@@ -48,6 +48,7 @@ enabled_tools = [
   "chatgpt_get_status", "chatgpt_list_conversations",
   "chatgpt_search_conversations", "chatgpt_get_conversation",
   "chatgpt_get_conversation_metadata",
+  "chatgpt_get_changes",
   "chatgpt_list_projects", "chatgpt_get_inventory_status",
   "chatgpt_get_job_status",
 ]
@@ -121,22 +122,31 @@ native Node bridge and stores snapshots under
 `$XDG_DATA_HOME/hydex-desktop/conversation-cache` (or `~/.local/share`). It never
 registers globally or bypasses native write approval.
 
-The default `prefer_cache` read validates only the requested chat's metadata.
-Unchanged chats use their saved snapshots; only a changed or uncached requested
-chat is fetched. Concurrent reads of one chat share validation and body fetches.
-It never starts an account-wide inventory for a single-chat read. Until Desktop
-is refreshed/restarted with the native operation, it falls back to one live read
-of the requested body. It also uses that fallback when the native metadata guard
-reports message data, suppressing the unsuitable metadata route for five minutes
-before retrying it. `cache_info` reports `live_body_fallback`, capability and the
-reason `native_metadata_response_contains_body`. Unchanged bodies are downloaded
-in this fallback; it does not provide metadata-only cache reuse.
+The default `prefer_cache` read serves clean snapshots validated within 60 seconds
+immediately. Older clean snapshots are explicitly stale and trigger a coalesced
+per-chat background refresh. Missing snapshots and known changes block on a fresh
+read of that chat. `refresh` waits for current server data; `cache_only` starts no
+refreshes; `inventory_snapshot` supports bulk imports. Every read verifies identity.
 
-`refresh` forces a live body read; `cache_only` explicitly reads saved data;
-`inventory_snapshot` reuses a bulk job's selected metadata. Missing or unversioned
-metadata cannot prove a body unchanged and requires that one body read. Metadata
-failures never silently return an unverified cached body as fresh. Update times
-are not guaranteed revision identifiers; explicit refresh remains available.
+`chatgpt_get_changes` exposes an account-scoped, bounded local feed of IDs only.
+The renderer hooks the native account-guarded history/turn-completion handler and
+its missed-message recovery callback. The trusted main-frame IPC accepts only
+`chat_changed` IDs or `gap` hints. Restarts, retention overflow and notification
+gaps conservatively invalidate cached freshness. The adapter persists its cursor;
+changes arriving during a body fetch remain dirty. No event can grant approval.
+
+One detached worker per read-job kind owns an inherited OS file lock. Durable
+queues coalesce work across clients; each worker uses its own native connection.
+A shared metadata inventory is eligible every 30 minutes while the API is active,
+independently of chat responses. Failures preserve old snapshots, expose retry
+information and respect native cooldowns. Previews identify mutation targets;
+execution/undo still require the native exact-batch dialog, and only affected
+chats are invalidated when known. Unknown targets invalidate conservatively.
+
+`cache_info` exposes age, dirty/stale state, refresh progress/failures and change
+notification capability. Old Desktop versions work using age-based freshness
+until the event bridge is installed/restarted. Normal cached reads can briefly
+lag server changes; explicit `refresh` performs a blocking current read.
 
 Native raw responses are saved before normalization. Compressed, checksummed
 snapshots retain every exposed page, available branch, tool record, unknown

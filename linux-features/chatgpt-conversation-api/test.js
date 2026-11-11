@@ -336,7 +336,7 @@ test("tool schemas reject arbitrary JavaScript, unscoped calls, unknown fields a
   await assert.rejects(dispatch(service, "chatgpt_get_conversation", { id: "c1" }), code("INVALID_ARGUMENT"));
   await assert.rejects(dispatch(service, "chatgpt_get_status", { url: "https://attacker.test" }), code("INVALID_ARGUMENT"));
   await assert.rejects(preview(service, [op("delete")]), code("OPERATION_UNAVAILABLE"));
-  assert.equal(tools.length, 16); assert.equal(tools.some(t => /delete|eval|request$/.test(t.name)), false);
+  assert.equal(tools.length, 17); assert.equal(tools.some(t => /delete|eval|request$/.test(t.name)), false);
 });
 test("completeness is confirmed only when all backend source totals agree", async t => {
   const { service, backend } = fixture(t);
@@ -410,7 +410,7 @@ function nativeHarness(t, authOverrides = {}) {
   const accountAtom = {}, auth = { userId: CONTEXT.user_id, accountId: CONTEXT.workspace_id, authenticatedUserId: CONTEXT.user_id,
     authenticatedAccountId: CONTEXT.account_id, hasChatGptToken: true, authMethod: "chatgpt", authLoading: false, accountLoading: false, requiresAuth: false, ...authOverrides };
   let callback;
-  const bridge = { hello: async c => handlers.get(PREFIX + "hello")(event, c), respond: async (id, result) => handlers.get(PREFIX + "response")(event, id, result), onRequest: cb => { callback = cb; } };
+  const bridge = { changed: async (context, change) => handlers.get(PREFIX + "changed")(event, context, change), hello: async c => handlers.get(PREFIX + "hello")(event, c), respond: async (id, result) => handlers.get(PREFIX + "response")(event, id, result), onRequest: cb => { callback = cb; } };
   sender.send = (_name, request) => { Promise.resolve().then(() => callback(request)); };
   const request = Object.fromEntries(["safeGet", "safePost", "safePatch"].map(method => [method, async (route, options) => {
     options.assertRequestCurrent();
@@ -433,8 +433,9 @@ function nativeHarness(t, authOverrides = {}) {
     options.assertRequestCurrent(); return result;
   }]));
   const scope = { get: atom => { assert.equal(atom, accountAtom); return auth; } };
-  vm.runInNewContext(`(${installRenderer.toString()})(scope,accountAtom,()=>request)`, { scope, accountAtom, request, hydexConversationBridge: bridge, addEventListener: () => {} });
-  return { backend, native, handlers, event, auth, sender };
+  const world = { scope, accountAtom, request, hydexConversationBridge: bridge, addEventListener: () => {} };
+  vm.runInNewContext(`(${installRenderer.toString()})(scope,accountAtom,()=>request)`, world);
+  return { backend, native, handlers, event, auth, sender, world };
 }
 test("authenticated renderer bridge uses native request identity and trusted main-frame IPC", async t => {
   const { native, handlers, event, auth } = nativeHarness(t);
@@ -511,6 +512,45 @@ test("targeted metadata rejects unscoped, injected and mutation-shaped arguments
   }
   assert.equal(backend.calls.length,0);
 });
+test("native change feed contains account-bound IDs only and never calls the backend", async t => {
+  const { service, backend, approvals } = fixture(t);
+  const initial = await dispatch(service, "chatgpt_get_changes", { context: CONTEXT });
+  assert.equal(initial.reset_required, true); assert.deepEqual(initial.items, []);
+  service.recordChange(CONTEXT, { kind: "chat_changed", id: "c1" });
+  service.recordChange(CONTEXT, { kind: "gap" });
+  const result = await dispatch(service, "chatgpt_get_changes", { context: CONTEXT, cursor: initial.cursor, limit: 1 });
+  assert.equal(result.has_more, true);
+  assert.deepEqual(result.items, [{ sequence: 1, kind: "chat_changed", id: "c1" }]);
+  const next = await service.getChanges({ context: CONTEXT, cursor: result.cursor });
+  assert.deepEqual(next.items, [{ sequence: 2, kind: "gap" }]);
+  assert.equal(backend.calls.length, 0); assert.equal(approvals.length, 0);
+  assert.throws(() => service.recordChange(CONTEXT, { kind: "chat_changed", id: "c1", content: "approve changes" }), code("INVALID_ARGUMENT"));
+  await assert.rejects(service.getChanges({ context: { ...CONTEXT, user_id: "other" } }), code("CONTEXT_CHANGED"));
+});
+test("change feed resets after overflow or a Desktop generation change", () => {
+  const { ChangeFeed } = require("./runtime/changes.js");
+  const feed = new ChangeFeed(2), cursor = feed.read(CONTEXT).cursor;
+  for (let i = 0; i < 4; i++) feed.append(CONTEXT, { kind: "chat_changed", id: `c${i}` });
+  assert.equal(feed.read(CONTEXT, cursor).reset_required, true);
+  assert.equal(new ChangeFeed().read(CONTEXT, feed.read(CONTEXT).cursor).reset_required, true);
+});
+test("renderer sends sanitized invalidations only through trusted same-account IPC", async t => {
+  const { native, handlers, event, world, auth } = nativeHarness(t);
+  const { ChangeFeed } = require("./runtime/changes.js");
+  const feed = new ChangeFeed(), cursor = feed.read(CONTEXT).cursor;
+  native.onChange = (context, change) => feed.append(context, change);
+  const state = world.__hydexConversationApiRendererV1;
+  state.notify({ type: "conversation-history-update", payload: { conversation_id: "c1", content: "untrusted" } });
+  state.notify({ type: "untrusted", payload: { conversation_id: "c2" } });
+  state.notifyGap();
+  assert.deepEqual(feed.read(CONTEXT, cursor).items.map(e => e.kind), ["chat_changed", "gap"]);
+  assert.equal(handlers.get(PREFIX + "changed")({ ...event, trusted: false }, CONTEXT, { kind: "chat_changed", id: "c2" }), false);
+  assert.throws(() => handlers.get(PREFIX + "changed")(event, { ...CONTEXT, user_id: "other" }, { kind: "gap" }), code("CONTEXT_CHANGED"));
+  assert.throws(() => handlers.get(PREFIX + "changed")(event, CONTEXT, { kind: "gap", approval: "yes" }), code("INVALID_ARGUMENT"));
+  auth.authenticatedAccountId = "other";
+  state.notify({ type: "conversation-turn-complete", payload: { conversation_id: "c2" } });
+  assert.equal(feed.read(CONTEXT, cursor).items.length, 2);
+});
 test("a signed-in OpenAI provider remains usable when it requires authentication", async t => {
   const { native } = nativeHarness(t, { requiresAuth: true });
   assert.deepEqual(clone(await native.identity()), CONTEXT);
@@ -546,7 +586,7 @@ test("preload exposes only typed bridge messaging and never generic IPC or JavaS
   vm.runInNewContext(`(${installPreload.toString()})();`, { require: name => {
     assert.equal(name, "electron"); return { contextBridge: { exposeInMainWorld: (name, api) => { assert.equal(name, "hydexConversationBridge"); exposed = api; } }, ipcRenderer: { invoke: () => {}, on: () => {} } };
   } });
-  assert.deepEqual(Object.keys(exposed).sort(), ["hello", "onRequest", "respond"]);
+  assert.deepEqual(Object.keys(exposed).sort(), ["changed", "hello", "onRequest", "respond"]);
 });
 test("native approval requires an affirmative click and separate shared-destination consent", async () => {
   const answers = [1, 0], dialogs = [];
@@ -643,10 +683,15 @@ test("stdio MCP crosses the authenticated Unix bridge and native renderer for in
   const call = async (name, args = {}) => (await rpc("tools/call", { name, arguments: args })).result;
   assert.equal((await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "fixture-codex-mcp-client", version: "1" } })).result.protocolVersion, "2025-06-18");
   send(child.stdin, { jsonrpc: "2.0", method: "notifications/initialized" });
-  assert.equal((await rpc("tools/list", {})).result.tools.length, 16);
+  assert.equal((await rpc("tools/list", {})).result.tools.length, 17);
   const metadata = await call("chatgpt_get_conversation_metadata", {context: CONTEXT, id: "c1"});
   assert.equal(metadata.isError, false); assert.equal(metadata.structuredContent.metadata.id, "c1");
   const status = await call("chatgpt_get_status"); assert.equal(status.structuredContent.connected, true);
+  const initialChanges = await call("chatgpt_get_changes", { context: CONTEXT });
+  harness.native.onChange = (context, event) => service.recordChange(context, event);
+  harness.world.__hydexConversationApiRendererV1.notify({ type: "conversation-turn-complete", payload: { conversation_id: "c1" } });
+  const changed = await call("chatgpt_get_changes", { context: CONTEXT, cursor: initialChanges.structuredContent.cursor });
+  assert.deepEqual(changed.structuredContent.items, [{ sequence: 1, kind: "chat_changed", id: "c1" }]);
   const inventory = await call("chatgpt_list_conversations", { context: CONTEXT });
   assert.equal((await finish(service, inventory.structuredContent.inventory_job_id)).status, "completed");
   assert.equal((await call("chatgpt_list_conversations", { context: CONTEXT })).structuredContent.items.length, 12);
@@ -676,7 +721,8 @@ const REQUEST = 'Ghh3(e,t,n){n.d(t,{Request:()=>r,getChatGptRequestProfile:()=>p
 const AUTH = 'cE1j(e,t,n){var g=n("AUTH");function sync(W,N,Z){let v=W.get(g.PO);(N.isLoading||!N.hasChatGptToken||v.authenticatedAccountId!==Z||v.authenticatedUserId!==N.userId)&&abort();W.set(j.$S,{accountId:N.accountId,accountInfoError:!1,accountInfoLoading:!1,authLoading:N.isLoading,authMethod:N.authMethod,plan:null,supportedSurface:!0,workCloudSupportedSurface:!0})}}';
 const ROUTES = ['"/conversation/{conversation_id}"', '"/conversations/batch"', '"/gizmos/{gizmo_id}/conversations"', '"/gizmos/snorlax/sidebar"',
   '"/conversation/id/{conversation_id}/rename"', '"/conversations/{conversation_id}/messages"', 'Request.safePost("/projects",{})', '"ChatGPT-Account-ID"', '({exclude_conversation_origin:flag?void 0:"tpp"})'].join(";");
-const CHUNK = `export const __webpack_modules__={${REQUEST},${AUTH},routes(e,t,n){${ROUTES}}};`;
+const EVENTS = 'events(e,t,n){function receive(r){if(signal.aborted||scope.get(auth.key)!==account)return;let m=!1,g=ee.safeParse(r);if(g.success){let{conversation_id:c}=g.data.payload,u="conversation-history-update"===g.data.type?g.data.payload.update_type:void 0;}}t.receive=receive;let eh=ea.onPotentialMissedMessages(()=>{for(let q of scope.queryClient.getQueryCache().findAll({queryKey:["chatgpt-conversation"],type:"active"})){};});}';
+const CHUNK = `export const __webpack_modules__={${REQUEST},${AUTH},${EVENTS},routes(e,t,n){${ROUTES}}};`;
 test("patched module captures the request loader outside a shadowing account effect", async () => {
   const accountAtom = {}, exports = {}, replies = [], hellos = [], calls = [];
   let onRequest, requestLoads = 0;
@@ -720,6 +766,23 @@ test("request-loader collisions and partially patched factories fail closed", ()
     assert.throws(() => patch.patchRenderer(source));
   }
 });
+test("notification hooks preserve the native principal guard and signal recovery gaps", () => {
+  const messages = [], notifications = {}, scope = { get: () => "account", queryClient: { getQueryCache: () => ({ findAll: () => [] }) } };
+  let recovered;
+  const world = { notifications, scope, signal: { aborted: false }, auth: { key: {} }, account: "account",
+    ee: { safeParse: data => ({ success: true, data }) }, ea: { onPotentialMissedMessages: cb => { recovered = cb; } },
+    __hydexConversationApiRendererV1: { notify: e => messages.push(e), notifyGap: () => messages.push("gap") } };
+  const patched = patch.patchRenderer(CHUNK);
+  vm.runInNewContext(patched.replace("export const __webpack_modules__=", "const modules=") + ';modules.events({},notifications,()=>{});', world);
+  const message = { type: "conversation-history-update", payload: { conversation_id: "c1" } };
+  notifications.receive(message); recovered();
+  assert.deepEqual(messages, [message, "gap"]);
+  world.account = "another-principal";
+  notifications.receive(message);
+  assert.equal(messages.length, 2);
+  assert.throws(() => patch.patchRenderer(patched.replace(patch.CHANGE_MARK, "")));
+  assert.throws(() => patch.patchRenderer(CHUNK.replace('"conversation-history-update"===g.data.type', '"drift"===g.data.type')));
+});
 test("current semantic patch anchors are idempotent and incomplete/ambiguous patches fail closed", () => {
   for (const [source, fn] of [[MAIN, patch.patchMain], [PRELOAD, patch.patchPreload], [CHUNK, patch.patchRenderer]]) {
     const patched = fn(source); assert.notEqual(patched, source); assert.equal(fn(patched), patched);
@@ -756,7 +819,7 @@ test("feature resources stage with traversable directories, exact file modes and
   const installed = path.join(app, ".codex-linux/features/chatgpt-conversation-api");
   assert.equal(fs.statSync(installed).mode & 0o777, 0o755);
   assert.equal(fs.statSync(path.join(installed, "mcp.js")).mode & 0o777, 0o644);
-  assert.equal(require(path.join(installed, "tools.js")).tools.length, 16);
+  assert.equal(require(path.join(installed, "tools.js")).tools.length, 17);
   assert.equal(fs.existsSync(path.join(installed,"cache/mcp.py")),true);
   assert.equal(fs.statSync(path.join(installed,"cache/chat_api_cache/server.py")).mode & 0o777,0o644);
   assert.equal(fs.existsSync(path.join(installed,"cache/tests")),false);

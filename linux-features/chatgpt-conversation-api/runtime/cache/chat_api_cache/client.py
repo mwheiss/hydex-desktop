@@ -21,7 +21,7 @@ class NativeError(RuntimeError):
 
 
 READ_TOOLS = frozenset({"chatgpt_get_status", "chatgpt_list_conversations", "chatgpt_get_conversation",
-                        "chatgpt_get_inventory_status", "chatgpt_get_job_status", "chatgpt_get_conversation_metadata"})
+                        "chatgpt_get_inventory_status", "chatgpt_get_job_status", "chatgpt_get_conversation_metadata", "chatgpt_get_changes"})
 
 
 class NativeClient:

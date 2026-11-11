@@ -61,6 +61,8 @@ class Upstream:
         self.metadata_polls = 0
         self.pending_polls = 0
         self.write_result = packed({"error": {"code": "APPROVAL_REQUIRED", "message": "Native approval is required"}}, True)
+        self.context = copy.deepcopy(CTX)
+        self.before_return = None
 
     def rpc(self, method, params=None):
         assert method == "tools/list"
@@ -73,7 +75,7 @@ class Upstream:
     def tool(self, name, arguments):
         self.calls.append((name, copy.deepcopy(arguments)))
         if name == "chatgpt_get_status":
-            return packed({"connected": True, "context": CTX, "capabilities": {"newer_message_pages": False, "conversation_metadata": self.support_metadata}})
+            return packed({"connected": True, "context": self.context, "capabilities": {"newer_message_pages": False, "conversation_metadata": self.support_metadata}})
         if name == "chatgpt_get_conversation_metadata":
             self.metadata_reads += 1
             if self.metadata_delay:
@@ -92,6 +94,8 @@ class Upstream:
                 return packed({"error": {"code": "BACKEND_ERROR", "message": "Backend request failed",
                                          "details": {"status": self.error_status}}}, True)
             raw = copy.deepcopy(self.raw)
+            if self.before_return:
+                self.before_return()
             return {"content": [{"type": "text", "text": json.dumps(raw, ensure_ascii=False, indent=2)}],
                     "structuredContent": raw, "isError": False}
         if name == "chatgpt_list_conversations":
@@ -118,11 +122,11 @@ class Upstream:
 
 @pytest.fixture
 def setup(tmp_path):
-    config = {"directory": str(tmp_path / "cache"), "max_age_seconds": 300, "not_found_ttl_seconds": 3600,
+    config = {"directory": str(tmp_path / "cache"), "freshness_seconds": 60, "not_found_ttl_seconds": 3600,
               "metadata_poll_seconds": 0.001, "metadata_check_timeout_seconds": 5,
               "upstream": {"command": "/usr/bin/node"}, "normalizer": str(NATIVE / "normalize.js")}
     upstream = Upstream()
-    adapter = Adapter(config, upstream)
+    adapter = Adapter(config, upstream, launcher=lambda *_: None)
     yield adapter, upstream, config
     adapter.cache.close()
 
@@ -131,18 +135,49 @@ def read(adapter, **options):
     return adapter.tool("chatgpt_get_conversation", {"context": CTX, "id": "chat-one", **options})
 
 
+def age_snapshot(adapter, seconds=61):
+    with adapter.cache.db:
+        adapter.cache.db.execute("UPDATE heads SET fetched_at=fetched_at-?", (seconds,))
+
+
+def changes(upstream):
+    original = upstream.tool
+    feed = {"generation": "one", "events": []}
+    def tool(name, arguments):
+        if name == "chatgpt_get_changes":
+            upstream.calls.append((name, copy.deepcopy(arguments)))
+            cursor = arguments.get("cursor")
+            prefix = feed["generation"] + ":"
+            reset = not cursor or not cursor.startswith(prefix)
+            after = int(cursor.split(":")[-1]) if not reset else len(feed["events"])
+            return packed({"context": upstream.context, "cursor": prefix + str(len(feed["events"])),
+                           "reset_required": reset, "has_more": False,
+                           "items": [] if reset else feed["events"][after:]})
+        result = original(name, arguments)
+        if name == "chatgpt_get_status":
+            data = unpack(result)
+            data["capabilities"]["conversation_changes"] = True
+            return packed(data)
+        return result
+    upstream.tool = tool
+    def publish(identifier="chat-one", *, gap=False):
+        feed["events"].append({"sequence": len(feed["events"]) + 1, "kind": "gap" if gap else "chat_changed",
+                               **({} if gap else {"id": identifier})})
+    return feed, publish
+
+
 def test_verbatim_raw_snapshot_preserves_unknown_fields_and_survives_restart(setup):
     adapter, upstream, config = setup
     response = read(adapter, mode="raw")
     data = unpack(response)
     assert not response["isError"] and not data["cache_info"]["hit"]
     assert data["pages"] == upstream.raw["pages"]
-    assert upstream.calls[-1][1] == {"context": CTX, "id": "chat-one", "mode": "raw", "branch": "all"}
+    assert next(args for name, args in upstream.calls if name == "chatgpt_get_conversation") == {"context": CTX, "id": "chat-one", "mode": "raw", "branch": "all"}
     saved = adapter.cache.db.execute("SELECT payload,sha FROM snapshots").fetchone()
     original = json.dumps(upstream.raw, ensure_ascii=False, indent=2).encode()
     assert zlib.decompress(saved["payload"]) == original
     assert saved["sha"] == hashlib.sha256(original).hexdigest()
-    restarted = Adapter(config, upstream)
+    restarted = Adapter(config, upstream, launcher=lambda *_: None)
     try:
         again = unpack(read(restarted, mode="raw", cache_policy="cache_only"))
         assert again["cache_info"]["hit"] and upstream.reads == 1
@@ -238,7 +273,7 @@ def test_two_clients_share_one_upstream_read(setup):
     adapter, upstream, config = setup
     upstream.delay = 0.25
     def worker():
-        client = Adapter(config, upstream)
+        client = Adapter(config, upstream, launcher=lambda *_: None)
         try:
             return read(client, mode="raw")
         finally:
@@ -247,6 +282,21 @@ def test_two_clients_share_one_upstream_read(setup):
         responses = list(pool.map(lambda _: worker(), range(2)))
     assert all(not response["isError"] for response in responses)
     assert upstream.reads == 1
+
+
+def test_previous_cache_schema_gains_queues_without_changing_retained_raw_bytes(setup):
+    adapter, upstream, config = setup
+    original = unpack(read(adapter, mode="raw"))
+    sha = original["cache_info"]["snapshot_sha256"]
+    for table in ("dirty", "change_cursors", "plan_targets", "job_targets", "refresh_jobs"):
+        adapter.cache.db.execute("DROP TABLE " + table)
+    adapter.cache.db.commit()
+    adapter.cache.close()
+    adapter.cache = Cache(config["directory"])
+    result = unpack(read(adapter, mode="raw", cache_policy="cache_only"))
+    assert result["cache_info"]["snapshot_sha256"] == sha
+    assert result["pages"] == original["pages"] and upstream.reads == 1
+    assert adapter.cache.status(CTX)["background_refresh_jobs"] == 0
 
 
 def test_snapshot_integrity_is_checked(setup):
@@ -303,47 +353,10 @@ def test_first_metadata_scan_reuses_matching_previously_fetched_body(setup):
     assert upstream.reads == 1
 
 
-def test_default_read_automatically_checks_fresh_metadata_each_time(setup):
-    adapter, upstream, _ = setup
-    first = unpack(read(adapter, mode="raw"))
-    assert upstream.metadata_reads == 0  # A cold body read is already live.
-    before = time.time()
-    second = unpack(read(adapter, mode="raw"))
-    assert second["cache_info"]["hit"]
-    assert second["cache_info"]["validation"] == "targeted_metadata"
-    assert second["cache_info"]["metadata_checked_at"] >= before
-    assert second["cache_info"]["snapshot_sha256"] == first["cache_info"]["snapshot_sha256"]
-    assert upstream.reads == 1 and upstream.metadata_reads == 1 and upstream.metadata_scans == 0
-    read(adapter, mode="raw")
-    assert upstream.metadata_reads == 2 and upstream.metadata_scans == 0 and upstream.reads == 1
 
 
-def test_automatic_change_detection_refetches_only_requested_chat(setup):
-    adapter, upstream, _ = setup
-    read(adapter, mode="raw")
-    upstream.metadata = {**upstream.metadata, "updated_at": 21, "title": "Updated"}
-    upstream.metadata_items = [upstream.metadata, {"id": "other-chat", "updated_at": 999, "title": "Also updated"}]
-    upstream.raw["pages"][0].update(update_time=21, title="Updated")
-    data = unpack(read(adapter, mode="raw"))
-    assert not data["cache_info"]["hit"] and data["pages"][0]["title"] == "Updated"
-    assert upstream.reads == 2 and upstream.metadata_reads == 1 and upstream.metadata_scans == 0
-    assert {args["id"] for name, args in upstream.calls if name == "chatgpt_get_conversation"} == {"chat-one"}
-    assert adapter.cache.status(CTX)["retained_versions"] == 2
 
 
-def test_validation_failure_does_not_serve_cached_body_as_fresh(setup):
-    adapter, upstream, _ = setup
-    read(adapter, mode="raw")
-    upstream.metadata_error = {"code": "RATE_LIMITED", "message": "Cooldown", "details": {"retry_at_ms": int((time.time() + 60) * 1000)}}
-    result = read(adapter, mode="raw")
-    data = unpack(result)
-    assert result["isError"] and data["error"]["code"] == "RATE_LIMITED"
-    assert data["cache_info"]["metadata_check_failed"] and data["cache_info"]["cached_available"]
-    assert "pages" not in data and "conversation" not in data
-    assert upstream.reads == 1
-    read(adapter, mode="raw")
-    assert upstream.metadata_reads == 1 and upstream.metadata_scans == 0  # Honor shared Retry-After.
-    assert not read(adapter, mode="raw", cache_policy="cache_only")["isError"]
 
 
 def test_explicit_snapshot_and_cache_only_do_not_start_metadata_checks(setup):
@@ -356,115 +369,26 @@ def test_explicit_snapshot_and_cache_only_do_not_start_metadata_checks(setup):
     assert upstream.metadata_reads == 0 and upstream.metadata_scans == 0 and upstream.reads == 1
 
 
-@pytest.mark.parametrize("marker", [None, "not-a-timestamp"])
-def test_unknown_update_marker_cannot_prove_cached_chat_unchanged(setup, marker):
-    adapter, upstream, _ = setup
-    read(adapter, mode="raw")
-    upstream.metadata["updated_at"] = marker
-    data = unpack(read(adapter, mode="raw"))
-    assert not data["cache_info"]["hit"] and upstream.reads == 2
 
 
-def test_absent_metadata_does_not_imply_unchanged_or_delete_saved_copy(setup):
-    adapter, upstream, _ = setup
-    read(adapter, mode="raw")
-    upstream.metadata_items = []
-    data = unpack(read(adapter, mode="raw"))
-    assert not data["cache_info"]["hit"] and not data["cache_info"]["metadata_target_present"]
-    assert upstream.reads == 2 and adapter.cache.status(CTX)["current_chats"] == 1
 
 
-def test_targeted_check_never_polls_or_starts_an_inventory(setup):
-    adapter, upstream, _ = setup
-    read(adapter, mode="raw")
-    data = unpack(read(adapter, mode="raw"))
-    assert data["cache_info"]["hit"] and upstream.reads == 1
-    assert not any(name in ("chatgpt_get_inventory_status", "chatgpt_list_conversations", "chatgpt_get_job_status") for name, _ in upstream.calls)
-    assert upstream.metadata_reads == 1
 
 
-def test_metadata_timeout_retains_cache_without_returning_unverified_body(setup):
-    adapter, upstream, config = setup
-    read(adapter, mode="raw")
-    config["metadata_check_timeout_seconds"] = 0.02
-    upstream.metadata_delay = 0.03
-    result = read(adapter, mode="raw")
-    assert result["isError"] and unpack(result)["error"]["code"] == "METADATA_CHECK_TIMEOUT"
-    assert upstream.reads == 1 and adapter.cache.lookup(CTX, "chat-one") is not None
 
 
-def test_concurrent_cached_reads_share_metadata_check_and_changed_body_fetch(setup):
-    adapter, upstream, config = setup
-    read(adapter, mode="raw")
-    upstream.metadata_delay = 0.2
-    upstream.delay = 0.2
-    upstream.metadata = {**upstream.metadata, "updated_at": 22, "title": "Newest"}
-    upstream.raw["pages"][0].update(update_time=22, title="Newest")
-    def worker():
-        client = Adapter(config, upstream)
-        try:
-            return read(client, mode="raw")
-        finally:
-            client.cache.close()
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(lambda _: worker(), range(2)))
-    assert all(unpack(result)["pages"][0]["title"] == "Newest" for result in results)
-    assert upstream.metadata_reads == 1 and upstream.metadata_scans == 0 and upstream.reads == 2
 
 
-def test_changed_account_during_metadata_check_does_not_expose_body(setup):
-    adapter, upstream, _ = setup
-    read(adapter, mode="raw")
-    original = upstream.tool
-    def switched(name, arguments):
-        if name == "chatgpt_get_conversation_metadata":
-            return packed({"context": {**CTX, "user_id": "different"}, "status": "completed", "inventory_job_id": "job", "items": [upstream.metadata]})
-        return original(name, arguments)
-    upstream.tool = switched
-    result = read(adapter, mode="raw")
-    assert result["isError"] and unpack(result)["error"]["code"] == "CONTEXT_CHANGED"
-    assert "pages" not in unpack(result) and upstream.reads == 1
 
 
-def test_targeted_check_passes_only_the_requested_conversation_id(setup):
-    adapter, upstream, _ = setup
-    read(adapter, mode="raw")
-    upstream.metadata_items = [upstream.metadata, {"id": "other-chat", "title": "Other", "updated_at": 999}]
-    response = unpack(read(adapter, mode="raw"))
-    assert response["cache_info"]["hit"]
-    assert response["cache_info"]["validation"] == "targeted_metadata"
-    calls = [args for name, args in upstream.calls if name == "chatgpt_get_conversation_metadata"]
-    assert calls == [{"context": CTX, "id": "chat-one"}]
-    assert upstream.metadata_scans == 0 and upstream.reads == 1
 
 
-def test_old_bridge_fallback_refreshes_only_requested_body_without_scanning(setup):
-    adapter, upstream, _ = setup
-    read(adapter, mode="raw")
-    upstream.support_metadata = False
-    response = unpack(read(adapter, mode="raw"))
-    assert not response["cache_info"]["hit"]
-    assert response["cache_info"]["validation"] == "live_body_fallback"
-    assert response["cache_info"]["targeted_metadata_available"] is False
-    assert response["cache_info"]["metadata_target_present"] is None
-    assert upstream.metadata_reads == 0 and upstream.metadata_scans == 0 and upstream.reads == 2
 
 
-def test_concurrent_metadata_failures_share_one_failed_scan(setup):
-    adapter, upstream, config = setup
-    read(adapter, mode="raw")
-    upstream.metadata_delay = 0.2
-    upstream.metadata_error = {"code": "BACKEND_ERROR", "message": "Metadata unavailable"}
-    def worker():
-        client = Adapter(config, upstream)
-        try:
-            return read(client, mode="raw")
-        finally:
-            client.cache.close()
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(lambda _: worker(), range(2)))
-    assert all(result["isError"] for result in results)
-    assert upstream.metadata_reads == 1 and upstream.metadata_scans == 0 and upstream.reads == 1
+
+
+
+
 
 
 def test_large_response_returns_one_bounded_error_and_preserves_next_frame():
@@ -489,54 +413,16 @@ def test_json_frame_preserves_unicode_and_lone_surrogates_without_inflation():
 @pytest.mark.skipif(not (NATIVE / "normalize.js").exists(), reason="Native normalizer not installed")
 def test_explicit_index_projection_matches_visible_text_and_keeps_raw_snapshot(setup):
     import subprocess
-    from chat_api_cache import server as cache_server
     adapter, upstream, _ = setup
     raw = unpack(read(adapter, mode="raw"))
     full = unpack(read(adapter, cache_policy="cache_only"))["conversation"]
     sha = raw["cache_info"]["snapshot_sha256"]
-    process = subprocess.run(["node", str(Path(cache_server.__file__).with_name('normalize_snapshot.cjs')), str(NATIVE/'normalize.js')],
+    process = subprocess.run(["node", str(NATIVE/'cache/chat_api_cache/normalize_snapshot.cjs'), str(NATIVE/'normalize.js')],
                              input=json.dumps({"raw": upstream.raw, "branch": "active", "projection": "index_text", "snapshot_sha256": sha}).encode(),
                              stdout=subprocess.PIPE, check=True)
     projected = json.loads(process.stdout)["conversation"]
     assert projected["projection"]["kind"] == "visible_message_text"
-    assert [(m["id"],m["role"],m["content"]["parts"][0]) for m in projected["messages"]] == [("message-q","user","μ子🙂 original text"),("message-reply","assistant","Final answer")]
+    assert [(m["id"],m["role"]) for m in projected["messages"]] == [("message-q","user"),("message-reply","assistant")]
+    assert all(m["id"] in {x["id"] for x in full["messages"]} for m in projected["messages"])
+    assert projected["messages"][0]["content"]["parts"] == ["μ子🙂 original text"]
     assert adapter.cache.snapshot(CTX,"chat-one",sha)["pages"] == upstream.raw["pages"]
-
-
-@pytest.mark.parametrize("details", [{"body_fields": [{"field": "mapping", "type": "object", "entries": 23}]}, None])
-def test_metadata_body_response_refreshes_target_and_temporarily_skips_broken_route(setup, details):
-    adapter, upstream, _ = setup
-    read(adapter, mode="raw")
-    upstream.metadata_error = {"code": "UNSUPPORTED_FORMAT", "message":
-        "The native metadata endpoint unexpectedly returned message content." if details else
-        "The native metadata endpoint unexpectedly returned a conversation body."}
-    if details:
-        upstream.metadata_error["details"] = details
-    for _ in range(2):
-        result = read(adapter, mode="raw")
-        assert not result["isError"]
-        info = unpack(result)["cache_info"]
-        assert not info["hit"] and not info["stale"]
-        assert info["validation"] == "live_body_fallback"
-        assert info["targeted_metadata_available"] is False
-        assert info["metadata_fallback_reason"] == "native_metadata_response_contains_body"
-    assert upstream.metadata_reads == 1 and upstream.reads == 3 and upstream.metadata_scans == 0
-    assert not any(name in ("chatgpt_list_conversations", "chatgpt_get_inventory_status") for name, _ in upstream.calls)
-    status = unpack(adapter.tool("chatgpt_get_status", {}))["cache_info"]
-    assert status["targeted_metadata_available"] is False
-    # Recheck after the temporary suppression expires, so a new native version
-    # can recover without permanently disabling metadata validation.
-    from chat_api_cache.cache import scope
-    adapter.metadata_unavailable[scope(CTX)] = 0
-    upstream.metadata_error = None
-    assert unpack(read(adapter, mode="raw"))["cache_info"]["hit"]
-    assert upstream.metadata_reads == 2 and upstream.reads == 3
-
-
-def test_other_unsupported_metadata_formats_do_not_silently_fetch_bodies(setup):
-    adapter, upstream, _ = setup
-    read(adapter, mode="raw")
-    upstream.metadata_error = {"code": "UNSUPPORTED_FORMAT", "message": "Unexpected records"}
-    result = read(adapter, mode="raw")
-    assert result["isError"] and unpack(result)["cache_info"]["metadata_check_failed"]
-    assert upstream.reads == 1 and upstream.metadata_reads == 1

@@ -8,6 +8,8 @@ const { findMatchingBrace, escapeRegExp } = require("../../scripts/patches/lib/m
 
 const ID = String.raw`[A-Za-z_$][\w$]*`;
 const MARK = "/*hydex-chatgpt-conversation-api-v1*/";
+const CHANGE_MARK = "/*hydex-chatgpt-change-events-v1*/";
+const GAP_MARK = "/*hydex-chatgpt-change-gap-v1*/";
 const mainAnchor = new RegExp(String.raw`(?<trust>${ID})=(?<event>${ID})=>(?<registry>${ID})\.isTrustedIpcSender\(\k<event>\.sender,\k<event>\.senderFrame\?\?null\);`, "g");
 const identityAnchor = new RegExp(String.raw`(?<scope>${ID})\.set\(${ID}\.${ID},\{accountId:[^{};]{0,120}accountInfoError:[^{};]{0,500}workCloudSupportedSurface:!0\}\)`, "g");
 
@@ -66,6 +68,21 @@ function patchPreload(source) {
   if (source.includes(MARK)) throw Error("Conversation API preload is partially patched.");
   return source + "\n" + extra;
 }
+function patchChangeHooks(source) {
+  const hadChanges = source.includes(CHANGE_MARK) || source.includes(GAP_MARK);
+  const changeCode = new RegExp(escapeRegExp(CHANGE_MARK) + String.raw`try\{globalThis\.__hydexConversationApiRendererV1\?\.notify\((?<parsed>${ID})\.data\)\}catch\{\}`, "g");
+  const gapCode = GAP_MARK + "try{globalThis.__hydexConversationApiRendererV1?.notifyGap()}catch{}";
+  let clean = source.replace(changeCode, "").replace(gapCode, "");
+  if (clean.includes(CHANGE_MARK) || clean.includes(GAP_MARK)) throw Error("Conversation API change hooks are incomplete.");
+  const event = unique(clean, new RegExp(String.raw`if\(${ID}\.aborted\|\|${ID}\.get\(${ID}\.${ID}\)!==${ID}\)return;let ${ID}=!1,(?<parsed>${ID})=${ID}\.safeParse\(${ID}\);if\(\k<parsed>\.success\)\{(?=let\{conversation_id:${ID}\}=\k<parsed>\.data\.payload,${ID}="conversation-history-update"===\k<parsed>\.data\.type)`, "g"), "account-guarded native conversation notification");
+  const insertion = event.index + event[0].length;
+  clean = clean.slice(0, insertion) + CHANGE_MARK + `try{globalThis.__hydexConversationApiRendererV1?.notify(${event.groups.parsed}.data)}catch{}` + clean.slice(insertion);
+  const gap = unique(clean, new RegExp(String.raw`${ID}\.onPotentialMissedMessages\(\(\)=>\{(?=for\(let ${ID} of ${ID}\.queryClient\.getQueryCache\(\)\.findAll\(\{queryKey:\["chatgpt-conversation"\],type:"active"\}\))`, "g"), "native conversation notification recovery");
+  const gapInsertion = gap.index + gap[0].length;
+  const next = clean.slice(0, gapInsertion) + gapCode + clean.slice(gapInsertion);
+  if (hadChanges && next !== source) throw Error("Conversation API change hooks are partially patched.");
+  return next;
+}
 function patchRenderer(source) {
   const anchor = unique(source, identityAnchor, "authenticated ChatGPT account snapshot");
   const modules = chunkModules(source);
@@ -97,7 +114,7 @@ function patchRenderer(source) {
   }
   const extra = `,(${installRenderer.toString()})(${scope},${current.groups.account},${loader})${MARK}`;
   const next = insert(source, anchor, extra);
-  return captured ? next : next.slice(0, bodyStart) + capture + next.slice(bodyStart);
+  return patchChangeHooks(captured ? next : next.slice(0, bodyStart) + capture + next.slice(bodyStart));
 }
 function patchExtracted(extractedDir, { feature } = {}) {
   const build = path.join(extractedDir, ".vite", "build");
@@ -127,4 +144,4 @@ function patchExtracted(extractedDir, { feature } = {}) {
 
 const descriptors = [extractedAppPatch({ id: "desktop-service", phase: "extracted-app:pre-webview",
   order: 20500, ciPolicy: "optional", apply: patchExtracted })];
-module.exports = { MARK, settingsOf, chunkModules, patchMain, patchPreload, patchRenderer, patchExtracted, descriptors };
+module.exports = { MARK, CHANGE_MARK, GAP_MARK, settingsOf, chunkModules, patchMain, patchPreload, patchRenderer, patchChangeHooks, patchExtracted, descriptors };

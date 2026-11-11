@@ -34,15 +34,33 @@ class RendererBackend {
       const previous = this.renderers.get(sender.id);
       if (!this.observedSenders.has(sender)) {
         this.observedSenders.add(sender);
-        sender.once("destroyed", () => { this.renderers.delete(sender.id); this.rejectSender(sender); });
+        sender.once("destroyed", () => {
+          const old = this.renderers.get(sender.id)?.context;
+          if (old) this.onChange?.(old, { kind: "gap" });
+          this.renderers.delete(sender.id); this.rejectSender(sender);
+        });
         sender.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
           // History/fragment navigation retains the authenticated renderer and
           // does not rerun its account effect. Only a new document retires it.
-          if (isMainFrame && !isInPlace) { this.renderers.delete(sender.id); this.rejectSender(sender); }
+          if (isMainFrame && !isInPlace) {
+            const old = this.renderers.get(sender.id)?.context;
+            if (old) this.onChange?.(old, { kind: "gap" });
+            this.renderers.delete(sender.id); this.rejectSender(sender);
+          }
         });
       }
-      if (previous && !same(previous.context, context)) this.rejectSender(sender);
+      if (previous && !same(previous.context, context)) {
+        if (previous.context) this.onChange?.(previous.context, { kind: "gap" });
+        if (context) this.onChange?.(context, { kind: "gap" });
+        this.rejectSender(sender);
+      }
       this.renderers.set(sender.id, { sender, context });
+      return true;
+    });
+    electron.ipcMain.handle(PREFIX + "changed", (event, context, change) => {
+      if (!trusted(event) || this.closed) return false;
+      assertContext(contextOf(context), this.renderers.get(event.sender.id)?.context);
+      this.onChange?.(context, change);
       return true;
     });
     electron.ipcMain.handle(PREFIX + "response", (event, id, response) => {
@@ -112,6 +130,7 @@ class RendererBackend {
     this.renderers.clear();
     this.electron.ipcMain.removeHandler(PREFIX + "hello");
     this.electron.ipcMain.removeHandler(PREFIX + "response");
+    this.electron.ipcMain.removeHandler(PREFIX + "changed");
   }
 }
 
@@ -160,6 +179,7 @@ function install({ electron, isTrustedIpcEvent, settings }) {
       service = new ConversationService({ backend, settings,
         directory: path.join(electron.app.getPath("userData"), "hydex-chatgpt-conversation-api"),
         approve: nativeApproval(electron) });
+      backend.onChange = (context, event) => service.recordChange(context, event);
     } catch (e) { await bridge.close(); throw e; }
   })();
   ready.catch(() => { backend.close(); console.warn("Hydex ChatGPT conversation API could not start; check private runtime directory and feature configuration."); });
