@@ -91,8 +91,20 @@ class ConversationService {
     const raw = clean.value.raw_metadata;
     const metadata = raw === null ? null : inventoryItem(raw);
     if (raw !== null && metadata === null) fail("RESOURCE_SCOPE_MISMATCH", "This metadata belongs to a Codex session or Work task.");
-    if (raw && (Object.hasOwn(raw, "mapping") || Object.hasOwn(raw, "messages"))) {
-      fail("UNSUPPORTED_FORMAT", "The native metadata endpoint unexpectedly returned a conversation body.");
+    const bodyFields = raw === null ? [] : ["mapping", "messages"].filter(key => {
+      const value = raw[key];
+      // The native metadata DTO can retain empty body placeholders. Presence
+      // of the property alone is not evidence of downloaded message content.
+      if (value == null) return false;
+      if (Array.isArray(value)) return value.length > 0;
+      if (typeof value === "object") return Object.keys(value).length > 0;
+      return true;
+    });
+    if (bodyFields.length) {
+      fail("UNSUPPORTED_FORMAT", "The native metadata endpoint unexpectedly returned message content.", {
+        body_fields: bodyFields.map(key => ({ field: key, type: Array.isArray(raw[key]) ? "array" : typeof raw[key],
+          entries: typeof raw[key] === "object" ? Object.keys(raw[key]).length : null })),
+      });
     }
     return { schema_version: 1, context, id, exists: raw !== null, metadata, raw_metadata: raw,
       fetched_at: new Date().toISOString(), source: "native_targeted_metadata_batch", redactions: clean.redactions,
