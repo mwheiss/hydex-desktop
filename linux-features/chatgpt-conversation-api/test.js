@@ -336,7 +336,7 @@ test("tool schemas reject arbitrary JavaScript, unscoped calls, unknown fields a
   await assert.rejects(dispatch(service, "chatgpt_get_conversation", { id: "c1" }), code("INVALID_ARGUMENT"));
   await assert.rejects(dispatch(service, "chatgpt_get_status", { url: "https://attacker.test" }), code("INVALID_ARGUMENT"));
   await assert.rejects(preview(service, [op("delete")]), code("OPERATION_UNAVAILABLE"));
-  assert.equal(tools.length, 15); assert.equal(tools.some(t => /delete|eval|request$/.test(t.name)), false);
+  assert.equal(tools.length, 16); assert.equal(tools.some(t => /delete|eval|request$/.test(t.name)), false);
 });
 test("completeness is confirmed only when all backend source totals agree", async t => {
   const { service, backend } = fixture(t);
@@ -419,11 +419,16 @@ function nativeHarness(t, authOverrides = {}) {
     assert.equal(options.retry, "never");
     const a = options.parameters?.path ?? {}, q = options.parameters?.query ?? {}, body = options.requestBody ?? {};
     if (route === "/conversations") assert.equal(q.exclude_conversation_origin, "tpp", "Use the native Work-chat exclusion enum");
-    const operation = route === "/conversations" ? "list" : route.endsWith("/sidebar") ? "projects"
+    if (route === "/conversations/batch") {
+      assert.equal(method, "safePost");
+      assert.deepEqual(Object.keys(body), ["conversation_ids"]);
+      assert.equal(body.conversation_ids.length, 1);
+    }
+    const operation = route === "/conversations/batch" ? "conversation_metadata" : route === "/conversations" ? "list" : route.endsWith("/sidebar") ? "projects"
       : route.endsWith("/rename") ? "rename" : route === "/projects" ? "create_project"
       : route.includes("gizmo_id_or_short_url") ? "project" : route.includes("/gizmos/") ? "project_conversations"
       : method === "safePatch" ? body.is_archived === undefined ? "move" : "archive" : "conversation";
-    const result = await backend.call(operation, { ...body, id: a.conversation_id ?? a.gizmo_id ?? a.gizmo_id_or_short_url,
+    const result = await backend.call(operation, { ...body, id: body.conversation_ids?.[0] ?? a.conversation_id ?? a.gizmo_id ?? a.gizmo_id_or_short_url,
       offset: q.offset, limit: q.limit, archived: q.is_archived ?? body.is_archived, cursor: q.cursor, project_id: body.gizmo_id }, CONTEXT);
     options.assertRequestCurrent(); return result;
   }]));
@@ -445,6 +450,50 @@ test("native request identity supports a distinct ChatGPT membership user ID", a
   const { native } = nativeHarness(t, { userId: "membership-user" });
   assert.deepEqual(clone(await native.identity()), CONTEXT);
   assert.equal((await native.call("conversation", { id: "c1" }, CONTEXT)).conversation_id, "c1");
+});
+test("targeted metadata uses exactly one native read and never inventories or reads bodies", async t => {
+  const {service, backend, approvals} = fixture(t, {settings: {mutationsEnabled: false}});
+  const result = await dispatch(service, "chatgpt_get_conversation_metadata", {context: CONTEXT, id: "c3"});
+  assert.equal(result.exists, true); assert.equal(result.metadata.id, "c3");
+  assert.equal(result.metadata.archived, true);
+  assert.equal(result.raw_metadata.unknown_metadata.keep, true);
+  assert.deepEqual(backend.calls.map(c => [c.operation, c.args]), [["conversation_metadata", {id: "c3"}]]);
+  assert.equal(backend.mutations.length, 0); assert.equal(approvals.length, 0);
+  assert.equal((await service.status()).capabilities.conversation_metadata, true);
+  validate(tools.find(t => t.name === "chatgpt_get_conversation_metadata").outputSchema, result);
+});
+test("targeted metadata bridge preserves authenticated principal and one-ID POST shape", async t => {
+  const {native, backend} = nativeHarness(t);
+  const result = await native.call("conversation_metadata", {id: "c1"}, CONTEXT);
+  assert.equal(result[0].id, "c1");
+  assert.equal(backend.calls.length, 1); assert.equal(backend.calls[0].operation, "conversation_metadata");
+  assert.equal(backend.mutations.length, 0);
+});
+test("targeted metadata has explicit missing records and redacts credentials without losing unknown fields", async t => {
+  const {service,backend} = fixture(t);
+  const absent = await service.getConversationMetadata({context: CONTEXT, id: "absent"});
+  assert.equal(absent.exists, false); assert.equal(absent.metadata, null); assert.equal(absent.raw_metadata, null);
+  backend.hook = async op => op === "conversation_metadata" ? [{id: "c1", title: "One", update_time: 1,
+    is_archived: false, gizmo_id: null, access_token: "private", unknown: {retained: true}}] : undefined;
+  const result = await service.getConversationMetadata({context: CONTEXT,id: "c1"});
+  assert.equal(result.raw_metadata.access_token, "[redacted]");
+  assert.equal(result.raw_metadata.unknown.retained, true); assert.equal(result.redactions.length, 1);
+});
+test("targeted metadata rejects unrelated records, duplicates, bodies and foreign origins", async t => {
+  const {service,backend} = fixture(t);
+  for (const rows of [[{id: "other",title: "Other"}], [{id: "c1",title: "One"},{id: "c1",title: "One"}],
+    [{id: "c1",title: "One",mapping: {}}], [{id: "c1",title: "One",conversation_origin: "tpp"}]]) {
+    backend.hook = async op => op === "conversation_metadata" ? rows : undefined;
+    await assert.rejects(service.getConversationMetadata({context: CONTEXT,id: "c1"}), e => ["UNSUPPORTED_FORMAT","RESOURCE_SCOPE_MISMATCH"].includes(e.code));
+  }
+});
+test("targeted metadata rejects unscoped, injected and mutation-shaped arguments", async t => {
+  const {service,backend} = fixture(t);
+  for (const args of [{id: "c1"},{context: CONTEXT,id: "../other"},{context: CONTEXT,id: "c1",title: "Changed"},
+    {context: CONTEXT,id: "c1",conversation_ids: ["c1","c2"]}]) {
+    await assert.rejects(dispatch(service,"chatgpt_get_conversation_metadata",args), code("INVALID_ARGUMENT"));
+  }
+  assert.equal(backend.calls.length,0);
 });
 test("a signed-in OpenAI provider remains usable when it requires authentication", async t => {
   const { native } = nativeHarness(t, { requiresAuth: true });
@@ -578,7 +627,9 @@ test("stdio MCP crosses the authenticated Unix bridge and native renderer for in
   const call = async (name, args = {}) => (await rpc("tools/call", { name, arguments: args })).result;
   assert.equal((await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "fixture-codex-mcp-client", version: "1" } })).result.protocolVersion, "2025-06-18");
   send(child.stdin, { jsonrpc: "2.0", method: "notifications/initialized" });
-  assert.equal((await rpc("tools/list", {})).result.tools.length, 15);
+  assert.equal((await rpc("tools/list", {})).result.tools.length, 16);
+  const metadata = await call("chatgpt_get_conversation_metadata", {context: CONTEXT, id: "c1"});
+  assert.equal(metadata.isError, false); assert.equal(metadata.structuredContent.metadata.id, "c1");
   const status = await call("chatgpt_get_status"); assert.equal(status.structuredContent.connected, true);
   const inventory = await call("chatgpt_list_conversations", { context: CONTEXT });
   assert.equal((await finish(service, inventory.structuredContent.inventory_job_id)).status, "completed");
@@ -607,7 +658,7 @@ const MAIN = 'let trust=event=>registry.isTrustedIpcSender(event.sender,event.se
 const PRELOAD = 'const x=require("electron");x.contextBridge.exposeInMainWorld("electronBridge",{invoke:()=>x.ipcRenderer.invoke("native")});';
 const REQUEST = 'Ghh3(e,t,n){n.d(t,{Request:()=>r,getChatGptRequestProfile:()=>p});const r={};function p(){}}';
 const AUTH = 'cE1j(e,t,n){var g=n("AUTH");function sync(W,N,Z){let v=W.get(g.PO);(N.isLoading||!N.hasChatGptToken||v.authenticatedAccountId!==Z||v.authenticatedUserId!==N.userId)&&abort();W.set(j.$S,{accountId:N.accountId,accountInfoError:!1,accountInfoLoading:!1,authLoading:N.isLoading,authMethod:N.authMethod,plan:null,supportedSurface:!0,workCloudSupportedSurface:!0})}}';
-const ROUTES = ['"/conversation/{conversation_id}"', '"/gizmos/{gizmo_id}/conversations"', '"/gizmos/snorlax/sidebar"',
+const ROUTES = ['"/conversation/{conversation_id}"', '"/conversations/batch"', '"/gizmos/{gizmo_id}/conversations"', '"/gizmos/snorlax/sidebar"',
   '"/conversation/id/{conversation_id}/rename"', '"/conversations/{conversation_id}/messages"', 'Request.safePost("/projects",{})', '"ChatGPT-Account-ID"', '({exclude_conversation_origin:flag?void 0:"tpp"})'].join(";");
 const CHUNK = `export const __webpack_modules__={${REQUEST},${AUTH},routes(e,t,n){${ROUTES}}};`;
 test("patched module captures the request loader outside a shadowing account effect", async () => {
@@ -689,7 +740,10 @@ test("feature resources stage with traversable directories, exact file modes and
   const installed = path.join(app, ".codex-linux/features/chatgpt-conversation-api");
   assert.equal(fs.statSync(installed).mode & 0o777, 0o755);
   assert.equal(fs.statSync(path.join(installed, "mcp.js")).mode & 0o777, 0o644);
-  assert.equal(require(path.join(installed, "tools.js")).tools.length, 15);
+  assert.equal(require(path.join(installed, "tools.js")).tools.length, 16);
+  assert.equal(fs.existsSync(path.join(installed,"cache/mcp.py")),true);
+  assert.equal(fs.statSync(path.join(installed,"cache/chat_api_cache/server.py")).mode & 0o777,0o644);
+  assert.equal(fs.existsSync(path.join(installed,"cache/tests")),false);
   assert.equal(fs.existsSync(path.join(installed, "fixtures")), false);
   for (const packageFormat of ["deb", "rpm", "pacman"]) assert.ok(enabledLinuxFeaturePackageDependencies({ ...options, packageFormat }).includes("nodejs"));
   fs.writeFileSync(config, JSON.stringify({ enabled: [] }));

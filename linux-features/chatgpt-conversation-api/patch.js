@@ -80,7 +80,7 @@ function patchRenderer(source) {
   // The account module can reside in another chunk, but its import and the
   // authenticatedAccountId/authenticatedUserId comparisons are proven here.
   if (accountModule && !accountModule.source.includes("authenticatedUserId")) throw Error("Conversation API drift: account identity contract changed.");
-  for (const contract of ["/conversation/{conversation_id}", "/gizmos/{gizmo_id}/conversations", "/gizmos/snorlax/sidebar",
+  for (const contract of ["/conversation/{conversation_id}", "/conversations/batch", "/gizmos/{gizmo_id}/conversations", "/gizmos/snorlax/sidebar",
     "/conversation/id/{conversation_id}/rename", "/conversations/{conversation_id}/messages", 'Request.safePost("/projects"', "ChatGPT-Account-ID"]) {
     if (!source.includes(contract)) throw Error(`Conversation API drift: missing native contract ${contract}.`);
   }
