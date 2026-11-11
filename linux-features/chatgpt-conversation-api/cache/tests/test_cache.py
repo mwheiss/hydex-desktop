@@ -200,6 +200,18 @@ def test_legacy_inventory_bound_captures_do_not_require_a_refetch_for_body_time_
     assert adapter.cache.lookup(CTX,'chat-one')['metadata_matches']
 
 
+def test_recurring_inventory_does_not_refetch_chats_with_different_body_timestamps(setup):
+    adapter,upstream,_=setup
+    inventory={**upstream.metadata,'updated_at':19}
+    adapter.cache.observe(CTX,[inventory],time.time())
+    read(adapter,mode='raw')
+    assert adapter.cache.metadata_item(CTX,'chat-one')['updated_at']==19
+    before=len(adapter.cache.index_events(CTX))
+    adapter.cache.observe(CTX,[{**inventory,'updated_at':'1970-01-01T00:00:19Z'}],time.time())
+    assert len(adapter.cache.index_events(CTX))==before
+    assert unpack(read(adapter,mode='raw'))['cache_info']['hit'] and upstream.reads==1
+
+
 def read(adapter, **options):
     return adapter.tool("chatgpt_get_conversation", {"context": CTX, "id": "chat-one", **options})
 

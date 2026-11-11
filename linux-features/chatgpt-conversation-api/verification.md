@@ -1,10 +1,10 @@
-# 2026-11-11 Project routing, pacing and cache revision 3
+# 2026-11-11 Project routing, pacing and cache revision 4
 
 The adjacent native suite passes all 70 tests, including Project/owner header
 resolution, modern-page fallback, batch graph/routing recovery, authentication
 failure boundaries, persistent adaptive pacing, and retaining the inventory
-cursor after a rate limit. The portable Python cache suite passes all 44 tests.
-The organization workspace additionally passes 81 tests, including incremental
+cursor after a rate limit. The portable Python cache suite passes all 45 tests.
+The organization workspace additionally passes 82 tests, including incremental
 raw-to-search projection and preservation of content-addressed vectors.
 
 The official `26.1106.51428` ASAR compatibility audit passes main, preload and

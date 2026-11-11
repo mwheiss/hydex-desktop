@@ -292,10 +292,13 @@ class Cache:
                             "created_at": header.get("create_time"), "archived": header["is_archived"],
                             "project_id": next((header[k] for k in ("gizmo_id", "conversation_template_id", "project_id") if header.get(k)), None),
                             "owner_id": header["owner"].get("user_id") if isinstance(header.get("owner"), dict) else None}
-                    # Use request start, not completion, so a newer concurrent
-                    # metadata observation cannot be overwritten by an older read.
-                    self.observe(context, [item], started_at or timestamp, emit=False)
-                    version = metadata_fingerprint(item)
+                    # Inventory and body update_time values can differ for the
+                    # same backend revision. Retain the inventory hint selected
+                    # before this read; replacing it with the body timestamp
+                    # would produce a false change on every later scan.
+                    if self.metadata_item(context, conversation_id) is None:
+                        self.observe(context, [item], started_at or timestamp, emit=False)
+                        version = metadata_fingerprint(item)
                 self.db.execute("INSERT OR IGNORE INTO snapshots VALUES (?,?,?,?,?,?)",
                                 (scope(context), conversation_id, sha, zlib.compress(raw), int(data.get("complete") is True), timestamp))
                 self.db.execute("INSERT OR REPLACE INTO heads VALUES (?,?,?,?,?,0)",

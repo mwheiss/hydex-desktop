@@ -178,7 +178,8 @@ to the retained raw snapshot. Read-only clients can explicitly derive an indexin
 projection locally. The full copy is not truncated, and one large frame cannot
 poison later reads. Unicode stays UTF-8; lone surrogates remain JSON escapes.
 
-Cache revision 3 adds an account-scoped raw-revision outbox, without a search or
+Cache revision 4 retains inventory revision hints separately from body timestamps
+to prevent recurring scans from refetching unchanged chats. It also adds an account-scoped raw-revision outbox, without a search or
 NumPy dependency. Separate local clients can durably consume captures and
 invalidations for incremental projections. Per-chat 404 quarantine survives
 processes and is released by metadata/routing/bridge revision changes; explicit
