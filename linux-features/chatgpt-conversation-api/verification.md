@@ -76,3 +76,30 @@ Project moves remained disabled. Native approval enforcement is covered by the
 synthetic tests; no live backend write was exercised. Arm64 live-account
 validation also remains unperformed. Earlier read-not-performed notes above
 describe the initial validation and are superseded by this read result.
+# 2026-11-11 targeted metadata and durable cache replay
+
+The tracked feature now exposes `chatgpt_get_conversation_metadata` through the
+native read-only `POST /conversations/batch` contract with exactly one ID.
+This route was identified in the signed application's own metadata-query and
+thread-catalog callers. The operation is account/workspace bound and does not
+perform an inventory or body read.
+
+| Check | Result | Scope |
+| --- | --- | --- |
+| Adjacent native API fixtures | 56 passed | Includes one-ID renderer POST, missing/archived records, credential redaction, malformed/unrelated responses, foreign-origin exclusion and unchanged native approval |
+| Optional cache regression suite | 31 passed | Persistent raw versions, targeted validation/coalescing, safe old-bridge fallback, bounded frames, Unicode and explicit indexing projection |
+| Feature resource staging | Passed | Native tools and optional Python cache launcher stage together with 0755 directories/0644 files; tests are not installed; disabling removes managed resources |
+| Official package verification | Passed | Signed stable `chatgpt` `26.1106.51428` amd64, SHA-256 `8356a7821930b135b741347faccbc43e1692b4424c3eab710a9af56c0bebb135`; no verification skip |
+| Official-bundle build, this feature alone | Passed | Native semantic anchors, including the batch metadata contract, applied to the verified stable bundle; existing installed Desktop was not replaced |
+
+The new metadata operation requires a Desktop built with this feature revision
+and a restart. A live targeted read against the user's running older Desktop
+has not been claimed: that runtime does not expose this operation. The cache
+adapter detects the missing capability and refreshes only the requested body,
+never the entire account. Native get/preview/execute/undo authorization remains
+inside the original service and approval executor.
+
+The cache code and launcher live under `runtime/cache/`, inside the existing
+declarative resource root. Future refresh builds therefore carry the code
+without editing installed/generated files. Machine configuration and retained
+chat data are not part of the source tree or validation fixtures.
