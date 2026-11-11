@@ -82,7 +82,8 @@ The tracked feature now exposes `chatgpt_get_conversation_metadata` through the
 native read-only `POST /conversations/batch` contract with exactly one ID.
 This route was identified in the signed application's own metadata-query and
 thread-catalog callers. The operation is account/workspace bound and does not
-perform an inventory or body read.
+perform an inventory scan. Later live verification below shows that the route
+also transfers message mappings; its metadata-only interpretation was incorrect.
 
 | Check | Result | Scope |
 | --- | --- | --- |
@@ -92,12 +93,26 @@ perform an inventory or body read.
 | Official package verification | Passed | Signed stable `chatgpt` `26.1106.51428` amd64, SHA-256 `8356a7821930b135b741347faccbc43e1692b4424c3eab710a9af56c0bebb135`; no verification skip |
 | Official-bundle build, this feature alone | Passed | Native semantic anchors, including the batch metadata contract, applied to the verified stable bundle; existing installed Desktop was not replaced |
 
-The new metadata operation requires a Desktop built with this feature revision
-and a restart. A live targeted read against the user's running older Desktop
-has not been claimed: that runtime does not expose this operation. The cache
-adapter detects the missing capability and refreshes only the requested body,
-never the entire account. Native get/preview/execute/undo authorization remains
-inside the original service and approval executor.
+After installation and restart with source `014ee8a3`, a one-ID metadata attempt
+completed in 0.50 seconds but the guard rejected a mapping with 23 entries.
+No genuinely metadata-only cache hit was established. An explicit raw refresh
+of the requested chat completed in 0.79 seconds, retained its full response and
+reported complete coverage. These are single observations, not a throughput or
+latency guarantee. No conversation was modified.
+
+The cache adapter now treats the specific body-payload rejection as unavailable
+metadata support and refreshes only the requested body, never the entire account.
+It suppresses this unsuitable metadata route for five minutes, then checks again
+so a future backend/Desktop change can recover. `cache_info` reports
+`live_body_fallback` and `native_metadata_response_contains_body`; it does not
+claim an unchanged cached-body hit. Other metadata errors, context mismatches,
+rate limits and timeouts remain errors. `cache_only` retains explicit offline
+body reuse. Native get/preview/execute/undo authorization remains inside the
+original service and approval executor.
+
+The fallback regression suite has 34 tests, including recovery after temporary
+suppression and refusal to mask other unsupported metadata formats. The native
+API suite has 57 tests after the placeholder guard regression was added.
 
 The cache code and launcher live under `runtime/cache/`, inside the existing
 declarative resource root. Future refresh builds therefore carry the code

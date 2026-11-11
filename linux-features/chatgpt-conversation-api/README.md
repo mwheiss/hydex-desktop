@@ -96,10 +96,15 @@ Created Projects remain because this API has no permanent-deletion capability.
 
 `chatgpt_get_conversation_metadata` reads one requested conversation through
 the native read-only `POST /conversations/batch` contract with
-`conversation_ids: [id]`. It does not scan history or download messages. The
+`conversation_ids: [id]`. It does not scan history. The
 result includes normalized metadata, unknown raw metadata fields, explicit
 missing-record status and redaction provenance. Archived records remain
 readable. Account/workspace identity is checked before and after the request.
+
+Live verification on 2026-11-11 found that the backend also returns a nonempty
+message mapping on this route, despite the signed app using it for metadata.
+The service rejects such a payload with `UNSUPPORTED_FORMAT` and safe shape
+diagnostics. A genuinely metadata-only network lookup is not currently verified.
 
 An optional Python 3.9+ cache adapter ships in the same tracked feature runtime:
 
@@ -121,7 +126,11 @@ Unchanged chats use their saved snapshots; only a changed or uncached requested
 chat is fetched. Concurrent reads of one chat share validation and body fetches.
 It never starts an account-wide inventory for a single-chat read. Until Desktop
 is refreshed/restarted with the native operation, it falls back to one live read
-of the requested body. `cache_info` reports this fallback and capability.
+of the requested body. It also uses that fallback when the native metadata guard
+reports message data, suppressing the unsuitable metadata route for five minutes
+before retrying it. `cache_info` reports `live_body_fallback`, capability and the
+reason `native_metadata_response_contains_body`. Unchanged bodies are downloaded
+in this fallback; it does not provide metadata-only cache reuse.
 
 `refresh` forces a live body read; `cache_only` explicitly reads saved data;
 `inventory_snapshot` reuses a bulk job's selected metadata. Missing or unversioned

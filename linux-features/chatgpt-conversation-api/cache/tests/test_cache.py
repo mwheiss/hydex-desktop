@@ -501,3 +501,42 @@ def test_explicit_index_projection_matches_visible_text_and_keeps_raw_snapshot(s
     assert projected["projection"]["kind"] == "visible_message_text"
     assert [(m["id"],m["role"],m["content"]["parts"][0]) for m in projected["messages"]] == [("message-q","user","μ子🙂 original text"),("message-reply","assistant","Final answer")]
     assert adapter.cache.snapshot(CTX,"chat-one",sha)["pages"] == upstream.raw["pages"]
+
+
+@pytest.mark.parametrize("details", [{"body_fields": [{"field": "mapping", "type": "object", "entries": 23}]}, None])
+def test_metadata_body_response_refreshes_target_and_temporarily_skips_broken_route(setup, details):
+    adapter, upstream, _ = setup
+    read(adapter, mode="raw")
+    upstream.metadata_error = {"code": "UNSUPPORTED_FORMAT", "message":
+        "The native metadata endpoint unexpectedly returned message content." if details else
+        "The native metadata endpoint unexpectedly returned a conversation body."}
+    if details:
+        upstream.metadata_error["details"] = details
+    for _ in range(2):
+        result = read(adapter, mode="raw")
+        assert not result["isError"]
+        info = unpack(result)["cache_info"]
+        assert not info["hit"] and not info["stale"]
+        assert info["validation"] == "live_body_fallback"
+        assert info["targeted_metadata_available"] is False
+        assert info["metadata_fallback_reason"] == "native_metadata_response_contains_body"
+    assert upstream.metadata_reads == 1 and upstream.reads == 3 and upstream.metadata_scans == 0
+    assert not any(name in ("chatgpt_list_conversations", "chatgpt_get_inventory_status") for name, _ in upstream.calls)
+    status = unpack(adapter.tool("chatgpt_get_status", {}))["cache_info"]
+    assert status["targeted_metadata_available"] is False
+    # Recheck after the temporary suppression expires, so a new native version
+    # can recover without permanently disabling metadata validation.
+    from chat_api_cache.cache import scope
+    adapter.metadata_unavailable[scope(CTX)] = 0
+    upstream.metadata_error = None
+    assert unpack(read(adapter, mode="raw"))["cache_info"]["hit"]
+    assert upstream.metadata_reads == 2 and upstream.reads == 3
+
+
+def test_other_unsupported_metadata_formats_do_not_silently_fetch_bodies(setup):
+    adapter, upstream, _ = setup
+    read(adapter, mode="raw")
+    upstream.metadata_error = {"code": "UNSUPPORTED_FORMAT", "message": "Unexpected records"}
+    result = read(adapter, mode="raw")
+    assert result["isError"] and unpack(result)["cache_info"]["metadata_check_failed"]
+    assert upstream.reads == 1 and upstream.metadata_reads == 1

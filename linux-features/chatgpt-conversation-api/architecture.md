@@ -123,7 +123,7 @@ inventory and rejected before raw, normalized or mutation-state output.
 | Project contents | `GET /gizmos/{gizmo_id}/conversations`, cursor/limit, `owned_only=false` |
 | Project identity/access | `GET /gizmos/{gizmo_id_or_short_url}` |
 | Complete legacy tree | `GET /conversation/{conversation_id}` |
-| Targeted metadata for one chat | Read-only `POST /conversations/batch`, `{conversation_ids:[id]}`; no body/inventory read |
+| Targeted metadata attempt for one chat | Read-only `POST /conversations/batch`, `{conversation_ids:[id]}`; no inventory scan. Live backend also returns message mappings, which the guard rejects; the cache uses a labelled per-chat body refresh fallback. |
 | Older ordered messages | `GET /conversations/{conversation_id}/messages`, `before`, `num_turns`, `include_has_versions` |
 | Rename | `POST /conversation/id/{conversation_id}/rename`, `{title}` |
 | Move/unassign | `PATCH /conversation/{conversation_id}`, `{gizmo_id}`; empty string unassigns |
