@@ -123,7 +123,8 @@ inventory and rejected before raw, normalized or mutation-state output.
 | Project contents | `GET /gizmos/{gizmo_id}/conversations`, cursor/limit, `owned_only=false` |
 | Project identity/access | `GET /gizmos/{gizmo_id_or_short_url}` |
 | Complete legacy tree | `GET /conversation/{conversation_id}` |
-| Targeted metadata attempt for one chat | Read-only `POST /conversations/batch`, `{conversation_ids:[id]}`; no inventory scan. Live backend also returns message mappings, which the guard rejects; the cache uses a labelled per-chat body refresh fallback. |
+| Local change feed | `chatgpt_get_changes` reads bounded account-scoped ID-only hints; no backend request. Restarts, overflow and notification gaps require invalidation. |
+| Targeted metadata attempt for one chat (diagnostic) | Read-only `POST /conversations/batch`, `{conversation_ids:[id]}`; no inventory scan. Live backend also returns message mappings, which the guard rejects; default cache reads use age/event invalidation instead of this route. |
 | Older ordered messages | `GET /conversations/{conversation_id}/messages`, `before`, `num_turns`, `include_has_versions` |
 | Rename | `POST /conversation/id/{conversation_id}/rename`, `{title}` |
 | Move/unassign | `PATCH /conversation/{conversation_id}`, `{gizmo_id}`; empty string unassigns |
@@ -158,7 +159,7 @@ concurrent account changes/overlapping-page disagreement invalidate confidence.
 
 ## Schemas and fidelity
 
-`runtime/tools.js` publishes strict input schemas for all 16 tools, with no
+`runtime/tools.js` publishes strict input schemas for all 17 tools, with no
 arbitrary JavaScript, URL, headers or backend request tool. It exports raw and
 normalized output schemas as well. The normalized conversation includes its ID,
 title, timestamps, Project/archive state, format, branch coverage, nodes and

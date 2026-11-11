@@ -26,7 +26,8 @@ def main(argv=None):
         if runtime is None:
             raise RuntimeError("Supply --config or --native-runtime pointing to the native conversation API")
         state = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share")))
-        config = {"directory": str(state / "hydex-desktop/conversation-cache"), "max_age_seconds": 300,
+        config = {"directory": str(state / "hydex-desktop/conversation-cache"), "freshness_seconds": 60,
+                  "inventory_refresh_seconds": 1800,
                   "metadata_check_timeout_seconds": 45, "not_found_ttl_seconds": 3600,
                   "normalizer": str(runtime / "normalize.js"),
                   "upstream": {"command": shutil.which("node") or "node", "args": [str(runtime / "mcp.js")],

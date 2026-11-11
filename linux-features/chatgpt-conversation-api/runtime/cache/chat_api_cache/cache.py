@@ -6,6 +6,7 @@ import json
 import os
 import sqlite3
 import time
+import uuid
 import zlib
 from contextlib import contextmanager
 from pathlib import Path
@@ -63,6 +64,13 @@ class Cache:
                 checked_at REAL,status TEXT,metadata TEXT,error TEXT,PRIMARY KEY(scope,id));
             CREATE TABLE IF NOT EXISTS metadata_reads(sequence INTEGER PRIMARY KEY,scope TEXT,id TEXT,
                 at REAL,response BLOB);
+            CREATE TABLE IF NOT EXISTS dirty(scope TEXT,id TEXT,at REAL,reason TEXT,PRIMARY KEY(scope,id));
+            CREATE TABLE IF NOT EXISTS change_cursors(scope TEXT PRIMARY KEY,cursor TEXT,checked_at REAL);
+            CREATE TABLE IF NOT EXISTS plan_targets(scope TEXT,id TEXT,targets TEXT,PRIMARY KEY(scope,id));
+            CREATE TABLE IF NOT EXISTS job_targets(scope TEXT,id TEXT,targets TEXT,PRIMARY KEY(scope,id));
+            CREATE TABLE IF NOT EXISTS refresh_jobs(scope TEXT,kind TEXT,id TEXT,token TEXT UNIQUE,context TEXT,
+                state TEXT,requested_at REAL,started_at REAL,finished_at REAL,retry_at REAL,error TEXT,
+                PRIMARY KEY(scope,kind,id));
         ''')
         self.db.execute("PRAGMA user_version=1")
 
@@ -131,6 +139,11 @@ class Cache:
                             (scope(context), job_id, started_at))
 
     def finish_metadata_check(self, context, items, job_id, started_at, observed_at, completeness):
+        previous = {r[0] for r in self.db.execute("SELECT id FROM checked_metadata WHERE scope=?", (scope(context),))}
+        missing = previous - {item["id"] for item in items}
+        if missing:
+            # Absence is a reason to recheck a requested body, never to erase it.
+            self.invalidate(context, ["inventory_absence", job_id], missing)
         self.observe(context, items, observed_at)
         with self.db:
             self.db.execute("DELETE FROM checked_metadata WHERE scope=?", (scope(context),))
@@ -186,14 +199,14 @@ class Cache:
                              json.dumps(error) if error else None))
         return self.targeted_check(context, conversation_id)
 
-    def record(self, context, conversation_id, response):
+    def record(self, context, conversation_id, response, *, started_at=None, metadata_version=None):
         """Retain the native API's exact JSON text, including unknown fields and errors."""
         encoded = json.dumps(response, ensure_ascii=True, separators=(",", ":")).encode()
         data = response.get("structuredContent")
         if data is None:
             data = json.loads(next(c["text"] for c in response["content"] if c.get("type") == "text"))
         error = data.get("error") or {}
-        version = self.version(context, conversation_id)
+        version = self.version(context, conversation_id) if started_at is None else metadata_version
         timestamp = time.time()
         with self.db:
             self.db.execute("INSERT INTO attempts(scope,id,at,response,error_code,http_status,metadata_version) VALUES (?,?,?,?,?,?,?)",
@@ -210,6 +223,14 @@ class Cache:
                                 (scope(context), conversation_id, sha, zlib.compress(raw), int(data.get("complete") is True), timestamp))
                 self.db.execute("INSERT OR REPLACE INTO heads VALUES (?,?,?,?,?,0)",
                                 (scope(context), conversation_id, sha, timestamp, version))
+                dirty = self.db.execute("SELECT at FROM dirty WHERE scope=? AND id=?",
+                                        (scope(context), conversation_id)).fetchone()
+                epoch = self.db.execute("SELECT value FROM events WHERE key=?", ("epoch:" + scope(context),)).fetchone()
+                boundary = started_at if started_at is not None else timestamp
+                if (dirty and dirty[0] > boundary) or (epoch and float(epoch[0]) > boundary):
+                    self.db.execute("UPDATE heads SET invalidated=1 WHERE scope=? AND id=?", (scope(context), conversation_id))
+                else:
+                    self.db.execute("DELETE FROM dirty WHERE scope=? AND id=?", (scope(context), conversation_id))
             elif (error.get("details") or {}).get("status") in (401, 403, 404):
                 self.db.execute("UPDATE heads SET invalidated=1 WHERE scope=? AND id=?", (scope(context), conversation_id))
 
@@ -238,17 +259,21 @@ class Cache:
                                    "archived": header["is_archived"], "project_id": membership})
             matched = body_version == row["current_version"]
         validated_at = max(row["fetched_at"], row["observed_at"] or 0) if matched else row["fetched_at"]
-        pending = self.db.execute("SELECT 1 FROM mutation_jobs WHERE scope=? AND status='pending' LIMIT 1", (scope(context),)).fetchone()
+        pending = self.pending_jobs(context, conversation_id)
+        dirty = self.db.execute("SELECT at,reason FROM dirty WHERE scope=? AND id=?", (scope(context), conversation_id)).fetchone()
         return {"data": data, "sha": row["sha"], "fetched_at": row["fetched_at"],
                 "validated_at": validated_at, "metadata_matches": matched,
                 "metadata_observed": row["current_version"] is not None,
-                "invalidated": bool(row["invalidated"] or pending)}
+                "dirty_reason": dirty["reason"] if dirty else "pending_mutation" if pending else
+                                "metadata_changed" if not matched else "invalidated" if row["invalidated"] else None,
+                "invalidated": bool(row["invalidated"] or dirty or pending)}
 
     def negative(self, context, conversation_id, ttl):
         row = self.db.execute('''SELECT * FROM attempts WHERE scope=? AND id=?
             ORDER BY sequence DESC LIMIT 1''', (scope(context), conversation_id)).fetchone()
         invalidated = self.db.execute("SELECT value FROM events WHERE key=?", ("epoch:" + scope(context),)).fetchone()
-        if row and row["http_status"] == 404 and time.time() - row["at"] < ttl and row["metadata_version"] == self.version(context, conversation_id) and (not invalidated or row["at"] >= float(invalidated[0])):
+        dirty = self.db.execute("SELECT at FROM dirty WHERE scope=? AND id=?", (scope(context), conversation_id)).fetchone()
+        if row and row["http_status"] == 404 and time.time() - row["at"] < ttl and row["metadata_version"] == self.version(context, conversation_id) and (not invalidated or row["at"] >= float(invalidated[0])) and (not dirty or row["at"] >= dirty[0]) and not self.pending_jobs(context, conversation_id):
             return json.loads(zlib.decompress(row["response"]))
 
     def snapshot(self, context, conversation_id, sha):
@@ -264,21 +289,126 @@ class Cache:
             raise ValueError("Cached API snapshot has a different account context")
         return data
 
-    def invalidate(self, context, event):
+    def invalidate(self, context, event, targets=None):
         key = digest([scope(context), event])
         with self.db:
             if self.db.execute("SELECT 1 FROM events WHERE key=?", (key,)).fetchone():
                 return
-            self.db.execute("UPDATE heads SET invalidated=1 WHERE scope=?", (scope(context),))
+            if targets is None:
+                self.db.execute("INSERT OR REPLACE INTO dirty SELECT scope,id,?,? FROM heads WHERE scope=?",
+                                (time.time(), str(event[0]), scope(context)))
+                self.db.execute("UPDATE heads SET invalidated=1 WHERE scope=?", (scope(context),))
+                self.db.execute("INSERT OR REPLACE INTO events VALUES (?,?)", ("epoch:" + scope(context), str(time.time())))
+            else:
+                for identifier in set(targets):
+                    self.db.execute("UPDATE heads SET invalidated=1 WHERE scope=? AND id=?", (scope(context), identifier))
+                    self.db.execute("INSERT OR REPLACE INTO dirty VALUES (?,?,?,?)",
+                                    (scope(context), identifier, time.time(), str(event[0])))
             self.db.execute("INSERT INTO events VALUES (?,?)", (key, str(time.time())))
-            self.db.execute("INSERT OR REPLACE INTO events VALUES (?,?)", ("epoch:" + scope(context), str(time.time())))
 
-    def mutation_job(self, context, job_id, status):
+    def remember_plan(self, context, plan_id, operations):
+        targets = sorted({op["conversation_id"] for op in operations if op.get("conversation_id")})
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO plan_targets VALUES (?,?,?)", (scope(context), plan_id, json.dumps(targets)))
+
+    def targets(self, context, identifier, *, job=False):
+        table = "job_targets" if job else "plan_targets"
+        row = self.db.execute(f"SELECT targets FROM {table} WHERE scope=? AND id=?", (scope(context), identifier)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def mutation_job(self, context, job_id, status, targets=None):
         with self.db:
             self.db.execute("INSERT OR REPLACE INTO mutation_jobs VALUES (?,?,?)", (scope(context), job_id, status))
+            if targets is not None:
+                self.db.execute("INSERT OR REPLACE INTO job_targets VALUES (?,?,?)", (scope(context), job_id, json.dumps(targets)))
 
-    def pending_jobs(self, context):
-        return [r[0] for r in self.db.execute("SELECT id FROM mutation_jobs WHERE scope=? AND status='pending'", (scope(context),))]
+    def pending_jobs(self, context, conversation_id=None):
+        jobs = [r[0] for r in self.db.execute("SELECT id FROM mutation_jobs WHERE scope=? AND status='pending'", (scope(context),))]
+        return [j for j in jobs if conversation_id is None or self.targets(context, j, job=True) is None
+                or conversation_id in self.targets(context, j, job=True)]
+
+    def change_cursor(self, context):
+        row = self.db.execute("SELECT cursor FROM change_cursors WHERE scope=?", (scope(context),)).fetchone()
+        return row[0] if row else None
+
+    def apply_changes(self, context, data):
+        if (data.get("context") != context or not isinstance(data.get("cursor"), str) or len(data["cursor"]) > 100
+                or not isinstance(data.get("items"), list) or len(data["items"]) > 1000
+                or type(data.get("reset_required")) is not bool or type(data.get("has_more")) is not bool):
+            raise ValueError("Inconsistent native change feed")
+        for event in data["items"]:
+            if (not isinstance(event, dict) or set(event) - {"sequence", "kind", "id"}
+                    or type(event.get("sequence")) is not int or event["sequence"] < 1
+                    or event.get("kind") not in ("chat_changed", "gap")
+                    or event["kind"] == "chat_changed" and (not isinstance(event.get("id"), str) or not event["id"])
+                    or event["kind"] == "gap" and "id" in event):
+                raise ValueError("Invalid native change event")
+        if data.get("reset_required"):
+            self.invalidate(context, ["notification_gap", data["cursor"]])
+        for event in data["items"]:
+            if event.get("kind") == "gap":
+                self.invalidate(context, ["notification_gap", data["cursor"], event["sequence"]])
+            elif event.get("kind") == "chat_changed" and isinstance(event.get("id"), str):
+                self.invalidate(context, ["desktop_change", data["cursor"], event["sequence"]], [event["id"]])
+            else:
+                raise ValueError("Invalid native change event")
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO change_cursors VALUES (?,?,?)", (scope(context), data["cursor"], time.time()))
+
+    def refresh_job(self, context, kind, identifier=""):
+        row = self.db.execute("SELECT * FROM refresh_jobs WHERE scope=? AND kind=? AND id=?", (scope(context), kind, identifier)).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        for key in ("context", "error"):
+            data[key] = json.loads(data[key]) if data[key] else None
+        return data
+
+    def queue_refresh(self, context, kind, identifier="", *, interval=0, force=False):
+        old = self.refresh_job(context, kind, identifier)
+        now = time.time()
+        if old:
+            if old["state"] in ("queued", "running") or (old["retry_at"] or 0) > now:
+                return old
+            if not force and old["finished_at"] and now - old["finished_at"] < interval:
+                return old
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO refresh_jobs VALUES (?,?,?,?,?,'queued',?,NULL,NULL,NULL,NULL)",
+                            (scope(context), kind, identifier, str(uuid.uuid4()), json.dumps(context), now))
+        return self.refresh_job(context, kind, identifier)
+
+    def next_refresh(self, kind):
+        row = self.db.execute("SELECT * FROM refresh_jobs WHERE kind=? AND state='queued' AND coalesce(retry_at,0)<=? ORDER BY requested_at LIMIT 1", (kind, time.time())).fetchone()
+        if not row:
+            return None
+        return self.refresh_job(json.loads(row["context"]), kind, row["id"])
+
+    def start_refresh(self, job):
+        with self.db:
+            self.db.execute("UPDATE refresh_jobs SET state='running',started_at=? WHERE token=?", (time.time(), job["token"]))
+
+    def finish_refresh(self, job, error=None, *, retry_delay=30):
+        retry = ((error or {}).get("details") or {}).get("retry_at_ms")
+        retry_at = max(time.time() + retry_delay, retry / 1000 if isinstance(retry, (int, float)) else 0) if error else None
+        with self.db:
+            self.db.execute("UPDATE refresh_jobs SET state=?,finished_at=?,retry_at=?,error=? WHERE token=?",
+                            ("failed" if error else "completed", time.time(), retry_at, json.dumps(error) if error else None, job["token"]))
+
+    def recover_refreshes(self, kind):
+        # Caller owns the exclusive worker flock. Only read jobs are replayed.
+        with self.db:
+            self.db.execute("UPDATE refresh_jobs SET state='queued' WHERE kind=? AND state='running'", (kind,))
+
+    @contextmanager
+    def queue_lock(self):
+        path = self.directory / "queue.lock"
+        with path.open("a+") as lock:
+            os.fchmod(lock.fileno(), 0o600)
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
 
     def status(self, context):
         bound = scope(context)
@@ -289,7 +419,8 @@ class Cache:
                 "retained_versions": self.db.execute("SELECT count(*) FROM snapshots WHERE scope=?", (bound,)).fetchone()[0],
                 "metadata_records": self.db.execute("SELECT count(*) FROM metadata WHERE scope=?", (bound,)).fetchone()[0],
                 "recorded_fetch_attempts": self.db.execute("SELECT count(*) FROM attempts WHERE scope=?", (bound,)).fetchone()[0],
-                "default_policy": "prefer_cache", "automatic_metadata_check": True, "metadata_check_scope": "requested_chat",
+                "default_policy": "prefer_cache", "automatic_metadata_check": False, "freshness_strategy": "cache_age_and_change_notifications",
+                "background_refresh_jobs": self.db.execute("SELECT count(*) FROM refresh_jobs WHERE scope=? AND state IN ('queued','running')", (bound,)).fetchone()[0],
                 "last_metadata_check": self.targeted_check(context, latest[0]) if latest else self.metadata_check(context),
                 "targeted_metadata_reads": self.db.execute("SELECT count(*) FROM metadata_reads WHERE scope=?", (bound,)).fetchone()[0],
                 "storage": "verbatim_native_raw_json_compressed"}

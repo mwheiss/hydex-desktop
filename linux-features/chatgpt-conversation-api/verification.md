@@ -118,3 +118,33 @@ The cache code and launcher live under `runtime/cache/`, inside the existing
 declarative resource root. Future refresh builds therefore carry the code
 without editing installed/generated files. Machine configuration and retained
 chat data are not part of the source tree or validation fixtures.
+
+
+# 2026-11-11 cache-first reads and native invalidation notifications
+
+The default cache policy now uses a 60-second freshness window. Clean older
+snapshots are served explicitly stale with a detached per-chat refresh; missing
+or dirty snapshots block on a live read. Explicit refresh and cache-only remain
+available. Shared metadata inventory is independent and eligible every 30 minutes.
+
+| Check | Result | Scope |
+| --- | --- | --- |
+| Workspace tests | 64 passed | Cache retention/migration, time and event freshness, coalescing, background worker lifecycle/failures, account isolation and existing semantic search |
+| Portable packaged-cache tests | 40 passed | No search-package dependency; real detached subprocess/fd-lock coalescing, raw preservation, notification gaps and failed startup recovery |
+| Adjacent native tests | 61 passed | Same-principal trusted IPC, ID-only events, bounded cursors, overflow/restart resets, actual stdio/Unix transport and unchanged native approval/undo |
+| Official ASAR compatibility audit | Passed | Unique account-guarded conversation-event and recovery hooks, syntax and idempotence in default and mutation-enabled fixture settings |
+| Live cached read | 6.74 ms | Existing complete raw chat; explicitly stale, refresh queued; subsequent reads 1.70/1.92 ms; zero targeted-metadata calls |
+| Live detached refresh | Completed | Worker survived the requesting MCP client's exit and retained the new full raw response; server/cooldown delay did not block cached responses |
+| Live shared inventory | Rate limited | Retained previous metadata and snapshots; exposed native Retry-After and the shared retry window instead of claiming success |
+
+Timing figures are single observations. No live conversation was modified. Native
+notification delivery requires the updated Desktop payload to be installed and
+restarted; existing MCP clients also need a reconnect to load the new cache code.
+Until that activation, new API clients use the age policy and report notifications
+as unavailable. The native hooks only emit invalidation hints; age-based refresh
+remains the fallback and normal cached reads can briefly lag server changes.
+
+Native write arguments, plan hashes, principal checks and exact-batch dialogs
+remain in the original executor. The new workers can dispatch only reads. No
+conversation content, credential, machine configuration or cache database is
+tracked in source.

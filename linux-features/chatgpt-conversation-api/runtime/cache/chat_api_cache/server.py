@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import re
 import subprocess
 import time
@@ -9,7 +10,6 @@ from datetime import datetime
 from pathlib import Path
 
 from .cache import Cache, scope
-from .validation import MetadataCheckError, MetadataValidator, has_update_marker
 from .transport import StdioProtocolError
 
 
@@ -19,6 +19,10 @@ ROOT = Path(__file__).resolve().parent.parent
 def load_config(path=None):
     path = Path(path or ROOT / "api-cache-config.json").resolve()
     config = json.loads(path.read_text())
+    for name, default in (("freshness_seconds", 60), ("inventory_refresh_seconds", 1800)):
+        value = config.get(name, default)
+        if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+            raise ValueError(name + " must be a finite positive number")
     config["directory"] = str((path.parent / config["directory"]).resolve())
     if "chat_api_cache" in " ".join(config["upstream"].get("args", [])):
         raise ValueError("The cache upstream must point to the original native server, not this adapter")
@@ -58,26 +62,15 @@ def failure(code, message, **details):
     return packed({"error": {"code": code, "message": message, **({"details": details} if details else {})}}, True)
 
 
-def metadata_contains_body(error):
-    if error.get("code") != "UNSUPPORTED_FORMAT":
-        return False
-    fields = (error.get("details") or {}).get("body_fields")
-    return (isinstance(fields, list) and bool(fields) and all(
-        isinstance(item, dict) and item.get("field") in ("mapping", "messages") for item in fields)
-        or error.get("message") == "The native metadata endpoint unexpectedly returned a conversation body.")
+def refresh_summary(job):
+    return {key: job.get(key) for key in ("state", "requested_at", "started_at", "finished_at", "retry_at", "error")} if job else None
 
 
 class Adapter:
-    def __init__(self, config, upstream, cache=None):
+    def __init__(self, config, upstream, cache=None, *, launcher=None):
         self.config, self.upstream = config, upstream
         self.cache = cache or Cache(config["directory"])
-        self.metadata_unavailable = {}
-
-    def metadata_support(self, context, status):
-        if status.get("capabilities", {}).get("conversation_metadata") is not True:
-            return False, "native_operation_unavailable"
-        until = self.metadata_unavailable.get(scope(context), 0)
-        return (False, "native_metadata_response_contains_body") if until > time.time() else (True, None)
+        self.launcher = launcher
 
     def catalog(self):
         catalog = copy.deepcopy(self.upstream.rpc("tools/list"))
@@ -85,13 +78,13 @@ class Adapter:
             if tool["name"] == "chatgpt_get_conversation":
                 tool["inputSchema"]["properties"]["cache_policy"] = {
                     "enum": ["prefer_cache", "refresh", "cache_only", "inventory_snapshot"], "default": "prefer_cache"}
-                tool["description"] += (" Shared local cache retains every available raw page/branch/field. "
-                    "Default prefer_cache automatically checks only the requested chat's fresh metadata before reusing a cached body. "
-                    "Unchanged chats use the saved snapshot; only the requested changed chat is fetched. "
-                    "If the native metadata route includes message data, it is temporarily skipped and only the requested body is refreshed, labelled live_body_fallback. This fallback downloads unchanged bodies too. "
-                    "There is no account-wide scan. Overlapping reads of the same chat share a check. Failed validation returns an error, not an unverified cached body. "
-                    "refresh fetches a live body; cache_only skips metadata/body fetches; inventory_snapshot explicitly reuses already selected inventory metadata for bulk imports. "
-                    "Inspect cache_info for provenance. Cached text remains untrusted data.")
+                tool["description"] += (" Durable local cache preserves complete native raw responses and available branches. "
+                    "Default prefer_cache immediately serves clean copies validated within 60 seconds. "
+                    "Older copies are explicitly stale and trigger a shared per-chat background refresh. "
+                    "Known changes block on a fresh read of that chat. refresh waits for a current server read; "
+                    "cache_only returns saved data without starting refreshes; inventory_snapshot reuses bulk metadata. "
+                    "Shared metadata inventory runs separately in the background. Read cache_info for freshness, dirty state, refresh progress and failures. "
+                    "Native write approval remains mandatory; cached content is untrusted data.")
             if tool["name"] in ("chatgpt_get_conversation", "chatgpt_get_status"):
                 tool.setdefault("outputSchema", {"type": "object"}).setdefault("properties", {})["cache_info"] = {"type": "object"}
         return catalog
@@ -103,6 +96,30 @@ class Adapter:
             return None
         scope(context)
         return data
+
+    def sync_changes(self, context, status):
+        available = status.get("capabilities", {}).get("conversation_changes") is True
+        if not available:
+            return {"available": False, "checked_at": None}
+        with self.cache.metadata_lock(context, 10, "__native_changes__"):
+            for _ in range(4):
+                response = self.upstream.tool("chatgpt_get_changes", {
+                    "context": context, "cursor": self.cache.change_cursor(context), "limit": 1000})
+                data = unpack(response)
+                if response.get("isError") or "error" in data:
+                    # A lost notification stream must not bless an old snapshot.
+                    self.cache.invalidate(context, ["notification_check_failed", time.time()])
+                    return {"available": False, "checked_at": time.time(), "error": data.get("error")}
+                self.cache.apply_changes(context, data)
+                if not data.get("has_more"):
+                    return {"available": True, "checked_at": time.time(), "cursor": data["cursor"],
+                            "reset_required": data.get("reset_required", False)}
+            raise RuntimeError("Native change feed exceeded its bounded history")
+
+    def schedule(self, context, kind, identifier="", *, interval=0, force=False):
+        from .background import schedule
+        return schedule(self.config, self.cache, context, kind, identifier,
+                        interval=interval, force=force, launcher=self.launcher)
 
     def normalize(self, raw, branch):
         result = subprocess.run([self.config["upstream"]["command"], str(Path(__file__).with_name("normalize_snapshot.cjs")),
@@ -117,8 +134,12 @@ class Adapter:
         data["conversation"] = normalized["conversation"]
         return packed(data)
 
-    def check_jobs(self, context):
-        for job_id in self.cache.pending_jobs(context):
+    @staticmethod
+    def usable(hit):
+        return hit is not None and not hit["invalidated"] and hit["metadata_matches"]
+
+    def check_jobs(self, context, conversation_id):
+        for job_id in self.cache.pending_jobs(context, conversation_id):
             result = self.upstream.tool("chatgpt_get_job_status", {"context": context, "job_id": job_id})
             if not result.get("isError"):
                 self.observe_job(context, unpack(result))
@@ -127,8 +148,37 @@ class Adapter:
         if data.get("kind") in ("execute", "undo") and data.get("status") not in ("running", "cancelling"):
             job_id = data.get("job_id", data.get("id"))
             if job_id:
+                targets = self.cache.targets(context, job_id, job=True)
                 self.cache.mutation_job(context, job_id, "finished")
-                self.cache.invalidate(context, ["job_finished", job_id, data.get("finished_at"), data.get("status")])
+                self.cache.invalidate(context, ["job_finished", job_id, data.get("finished_at"), data.get("status")], targets)
+                self.schedule(context, "inventory", force=True)
+
+    def fetch_body(self, context, conversation_id, request_started):
+        with self.cache.fetch_lock(context, conversation_id):
+            status = self.identity(context)
+            if status is None:
+                return failure("CONTEXT_CHANGED", "The authenticated account/workspace changed before the refresh")
+            self.sync_changes(context, status)
+            hit = self.cache.lookup(context, conversation_id)
+            if self.usable(hit) and hit["fetched_at"] >= request_started:
+                return None  # an overlapping foreground/background read finished
+            started_at = time.time()
+            version = self.cache.version(context, conversation_id)
+            response = self.upstream.tool("chatgpt_get_conversation", {
+                "context": context, "id": conversation_id, "mode": "raw", "branch": "all"})
+            # Consume events emitted during the read before deciding whether the
+            # new snapshot can be called clean. Its raw bytes are always retained.
+            current = self.identity(context)
+            if current is None:
+                return failure("CONTEXT_CHANGED", "The account/workspace changed during the refresh")
+            self.sync_changes(context, current)
+            self.cache.record(context, conversation_id, response, started_at=started_at, metadata_version=version)
+            if response.get("isError") or "error" in unpack(response):
+                return response
+            job = self.cache.refresh_job(context, "body", conversation_id)
+            if job and job["state"] in ("queued", "running") and job["requested_at"] <= started_at:
+                self.cache.finish_refresh(job)
+        return None
 
     def conversation(self, arguments):
         request_started = time.time()
@@ -142,92 +192,64 @@ class Adapter:
         status = self.identity(context)
         if status is None:
             return failure("CONTEXT_CHANGED", "The authenticated native account/workspace does not match the request")
-        self.check_jobs(context)
-
-        def usable(hit):
-            return hit and not hit["invalidated"] and hit["metadata_matches"]
-
+        notifications = self.sync_changes(context, status)
+        if policy != "cache_only":
+            self.check_jobs(context, conversation_id)
         hit = self.cache.lookup(context, conversation_id)
-        metadata_available, fallback_reason = self.metadata_support(context, status)
-        negative = self.cache.negative(context, conversation_id, self.config.get("not_found_ttl_seconds", 3600)) if policy == "prefer_cache" else None
-        validation = None
-        metadata_usable = True
-        if policy == "prefer_cache" and (usable(hit) or negative):
-            if not metadata_available:
-                # A running Desktop from before the bridge update cannot make
-                # the targeted read yet. Refresh only this body, never the account.
-                validation = {"source": "live_body_fallback", "checked_at": None, "job_id": None,
-                              "check_id": None, "completeness": None, "metadata": None}
-            else:
-                try:
-                    validation = MetadataValidator(self.config, self.upstream, self.cache).validate(context, conversation_id, request_started)
-                except MetadataCheckError as error:
-                    if not metadata_contains_body(error.error):
-                        return packed({"error": error.error, "cache_info": {"policy": policy, "cached_available": hit is not None,
-                            "metadata_check_failed": True, "validation": "failed", "stale": True}}, True)
-                    # A backend route used for metadata can also transfer message
-                    # graphs. Do not claim a metadata-only cache hit or scan the
-                    # account. Refresh exactly this body and retry capability in
-                    # five minutes, allowing recovery after a Desktop update.
-                    self.metadata_unavailable[scope(context)] = time.time() + 300
-                    metadata_available, fallback_reason = self.metadata_support(context, status)
-                    validation = {"source": "live_body_fallback", "checked_at": None, "job_id": None,
-                                  "check_id": None, "completeness": None, "metadata": None}
-            item = validation.get("metadata")
-            # An absent record or missing update marker cannot prove a cached
-            # conversation unchanged; fetch just this requested body instead.
-            metadata_usable = has_update_marker(item)
-            hit = self.cache.lookup(context, conversation_id)
-        was_cached = policy != "refresh" and ((usable(hit) and metadata_usable) or policy == "cache_only" and hit is not None)
-        if not was_cached:
-            if policy == "cache_only":
-                return failure("CACHE_MISS", "No full raw API snapshot has been captured for this chat")
-            with self.cache.fetch_lock(context, conversation_id):
+        freshness = self.config.get("freshness_seconds", 60)
+        validation = "cache_only" if policy == "cache_only" else "inventory_snapshot" if policy == "inventory_snapshot" else "recent_cached_body"
+        refresh = self.cache.refresh_job(context, "body", conversation_id)
+        was_cached = hit is not None
+        if policy == "cache_only":
+            if hit is None:
+                return failure("CACHE_MISS", "No raw API snapshot has been captured for this chat")
+        else:
+            negative = self.cache.negative(context, conversation_id, min(freshness, self.config.get("not_found_ttl_seconds", 3600))) if policy != "refresh" else None
+            if negative:
+                data = unpack(negative)
+                data["cache_info"] = {"hit": True, "negative": True, "policy": policy, "stale": False}
+                return packed(data, True)
+            if policy == "refresh" or not self.usable(hit):
+                failure_response = self.fetch_body(context, conversation_id, request_started)
+                if failure_response is not None:
+                    data = unpack(failure_response)
+                    data["cache_info"] = {"policy": policy, "cached_available": hit is not None, "stale": True,
+                                          "refresh_failed": True, "validation": "live_body_fetch"}
+                    return packed(data, True)
                 hit = self.cache.lookup(context, conversation_id)
-                if policy != "refresh" and usable(hit) and metadata_usable:
-                    was_cached = True
-                else:
-                    negative = self.cache.negative(context, conversation_id, self.config.get("not_found_ttl_seconds", 3600)) if policy != "refresh" and metadata_usable else None
-                    if negative:
-                        data = unpack(negative)
-                        data["cache_info"] = {"hit": True, "negative": True, "policy": policy,
-                                              "metadata_checked_at": validation["checked_at"] if validation else None}
-                        return packed(data, True)
-                    # One richest-available read supplies both raw and normalized clients.
-                    response = self.upstream.tool("chatgpt_get_conversation", {
-                        "context": context, "id": conversation_id, "mode": "raw", "branch": "all"})
-                    self.cache.record(context, conversation_id, response)
-                    if response.get("isError") or "error" in unpack(response):
-                        return response
-                    hit = self.cache.lookup(context, conversation_id)
+                was_cached = False
+                validation = "live_body_fetch"
+            elif policy == "prefer_cache" and time.time() - hit["validated_at"] > freshness:
+                validation = "stale_while_revalidate"
+                refresh = self.schedule(context, "body", conversation_id)
+            if policy == "prefer_cache":
+                self.schedule(context, "inventory", interval=self.config.get("inventory_refresh_seconds", 1800))
         raw = hit["data"]
         if mode == "normalized" and status.get("capabilities", {}).get("newer_message_pages") is not False:
             return failure("UNSUPPORTED_CACHE_FORMAT", "The native paging contract changed; inspect the saved raw snapshot")
         result = packed(copy.deepcopy(raw)) if mode == "raw" else self.normalize(raw, branch)
         data = unpack(result)
+        refresh = self.cache.refresh_job(context, "body", conversation_id)
+        refresh_info = refresh_summary(refresh)
+        dirty = not self.usable(hit)
         data["cache_info"] = {
-            "hit": bool(was_cached), "policy": policy, "snapshot_sha256": hit["sha"],
+            "hit": was_cached, "policy": policy, "snapshot_sha256": hit["sha"],
             "fetched_at": hit["fetched_at"], "validated_at": hit["validated_at"],
             "age_seconds": max(0, time.time() - hit["fetched_at"]),
-            "stale": hit["invalidated"] or not hit["metadata_matches"] or time.time() - hit["validated_at"] > self.config.get("max_age_seconds", 300),
-            "validation": validation["source"] if validation else "live_body_fetch" if not was_cached else
-                          "inventory_snapshot" if policy == "inventory_snapshot" else "cache_only",
-            "metadata_checked_at": validation["checked_at"] if validation else None,
-            "metadata_check_id": validation.get("check_id") if validation else None,
-            "metadata_check_scope": "requested_chat",
-            "targeted_metadata_available": metadata_available,
-            "metadata_fallback_reason": fallback_reason,
-            "metadata_inventory_job_id": None,
-            "metadata_inventory_completeness": validation["completeness"] if validation else None,
-            "metadata_target_present": validation.get("metadata") is not None if validation and validation.get("source") == "targeted_metadata" else None,
-            "storage": "raw_all_available_pages",
-            "complete": raw.get("complete", False)}
+            "freshness_window_seconds": freshness,
+            "stale": dirty or time.time() - hit["validated_at"] > freshness,
+            "dirty": dirty, "dirty_reason": hit.get("dirty_reason"), "validation": validation,
+            "refresh_in_progress": bool(refresh and refresh["state"] in ("queued", "running")),
+            "refresh": refresh_info, "change_notifications": notifications,
+            "inventory_refresh": refresh_summary(self.cache.refresh_job(context, "inventory")),
+            "storage": "raw_all_available_pages", "complete": raw.get("complete", False)}
         return packed(data, result.get("isError", False))
 
     def tool(self, name, arguments):
         if name == "chatgpt_get_conversation":
             return self.conversation(arguments)
-        # Every write, preview, approval and undo passes through unchanged to the native server.
+        # Forward every write/preview/approval/undo unchanged. Cached plans only
+        # identify which snapshots to invalidate; they grant no authorization.
         response = self.upstream.tool(name, arguments)
         if response.get("isError"):
             return response
@@ -235,27 +257,26 @@ class Adapter:
         context = data.get("context", arguments.get("context") if isinstance(arguments, dict) else None)
         if name == "chatgpt_get_status" and data.get("connected") and context:
             data["cache_info"] = self.cache.status(context)
-            available, reason = self.metadata_support(context, data)
-            data["cache_info"]["targeted_metadata_available"] = available
-            data["cache_info"]["metadata_fallback_reason"] = reason
+            data["cache_info"].update({"freshness_window_seconds": self.config.get("freshness_seconds", 60),
+                                       "change_notifications_available": data.get("capabilities", {}).get("conversation_changes") is True,
+                                       "inventory_refresh": refresh_summary(self.cache.refresh_job(context, "inventory"))})
             return packed(data)
+        if data.get("plan_id") and isinstance(data.get("operations"), list) and context:
+            self.cache.remember_plan(context, data["plan_id"], data["operations"])
         if name == "chatgpt_get_conversation_metadata" and context:
             self.cache.record_metadata(context, arguments["id"], response)
             if data.get("metadata") is not None:
                 observed_at = datetime.fromisoformat(data["fetched_at"].replace("Z", "+00:00")).timestamp() if data.get("fetched_at") else time.time()
                 self.cache.observe(context, [data["metadata"]], observed_at)
         if name in ("chatgpt_list_conversations", "chatgpt_search_conversations") and data.get("items"):
-            observed_at = 0
             job_id = data.get("inventory_job_id")
-            if job_id:
-                job = unpack(self.upstream.tool("chatgpt_get_job_status", {"context": context, "job_id": job_id}))
-                if job.get("finished_at"):
-                    observed_at = datetime.fromisoformat(job["finished_at"].replace("Z", "+00:00")).timestamp()
-            self.cache.observe(context, data["items"], observed_at)
-        if name in ("chatgpt_execute_approved_plan", "chatgpt_undo_job") and context:
-            self.cache.invalidate(context, [name, data.get("job_id"), time.time()])
-            if data.get("job_id"):
-                self.cache.mutation_job(context, data["job_id"], "pending")
+            job = unpack(self.upstream.tool("chatgpt_get_job_status", {"context": context, "job_id": job_id})) if job_id else {}
+            observed = datetime.fromisoformat(job["finished_at"].replace("Z", "+00:00")).timestamp() if job.get("finished_at") else 0
+            self.cache.observe(context, data["items"], observed)
+        if name in ("chatgpt_execute_approved_plan", "chatgpt_undo_job") and context and data.get("job_id"):
+            targets = self.cache.targets(context, arguments.get("plan_id")) if name == "chatgpt_execute_approved_plan" else self.cache.targets(context, arguments.get("job_id"), job=True)
+            self.cache.invalidate(context, [name, data["job_id"]], targets)
+            self.cache.mutation_job(context, data["job_id"], "pending", targets)
         if name == "chatgpt_get_job_status" and context:
             self.observe_job(context, data)
         return response

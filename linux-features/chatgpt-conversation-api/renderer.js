@@ -24,6 +24,16 @@ function installRenderer(scope, accountAtom, getRequest) {
     return;
   }
   const state = { identity, getRequest };
+  const changed = event => {
+    const context = state.identity();
+    if (context && typeof bridge.changed === "function") bridge.changed(context, event).catch(() => {});
+  };
+  state.notify = event => {
+    const id = event?.payload?.conversation_id;
+    if (["conversation-history-update", "conversation-turn-complete"].includes(event?.type) &&
+        typeof id === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(id)) changed({ kind: "chat_changed", id });
+  };
+  state.notifyGap = () => changed({ kind: "gap" });
   globalThis[slot] = state;
   const same = (a, b) => a && b && ["user_id", "account_id", "workspace_id"].every(k => a[k] === b[k]);
   const error = (code, status, retryAtMs) => ({ code, status, retry_at_ms: Number.isFinite(retryAtMs) ? retryAtMs : null });
@@ -105,6 +115,7 @@ function installPreload() {
   contextBridge.exposeInMainWorld("hydexConversationBridge", {
     hello: context => ipcRenderer.invoke(prefix + "hello", context),
     respond: (id, response) => ipcRenderer.invoke(prefix + "response", id, response),
+    changed: (context, event) => ipcRenderer.invoke(prefix + "changed", context, event),
     onRequest: callback => {
       if (installed) return;
       installed = true;
