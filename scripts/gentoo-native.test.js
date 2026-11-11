@@ -197,7 +197,8 @@ test("generated ebuild payload and Manifest use the shared native layout", t => 
   const archive = path.join(dist, "gentoo", archiveName), bytes = fs.readFileSync(archive);
   assert.match(fs.readFileSync(path.join(pkg, "Manifest"), "utf8"), new RegExp(`DIST ${archiveName.replaceAll('.', '\\.')} ${bytes.length} BLAKE2B ${crypto.createHash('blake2b512').update(bytes).digest('hex')}`));
   const unpack = path.join(dir, "unpacked");fs.mkdirSync(unpack);
-  cp.execFileSync("tar", ["-xJf", archive, "-C", unpack]);
+  // Inspect archive permissions, independently of the caller's private umask.
+  cp.execFileSync("tar", ["--same-permissions", "-xJf", archive, "-C", unpack]);
   assert.equal(fs.readFileSync(path.join(unpack, "opt/codex-desktop/resources/app.asar"), "utf8"), "official fixture ASAR");
   assert.match(fs.readFileSync(path.join(unpack, "usr/bin/codex-desktop"), "utf8"), /exec \/opt\/codex-desktop\/start.sh/);
   assert.match(fs.readFileSync(path.join(unpack, "usr/share/applications/codex-desktop.desktop"), "utf8"), /^Name=Hydex Desktop$/m);
