@@ -106,13 +106,26 @@ function patchRenderer(source) {
   // Capture the loader in its module factory. The account layout effect has a
   // local snapshot named like the minified require parameter in current Linux.
   const loader = "hydexConversationApiNativeRequestV1";
-  const capture = `const ${loader}=()=>${auth.require}(${JSON.stringify(requests[0].id)}).Request;`;
+  const contexts = modules.flatMap(module => {
+    const functions = new RegExp(String.raw`function (?<helper>${ID})\([^)]{0,300}\)\{`, "g");
+    return [...module.source.matchAll(functions)].flatMap(match => {
+      const end = findMatchingBrace(module.source, match.index + match[0].length - 1);
+      const body = module.source.slice(match.index, end + 1);
+      if (!body.includes('"chatgpt-project-id"') || !body.includes('"chatgpt-conv-owner-id"') || !body.includes('getQueryData(["chatgpt-conversation",')) return [];
+      const exported = unique(module.source, new RegExp(String.raw`(?<key>${ID}):\(\)=>${escapeRegExp(match.groups.helper)}(?=[,}])`, "g"), "native cached conversation-header export");
+      return [{ module: module.id, key: exported.groups.key }];
+    });
+  });
+  if (contexts.length !== 1) throw Error("Conversation API drift: expected one native Project/owner header resolver.");
+  const headers = "hydexConversationApiReadHeadersV1";
+  const capture = `const ${loader}=()=>${auth.require}(${JSON.stringify(requests[0].id)}).Request;` +
+    `const ${headers}=(scope,id)=>${auth.require}(${JSON.stringify(contexts[0].module)})[${JSON.stringify(contexts[0].key)}](scope,id);`;
   const bodyStart = auth.start + auth.source.indexOf("{") + 1;
   const captured = source.startsWith(capture, bodyStart);
-  if (captured !== source.includes(MARK) || !captured && auth.source.includes(loader)) {
+  if (captured !== source.includes(MARK) || !captured && (auth.source.includes(loader) || auth.source.includes(headers))) {
     throw Error("Conversation API request loader is incomplete or collides with a native binding.");
   }
-  const extra = `,(${installRenderer.toString()})(${scope},${current.groups.account},${loader})${MARK}`;
+  const extra = `,(${installRenderer.toString()})(${scope},${current.groups.account},${loader},${headers})${MARK}`;
   const next = insert(source, anchor, extra);
   return patchChangeHooks(captured ? next : next.slice(0, bodyStart) + capture + next.slice(bodyStart));
 }

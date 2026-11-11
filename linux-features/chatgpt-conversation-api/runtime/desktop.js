@@ -16,6 +16,7 @@ const errorMessages = {
   BACKEND_ERROR: "The authenticated native ChatGPT request failed.",
   UNSUPPORTED_PAGINATION: "The current native runtime does not provide a verified forward-message pagination contract.",
   OPERATION_UNAVAILABLE: "The native operation is unavailable.",
+  UNSUPPORTED_READ_CONTEXT: "The native Project read context is unsupported or malformed.",
 };
 
 class RendererBackend {

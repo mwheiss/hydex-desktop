@@ -31,6 +31,7 @@ function inventoryItem(raw, projectId) {
   if (!raw || typeof raw.id !== "string" || typeof raw.title !== "string") fail("UNSUPPORTED_FORMAT", "Invalid inventory record.");
   return { id: raw.id, title: raw.title, created_at: raw.create_time ?? null, updated_at: raw.update_time ?? null,
     project_id: projectId ?? raw.gizmo_id ?? raw.conversation_template_id ?? raw.project_id ?? null,
+    owner_id: typeof raw.owner?.user_id === "string" ? raw.owner.user_id : null,
     archived: typeof raw.is_archived === "boolean" ? raw.is_archived : null };
 }
 function projectRecord(raw) {
@@ -176,7 +177,9 @@ async function retrieve(fetchPage, id, { mode = "normalized", branch = "active",
     try { normalize(pages, { branch: initial.mapping ? "all" : "active", header: redact(initial).value }); }
     catch (e) { complete = false; limitation = e.message; }
   }
-  const base = { complete, page_count: pages.length, redactions: clean.redactions, limitation };
+  const base = { complete, page_count: pages.length, redactions: clean.redactions, limitation,
+    branch_coverage: initial.mapping ? "all_available" : "active_only",
+    branch_limitation: initial.mapping ? null : "The ordered endpoint exposes the selected branch; alternative versions are not included." };
   return mode === "raw" ? { ...base, schema_version: 1, pages, trust: "untrusted_conversation_content" }
     : { ...base, conversation: normalize(pages, { branch, complete, header: redact(initial).value }) };
 }

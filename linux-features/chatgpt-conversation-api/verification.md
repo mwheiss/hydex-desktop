@@ -1,3 +1,18 @@
+# 2026-11-11 Project routing, pacing and cache revision 3
+
+The adjacent native suite passes all 70 tests, including Project/owner header
+resolution, modern-page fallback, batch graph/routing recovery, authentication
+failure boundaries, persistent adaptive pacing, and retaining the inventory
+cursor after a rate limit. The portable Python cache suite passes all 44 tests.
+The organization workspace additionally passes 81 tests, including incremental
+raw-to-search projection and preservation of content-addressed vectors.
+
+The official `26.1106.51428` ASAR compatibility audit passes main, preload and
+renderer contracts under both default and mutation-enabled fixture settings,
+with syntax and idempotence checks. These source/fixture results do not establish
+live recovery of previously inaccessible Projects; installation and live readback
+are separate activation checks. Native mutation approval remains unchanged.
+
 # Validation on 2026-11-06
 
 | Check | Result | Scope |

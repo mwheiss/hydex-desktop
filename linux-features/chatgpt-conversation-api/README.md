@@ -32,8 +32,13 @@ dialog. No tool accepts a model's assertion that consent was granted.
 }
 ```
 
-The maximum batch size is 1000, minimum request spacing is 250 ms (500 ms by
-default), and mutations execute serially. Rate limits can increase spacing.
+The maximum batch size is 1000. General spacing defaults to 500 ms (minimum
+250 ms); conversation-body reads start at two seconds. Account/workspace-scoped
+body, metadata and write buckets share a cooldown while retaining separate
+penalties. Rate limits increase spacing and cooldowns, never shorten Retry-After,
+and recover gradually after healthy reads. State survives Desktop restarts.
+Waiting happens outside the HTTP queue. Inventory reads retain their page cursor
+through cooldowns; mutations execute serially and are never blindly retried.
 
 After building and launching that application, register this MCP server in a
 dedicated trusted project's `.codex/config.toml`. This keeps it undiscoverable
@@ -93,6 +98,18 @@ operations are never blindly repeated. Undo requires another native approval,
 checks for concurrent changes, and restores only reversible verified changes.
 Created Projects remain because this API has no permanent-deletion capability.
 
+### Project retrieval
+
+Conversation reads resolve Project/owner headers through the signed app's native
+SDK helper. Validated `read_context` hints can fill absent cached context; they
+grant no access. The legacy full-graph route is preferred, with a modern initial
+page and older-message pagination on 404/405. For a Project with missing owner
+context, a one-ID native batch can supply a complete graph or routing metadata.
+Responses are ID/scope checked; authentication errors do not switch routes or
+accounts. Raw results declare `branch_coverage`; ordered modern pages cannot
+claim alternate branches. The SDK helper is discovered by unique semantic
+anchors and export identity; drift fails the patch rather than guessing symbols.
+
 ### Targeted metadata and optional shared raw cache
 
 `chatgpt_get_conversation_metadata` reads one requested conversation through
@@ -137,6 +154,7 @@ changes arriving during a body fetch remain dirty. No event can grant approval.
 
 One detached worker per read-job kind owns an inherited OS file lock. Durable
 queues coalesce work across clients; each worker uses its own native connection.
+Pacing/disconnection deferrals remain queued and automatically resume when eligible.
 A shared metadata inventory is eligible every 30 minutes while the API is active,
 independently of chat responses. Failures preserve old snapshots, expose retry
 information and respect native cooldowns. Previews identify mutation targets;
@@ -159,6 +177,12 @@ Oversized normalized views return bounded `RESPONSE_TOO_LARGE` results referring
 to the retained raw snapshot. Read-only clients can explicitly derive an indexing
 projection locally. The full copy is not truncated, and one large frame cannot
 poison later reads. Unicode stays UTF-8; lone surrogates remain JSON escapes.
+
+Cache revision 3 adds an account-scoped raw-revision outbox, without a search or
+NumPy dependency. Separate local clients can durably consume captures and
+invalidations for incremental projections. Per-chat 404 quarantine survives
+processes and is released by metadata/routing/bridge revision changes; explicit
+refresh bypasses it. Previous compressed raw versions are never deleted.
 
 The cache launcher and code are declared feature resources under `runtime/cache/`,
 so refresh staging copies them automatically. Tests live in `cache/tests/` and use

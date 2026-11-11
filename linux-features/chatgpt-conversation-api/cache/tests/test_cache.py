@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "runtime/cache"))
 
@@ -131,6 +132,74 @@ def setup(tmp_path):
     adapter.cache.close()
 
 
+def read_capabilities(upstream, revision):
+    original = upstream.tool
+    def tool(name, arguments):
+        result = original(name, arguments)
+        if name == 'chatgpt_get_status':
+            data = unpack(result)
+            data['capabilities'].update(conversation_read_context=True, conversation_read_revision=revision)
+            return packed(data)
+        return result
+    upstream.tool = tool
+
+
+def test_project_reads_require_bridge_capability_and_forward_only_validated_context(setup):
+    adapter, upstream, _ = setup
+    adapter.cache.observe(CTX, [{**upstream.metadata, 'project_id':'g-p-test', 'owner_id':'user-owner'}], time.time())
+    assert unpack(read(adapter, mode='raw'))['error']['code']=='CAPABILITY_REQUIRED'
+    assert upstream.reads==0
+    read_capabilities(upstream, 2)
+    assert not read(adapter, mode='raw')['isError']
+    args = next(a for n,a in upstream.calls if n=='chatgpt_get_conversation')
+    assert args['read_context']=={'project_id':'g-p-test','owner_id':'user-owner'}
+    adapter.cache.observe(CTX, [{**upstream.metadata, 'project_id':'g-p-test', 'owner_id':{'untrusted':'value'}}], time.time())
+    assert adapter.cache.read_context(CTX,'chat-one')=={'project_id':'g-p-test'}
+
+
+def test_404_quarantine_survives_clients_and_expires_on_bridge_revision_or_metadata_change(setup):
+    adapter, upstream, config = setup
+    read_capabilities(upstream, 2)
+    upstream.error_status=404
+    assert read(adapter, mode='raw')['isError']
+    second=Adapter(config,upstream,launcher=lambda *_:None)
+    try:
+        assert unpack(read(second,mode='raw'))['error']['details']['quarantined']
+        assert upstream.reads==1
+        read_capabilities(upstream,3)
+        read(second,mode='raw');assert upstream.reads==2
+        second.cache.observe(CTX,[{**upstream.metadata,'updated_at':21}],time.time())
+        read(second,mode='raw');assert upstream.reads==3
+        upstream.error_status=None
+        assert not read(second,mode='raw',cache_policy='refresh')['isError']
+        assert second.cache.db.execute('SELECT count(*) FROM fetch_failures').fetchone()[0]==0
+    finally:second.cache.close()
+
+
+def test_metadata_equivalent_timestamps_do_not_enqueue_false_updates(setup):
+    adapter,upstream,_=setup
+    read(adapter,mode='raw')
+    before=len(adapter.cache.index_events(CTX))
+    adapter.cache.observe(CTX,[{**upstream.metadata,'updated_at':'1970-01-01T00:00:20Z'}],time.time())
+    assert len(adapter.cache.index_events(CTX))==before
+    assert adapter.cache.lookup(CTX,'chat-one')['metadata_matches']
+
+
+def test_legacy_inventory_bound_captures_do_not_require_a_refetch_for_body_time_drift(setup):
+    adapter,upstream,_=setup
+    read(adapter,mode='raw')
+    # Cache revision 2 bound heads to the selected inventory hint, whose update
+    # time can differ by seconds from the body time on the same backend record.
+    item={**upstream.metadata,'updated_at':19}
+    adapter.cache.observe(CTX,[item],time.time())
+    with adapter.cache.db:
+        adapter.cache.db.execute('UPDATE heads SET metadata_version=?',(adapter.cache.version(CTX,'chat-one'),))
+    assert adapter.cache.lookup(CTX,'chat-one')['metadata_matches']
+    assert unpack(read(adapter,mode='raw'))['cache_info']['hit'] and upstream.reads==1
+    adapter.cache.observe(CTX,[{**item,'updated_at':'1970-01-01T00:00:19Z'}],time.time())
+    assert adapter.cache.lookup(CTX,'chat-one')['metadata_matches']
+
+
 def read(adapter, **options):
     return adapter.tool("chatgpt_get_conversation", {"context": CTX, "id": "chat-one", **options})
 
@@ -138,6 +207,7 @@ def read(adapter, **options):
 def age_snapshot(adapter, seconds=61):
     with adapter.cache.db:
         adapter.cache.db.execute("UPDATE heads SET fetched_at=fetched_at-?", (seconds,))
+        adapter.cache.db.execute("UPDATE metadata SET observed_at=observed_at-?", (seconds,))
 
 
 def changes(upstream):

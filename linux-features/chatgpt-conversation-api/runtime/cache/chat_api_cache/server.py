@@ -153,7 +153,7 @@ class Adapter:
                 self.cache.invalidate(context, ["job_finished", job_id, data.get("finished_at"), data.get("status")], targets)
                 self.schedule(context, "inventory", force=True)
 
-    def fetch_body(self, context, conversation_id, request_started):
+    def fetch_body(self, context, conversation_id, request_started, *, force=False, read_context=None):
         with self.cache.fetch_lock(context, conversation_id):
             status = self.identity(context)
             if status is None:
@@ -164,15 +164,27 @@ class Adapter:
                 return None  # an overlapping foreground/background read finished
             started_at = time.time()
             version = self.cache.version(context, conversation_id)
-            response = self.upstream.tool("chatgpt_get_conversation", {
-                "context": context, "id": conversation_id, "mode": "raw", "branch": "all"})
+            revision = status.get("capabilities", {}).get("conversation_read_revision", 1)
+            signature = self.cache.failure_signature(context, conversation_id, revision)
+            quarantined = self.cache.failure(context, conversation_id, signature)
+            if quarantined and not force:
+                return packed({"error": quarantined}, True)
+            hint = read_context or self.cache.read_context(context, conversation_id)
+            if hint and status.get("capabilities", {}).get("conversation_read_context") is not True:
+                return failure("CAPABILITY_REQUIRED", "Project reads require the updated native Desktop retrieval bridge",
+                               retry_at_ms=int((time.time() + 60) * 1000))
+            args = {"context": context, "id": conversation_id, "mode": "raw", "branch": "all"}
+            if hint:
+                args["read_context"] = hint
+            response = self.upstream.tool("chatgpt_get_conversation", args)
             # Consume events emitted during the read before deciding whether the
             # new snapshot can be called clean. Its raw bytes are always retained.
             current = self.identity(context)
             if current is None:
                 return failure("CONTEXT_CHANGED", "The account/workspace changed during the refresh")
             self.sync_changes(context, current)
-            self.cache.record(context, conversation_id, response, started_at=started_at, metadata_version=version)
+            self.cache.record(context, conversation_id, response, started_at=started_at, metadata_version=version,
+                              failure_signature=signature)
             if response.get("isError") or "error" in unpack(response):
                 return response
             job = self.cache.refresh_job(context, "body", conversation_id)
@@ -182,10 +194,15 @@ class Adapter:
 
     def conversation(self, arguments):
         request_started = time.time()
-        if (not isinstance(arguments, dict) or arguments.keys() - {"context", "id", "mode", "branch", "cache_policy"}
+        if (not isinstance(arguments, dict) or arguments.keys() - {"context", "id", "mode", "branch", "cache_policy", "read_context"}
                 or not isinstance(arguments.get("id"), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,200}", arguments["id"])):
             return failure("INVALID_ARGUMENT", "Invalid conversation arguments")
         context, conversation_id = arguments.get("context"), arguments["id"]
+        hint = arguments.get("read_context")
+        if hint is not None and (not isinstance(hint, dict) or hint.keys() - {"project_id", "owner_id"}
+                or hint.get("project_id") is not None and (not isinstance(hint["project_id"], str) or not re.fullmatch(r"g-p-[A-Za-z0-9_-]{1,196}", hint["project_id"]))
+                or hint.get("owner_id") is not None and (not hint.get("project_id") or not isinstance(hint["owner_id"], str) or not re.fullmatch(r"[A-Za-z0-9@._:-]{1,200}", hint["owner_id"]))):
+            return failure("INVALID_ARGUMENT", "Invalid Project read context")
         mode, branch, policy = arguments.get("mode", "normalized"), arguments.get("branch", "active"), arguments.get("cache_policy", "prefer_cache")
         if mode not in ("raw", "normalized") or branch not in ("active", "all") or policy not in ("prefer_cache", "refresh", "cache_only", "inventory_snapshot"):
             return failure("INVALID_ARGUMENT", "Invalid mode, branch or cache_policy")
@@ -204,17 +221,14 @@ class Adapter:
             if hit is None:
                 return failure("CACHE_MISS", "No raw API snapshot has been captured for this chat")
         else:
-            negative = self.cache.negative(context, conversation_id, min(freshness, self.config.get("not_found_ttl_seconds", 3600))) if policy != "refresh" else None
-            if negative:
-                data = unpack(negative)
-                data["cache_info"] = {"hit": True, "negative": True, "policy": policy, "stale": False}
-                return packed(data, True)
             if policy == "refresh" or not self.usable(hit):
-                failure_response = self.fetch_body(context, conversation_id, request_started)
+                failure_response = self.fetch_body(context, conversation_id, request_started, force=policy == "refresh", read_context=hint)
                 if failure_response is not None:
                     data = unpack(failure_response)
+                    negative = bool((data.get("error", {}).get("details") or {}).get("quarantined"))
                     data["cache_info"] = {"policy": policy, "cached_available": hit is not None, "stale": True,
-                                          "refresh_failed": True, "validation": "live_body_fetch"}
+                                          "negative": negative, "hit": negative, "refresh_failed": True,
+                                          "validation": "cached_unavailable" if negative else "live_body_fetch"}
                     return packed(data, True)
                 hit = self.cache.lookup(context, conversation_id)
                 was_cached = False

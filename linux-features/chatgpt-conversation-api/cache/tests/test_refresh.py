@@ -4,9 +4,6 @@ import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "runtime/cache"))
-
 from chat_api_cache.server import Adapter, packed, unpack
 from chat_api_cache.worker import run_job
 from test_cache import CTX, Upstream, age_snapshot, changes, read, setup
@@ -137,7 +134,7 @@ def test_failed_background_refresh_retains_stale_data_and_reports_retry_time(set
     assert error["details"]["status"] == 429
     result = unpack(read(adapter, mode="raw"))
     assert result["pages"] == original["pages"] and result["cache_info"]["stale"]
-    assert result["cache_info"]["refresh"]["state"] == "failed"
+    assert result["cache_info"]["refresh"]["state"] == "queued"
     assert result["cache_info"]["refresh"]["retry_at"] > time.time()
     assert upstream.reads == 2
 

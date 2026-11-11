@@ -88,7 +88,12 @@ def run_job(config, cache, upstream, job):
         error = failure.error
     except Exception as failure:
         error = {"code": "REFRESH_FAILED", "message": type(failure).__name__}
-    cache.finish_refresh(job, error, retry_delay=config.get("inventory_refresh_seconds", 1800) if job["kind"] == "inventory" else 30)
+    temporary = error and (error.get("code") in ("PACING_WAIT", "RATE_LIMITED", "CAPABILITY_REQUIRED", "DESKTOP_DISCONNECTED", "SESSION_UNAVAILABLE")
+                           or (error.get("details") or {}).get("status") in (429, 503))
+    if temporary:
+        cache.defer_refresh(job, error)
+    else:
+        cache.finish_refresh(job, error, retry_delay=config.get("inventory_refresh_seconds", 1800) if job["kind"] == "inventory" else 30)
     return error
 
 
@@ -109,17 +114,19 @@ def main():
             with cache.queue_lock():
                 job = cache.next_refresh(kind)
                 if job is None:
+                    deadline = cache.next_refresh_deadline(kind)
+                    if deadline is not None:
+                        job = False
+                    else:
                     # Release under the queue mutex, so an enqueue cannot miss
                     # the departing worker and leave its request stranded.
-                    os.close(descriptor)
-                    descriptor = None
-                    break
+                        os.close(descriptor)
+                        descriptor = None
+                        break
+            if job is False:
+                time.sleep(min(1, max(.05, deadline - time.time())))
+                continue
             error = run_job(config, cache, upstream, job)
-            if error and (error.get("code") == "RATE_LIMITED" or (error.get("details") or {}).get("status") == 429):
-                retry = cache.refresh_job(job["context"], kind, job["id"])["retry_at"]
-                # Keep queued reads moving after, never before, the cooldown.
-                while cache.next_refresh(kind) is not None and retry > time.time():
-                    time.sleep(min(1, retry - time.time()))
     except Exception as failure:
         # Startup/protocol failures must not leave a permanently "queued" job
         # after this worker has disappeared. Do not expose subprocess stderr.

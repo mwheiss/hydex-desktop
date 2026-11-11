@@ -4,11 +4,13 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import time
 import uuid
+from datetime import datetime, timezone
 import zlib
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 
@@ -22,6 +24,19 @@ def scope(context):
     if not all(isinstance(value, str) and value for value in context.values()):
         raise ValueError("Invalid account/workspace context")
     return digest(context)
+
+
+def metadata_fingerprint(item):
+    value = item.get("updated_at")
+    try:
+        if isinstance(value, str):
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            value = round(parsed.replace(tzinfo=parsed.tzinfo or timezone.utc).timestamp() * 1000000)
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            value = round(value * 1000000)
+    except (ValueError, OverflowError):
+        pass
+    return digest({"updated_at": value, **{key: item.get(key) for key in ("title", "project_id", "archived")}})
 
 
 class Cache:
@@ -71,6 +86,12 @@ class Cache:
             CREATE TABLE IF NOT EXISTS refresh_jobs(scope TEXT,kind TEXT,id TEXT,token TEXT UNIQUE,context TEXT,
                 state TEXT,requested_at REAL,started_at REAL,finished_at REAL,retry_at REAL,error TEXT,
                 PRIMARY KEY(scope,kind,id));
+            CREATE TABLE IF NOT EXISTS index_events(sequence INTEGER PRIMARY KEY,scope TEXT,id TEXT,
+                kind TEXT,sha TEXT,at REAL);
+            CREATE INDEX IF NOT EXISTS index_events_scope ON index_events(scope,sequence);
+            CREATE INDEX IF NOT EXISTS index_events_chat ON index_events(scope,id,sequence);
+            CREATE TABLE IF NOT EXISTS fetch_failures(scope TEXT,id TEXT,signature TEXT,error TEXT,
+                at REAL,retry_at REAL,count INTEGER,PRIMARY KEY(scope,id));
         ''')
         self.db.execute("PRAGMA user_version=1")
 
@@ -82,25 +103,71 @@ class Cache:
                               (scope(context), conversation_id)).fetchone()
         return row[0] if row else None
 
-    def observe(self, context, items, observed_at):
-        with self.db:
+    def emit_index_event(self, context, identifier, kind, sha=None):
+        self.db.execute("INSERT INTO index_events(scope,id,kind,sha,at) VALUES (?,?,?,?,?)",
+                        (scope(context), identifier, kind, sha, time.time()))
+
+    def index_events(self, context, after=0, limit=500):
+        return [dict(row) for row in self.db.execute("SELECT * FROM index_events WHERE scope=? AND sequence>? ORDER BY sequence LIMIT ?",
+                                                    (scope(context), after, limit))]
+
+    def metadata_item(self, context, identifier):
+        row = self.db.execute("SELECT data FROM metadata WHERE scope=? AND id=?", (scope(context), identifier)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def read_context(self, context, identifier):
+        item = self.metadata_item(context, identifier) or {}
+        project, owner = item.get("project_id"), item.get("owner_id")
+        if not isinstance(project, str) or not re.fullmatch(r"g-p-[A-Za-z0-9_-]{1,196}", project):
+            return {}
+        result = {"project_id": project}
+        if isinstance(owner, str) and re.fullmatch(r"[A-Za-z0-9@._:-]{1,200}", owner):
+            result["owner_id"] = owner
+        return result
+
+    def failure_signature(self, context, identifier, revision):
+        return digest([metadata_fingerprint(self.metadata_item(context, identifier) or {}), self.read_context(context, identifier), revision])
+
+    def failure(self, context, identifier, signature):
+        row = self.db.execute("SELECT * FROM fetch_failures WHERE scope=? AND id=?", (scope(context), identifier)).fetchone()
+        if row and row["signature"] == signature and row["retry_at"] > time.time():
+            error = json.loads(row["error"])
+            error["details"] = {**error.get("details", {}), "quarantined": True, "retry_at_ms": int(row["retry_at"] * 1000)}
+            return error
+        return None
+
+    def observe(self, context, items, observed_at, *, emit=True):
+        with (nullcontext() if self.db.in_transaction else self.db):
             for item in items:
-                version = digest({key: item.get(key) for key in ("updated_at", "title", "project_id", "archived")})
+                old = self.db.execute("SELECT data,observed_at,version FROM metadata WHERE scope=? AND id=?", (scope(context), item["id"])).fetchone()
+                if old and old["observed_at"] > observed_at:
+                    continue
+                version = metadata_fingerprint(item)
+                changed = old is None or metadata_fingerprint(json.loads(old["data"])) != version
+                if old and not changed and old["version"] != version:
+                    self.db.execute("UPDATE heads SET metadata_version=? WHERE scope=? AND id=? AND metadata_version=?",
+                                    (version, scope(context), item["id"], old["version"]))
                 self.db.execute('''INSERT INTO metadata VALUES (?,?,?,?,?) ON CONFLICT(scope,id) DO UPDATE SET
                     version=excluded.version,data=excluded.data,observed_at=excluded.observed_at
                     WHERE excluded.observed_at>=metadata.observed_at''',
                                 (scope(context), item["id"], version, json.dumps(item, ensure_ascii=False), observed_at))
+                if emit and changed:
+                    self.emit_index_event(context, item["id"], "refresh")
 
     @contextmanager
-    def fetch_lock(self, context, conversation_id):
+    def fetch_lock(self, context, conversation_id, *, blocking=True):
         directory = self.directory / "locks"
         directory.mkdir(mode=0o700, exist_ok=True)
         path = directory / digest([scope(context), conversation_id])
         with path.open("a+") as lock:
             os.fchmod(lock.fileno(), 0o600)
-            fcntl.flock(lock, fcntl.LOCK_EX)
             try:
-                yield
+                fcntl.flock(lock, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+            except BlockingIOError:
+                yield False
+                return
+            try:
+                yield True
             finally:
                 fcntl.flock(lock, fcntl.LOCK_UN)
 
@@ -199,7 +266,7 @@ class Cache:
                              json.dumps(error) if error else None))
         return self.targeted_check(context, conversation_id)
 
-    def record(self, context, conversation_id, response, *, started_at=None, metadata_version=None):
+    def record(self, context, conversation_id, response, *, started_at=None, metadata_version=None, failure_signature=None):
         """Retain the native API's exact JSON text, including unknown fields and errors."""
         encoded = json.dumps(response, ensure_ascii=True, separators=(",", ":")).encode()
         data = response.get("structuredContent")
@@ -219,6 +286,16 @@ class Cache:
                 if json.loads(raw) != data or data.get("context") != context or not isinstance(data.get("pages"), list) or not data["pages"]:
                     raise ValueError("Native raw response has an inconsistent payload or account context")
                 sha = hashlib.sha256(raw).hexdigest()
+                header = data["pages"][-1]
+                if all(key in header for key in ("title", "update_time", "is_archived")) and any(key in header for key in ("gizmo_id", "conversation_template_id", "project_id")):
+                    item = {"id": conversation_id, "title": header["title"], "updated_at": header["update_time"],
+                            "created_at": header.get("create_time"), "archived": header["is_archived"],
+                            "project_id": next((header[k] for k in ("gizmo_id", "conversation_template_id", "project_id") if header.get(k)), None),
+                            "owner_id": header["owner"].get("user_id") if isinstance(header.get("owner"), dict) else None}
+                    # Use request start, not completion, so a newer concurrent
+                    # metadata observation cannot be overwritten by an older read.
+                    self.observe(context, [item], started_at or timestamp, emit=False)
+                    version = metadata_fingerprint(item)
                 self.db.execute("INSERT OR IGNORE INTO snapshots VALUES (?,?,?,?,?,?)",
                                 (scope(context), conversation_id, sha, zlib.compress(raw), int(data.get("complete") is True), timestamp))
                 self.db.execute("INSERT OR REPLACE INTO heads VALUES (?,?,?,?,?,0)",
@@ -231,11 +308,20 @@ class Cache:
                     self.db.execute("UPDATE heads SET invalidated=1 WHERE scope=? AND id=?", (scope(context), conversation_id))
                 else:
                     self.db.execute("DELETE FROM dirty WHERE scope=? AND id=?", (scope(context), conversation_id))
+                self.db.execute("DELETE FROM fetch_failures WHERE scope=? AND id=?", (scope(context), conversation_id))
+                self.emit_index_event(context, conversation_id, "upsert" if data.get("complete") else "incomplete", sha)
             elif (error.get("details") or {}).get("status") in (401, 403, 404):
                 self.db.execute("UPDATE heads SET invalidated=1 WHERE scope=? AND id=?", (scope(context), conversation_id))
+                self.emit_index_event(context, conversation_id, "unavailable")
+                if (error.get("details") or {}).get("status") == 404 and failure_signature:
+                    previous = self.db.execute("SELECT count,signature FROM fetch_failures WHERE scope=? AND id=?", (scope(context), conversation_id)).fetchone()
+                    count = previous["count"] + 1 if previous and previous["signature"] == failure_signature else 1
+                    self.db.execute("INSERT OR REPLACE INTO fetch_failures VALUES (?,?,?,?,?,?,?)",
+                                    (scope(context), conversation_id, failure_signature, json.dumps(error), timestamp,
+                                     timestamp + min(86400, 3600 * 2 ** min(count - 1, 5)), count))
 
     def lookup(self, context, conversation_id):
-        row = self.db.execute('''SELECT h.*,s.payload,s.complete,m.version AS current_version,m.observed_at
+        row = self.db.execute('''SELECT h.*,s.payload,s.complete,m.version AS current_version,m.observed_at,m.data AS current_metadata
             FROM heads h JOIN snapshots s ON s.scope=h.scope AND s.id=h.id AND s.sha=h.sha
             LEFT JOIN metadata m ON m.scope=h.scope AND m.id=h.id WHERE h.scope=? AND h.id=?''',
                               (scope(context), conversation_id)).fetchone()
@@ -248,16 +334,17 @@ class Cache:
         if data.get("context") != context:
             raise ValueError("Cached API snapshot has a different account context")
         matched = row["current_version"] is None or row["current_version"] == row["metadata_version"]
-        # A body fetched before the first inventory can itself prove that its
-        # public metadata matches the subsequently observed inventory version.
+        # Keep the inventory hint bound to legacy captures. Body timestamps and
+        # list timestamps can differ even for the same revision. A body can add
+        # positive proof when no matching bound hint exists, never invalidate it.
         header = data["pages"][-1]
-        if not matched and all(key in header for key in ("title", "update_time", "is_archived")) and any(
+        if not matched and row["current_metadata"] and all(key in header for key in ("title", "update_time", "is_archived")) and any(
                 key in header for key in ("gizmo_id", "conversation_template_id", "project_id")):
             membership = next((header[key] for key in ("gizmo_id", "conversation_template_id", "project_id")
                                if header.get(key) is not None), None)
-            body_version = digest({"title": header["title"], "updated_at": header["update_time"],
+            body_version = metadata_fingerprint({"title": header["title"], "updated_at": header["update_time"],
                                    "archived": header["is_archived"], "project_id": membership})
-            matched = body_version == row["current_version"]
+            matched = body_version == metadata_fingerprint(json.loads(row["current_metadata"]))
         validated_at = max(row["fetched_at"], row["observed_at"] or 0) if matched else row["fetched_at"]
         pending = self.pending_jobs(context, conversation_id)
         dirty = self.db.execute("SELECT at,reason FROM dirty WHERE scope=? AND id=?", (scope(context), conversation_id)).fetchone()
@@ -295,12 +382,16 @@ class Cache:
             if self.db.execute("SELECT 1 FROM events WHERE key=?", (key,)).fetchone():
                 return
             if targets is None:
+                for row in self.db.execute("SELECT id,sha FROM heads WHERE scope=?", (scope(context),)).fetchall():
+                    self.emit_index_event(context, row["id"], "reconcile", row["sha"])
                 self.db.execute("INSERT OR REPLACE INTO dirty SELECT scope,id,?,? FROM heads WHERE scope=?",
                                 (time.time(), str(event[0]), scope(context)))
                 self.db.execute("UPDATE heads SET invalidated=1 WHERE scope=?", (scope(context),))
                 self.db.execute("INSERT OR REPLACE INTO events VALUES (?,?)", ("epoch:" + scope(context), str(time.time())))
             else:
                 for identifier in set(targets):
+                    self.db.execute("DELETE FROM fetch_failures WHERE scope=? AND id=?", (scope(context), identifier))
+                    self.emit_index_event(context, identifier, "refresh")
                     self.db.execute("UPDATE heads SET invalidated=1 WHERE scope=? AND id=?", (scope(context), identifier))
                     self.db.execute("INSERT OR REPLACE INTO dirty VALUES (?,?,?,?)",
                                     (scope(context), identifier, time.time(), str(event[0])))
@@ -393,6 +484,17 @@ class Cache:
         with self.db:
             self.db.execute("UPDATE refresh_jobs SET state=?,finished_at=?,retry_at=?,error=? WHERE token=?",
                             ("failed" if error else "completed", time.time(), retry_at, json.dumps(error) if error else None, job["token"]))
+
+    def defer_refresh(self, job, error):
+        retry = (error.get("details") or {}).get("retry_at_ms")
+        retry_at = max(time.time() + 1, retry / 1000 if isinstance(retry, (int, float)) else time.time() + 30)
+        with self.db:
+            self.db.execute("UPDATE refresh_jobs SET state='queued',started_at=NULL,retry_at=?,error=? WHERE token=?",
+                            (retry_at, json.dumps(error), job["token"]))
+
+    def next_refresh_deadline(self, kind):
+        row = self.db.execute("SELECT min(coalesce(retry_at,0)) FROM refresh_jobs WHERE kind=? AND state='queued'", (kind,)).fetchone()
+        return row[0] if row and row[0] is not None else None
 
     def recover_refreshes(self, kind):
         # Caller owns the exclusive worker flock. Only read jobs are replayed.

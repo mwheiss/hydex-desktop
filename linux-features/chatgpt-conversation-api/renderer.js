@@ -2,7 +2,7 @@
 
 // Serialized into the authenticated application renderer by patch.js. No Node
 // APIs, tokens, arbitrary URL input, or generic request entrypoint cross IPC.
-function installRenderer(scope, accountAtom, getRequest) {
+function installRenderer(scope, accountAtom, getRequest, getReadHeaders = () => ({})) {
   const bridge = globalThis.hydexConversationBridge;
   if (!bridge) return;
   const slot = "__hydexConversationApiRendererV1";
@@ -20,10 +20,11 @@ function installRenderer(scope, accountAtom, getRequest) {
   if (globalThis[slot]) {
     globalThis[slot].identity = identity;
     globalThis[slot].getRequest = getRequest;
+    globalThis[slot].getReadHeaders = id => getReadHeaders(scope, id);
     bridge.hello(identity()).catch(() => {});
     return;
   }
-  const state = { identity, getRequest };
+  const state = { identity, getRequest, getReadHeaders: id => getReadHeaders(scope, id) };
   const changed = event => {
     const context = state.identity();
     if (context && typeof bridge.changed === "function") bridge.changed(context, event).catch(() => {});
@@ -46,7 +47,7 @@ function installRenderer(scope, accountAtom, getRequest) {
       const a = request.args ?? {};
       const client = request.operation === "identity" ? null : state.getRequest();
       const assertRequestCurrent = () => { if (!same(before, state.identity())) throw error("CONTEXT_CHANGED"); };
-      const options = extra => ({ ...extra, additionalHeaders: { "ChatGPT-Account-ID": before.workspace_id },
+      const options = (extra, readHeaders = {}) => ({ ...extra, additionalHeaders: { "ChatGPT-Account-ID": before.workspace_id, ...readHeaders },
         expectedIdentity: { accountId: before.workspace_id, userId: before.user_id }, assertRequestCurrent,
         retry: "never",
         onResponseHeadersReceived: headers => {
@@ -70,11 +71,27 @@ function installRenderer(scope, accountAtom, getRequest) {
         case "project_conversations": result = await client.safeGet("/gizmos/{gizmo_id}/conversations", options({
           parameters: { path: { gizmo_id: a.id }, query: { cursor: a.cursor ?? undefined, limit: a.limit, owned_only: false } },
         })); break;
-        case "conversation":
+        case "conversation": case "conversation_modern": {
           if (a.page && a.page.direction !== "older") throw error("UNSUPPORTED_PAGINATION");
-          result = await client.safeGet(a.page ? "/conversations/{conversation_id}/messages" : "/conversation/{conversation_id}", options({
-            parameters: { path: { conversation_id: a.id }, ...(a.page ? { query: { before: a.page.cursor, num_turns: 100, include_has_versions: true } } : {}) },
-          })); break;
+          const cached = state.getReadHeaders(a.id) ?? {};
+          const project = cached["chatgpt-project-id"] ?? a.read_context?.project_id;
+          const owner = cached["chatgpt-conv-owner-id"] ??
+            (!cached["chatgpt-project-id"] || cached["chatgpt-project-id"] === a.read_context?.project_id ? a.read_context?.owner_id : null);
+          const headers = {};
+          if (project != null) {
+            if (typeof project !== "string" || !/^g-p-[A-Za-z0-9_-]{1,196}$/.test(project)) throw error("UNSUPPORTED_READ_CONTEXT");
+            headers["chatgpt-project-id"] = project;
+            if (owner != null) {
+              if (typeof owner !== "string" || !/^[A-Za-z0-9@._:-]{1,200}$/.test(owner)) throw error("UNSUPPORTED_READ_CONTEXT");
+              headers["chatgpt-conv-owner-id"] = owner;
+            }
+          }
+          const modern = request.operation === "conversation_modern";
+          result = await client.safeGet(a.page ? "/conversations/{conversation_id}/messages" : modern ? "/conversations/{conversation_id}" : "/conversation/{conversation_id}", options({
+            parameters: { path: { conversation_id: a.id }, ...(a.page || modern ? { query: {
+              ...(a.page ? { before: a.page.cursor } : {}), num_turns: 100, include_has_versions: true } } : {}) },
+          }, headers)); break;
+        }
         case "conversation_metadata": result = await client.safePost("/conversations/batch", options({
           requestBody: { conversation_ids: [a.id] },
         })); break;
@@ -97,7 +114,7 @@ function installRenderer(scope, accountAtom, getRequest) {
     } catch (e) {
       // A native request error may contain auth headers or backend bodies.
       // Only enumerated codes and numeric retry information leave this scope.
-      const codes = ["CONTEXT_CHANGED", "UNSUPPORTED_PAGINATION", "OPERATION_UNAVAILABLE"];
+      const codes = ["CONTEXT_CHANGED", "UNSUPPORTED_PAGINATION", "OPERATION_UNAVAILABLE", "UNSUPPORTED_READ_CONTEXT"];
       const status = Number(e.status ?? e.httpStatus ?? e.responseStatus);
       response = { error: error(codes.includes(e.code) ? e.code : status === 401 || status === 403 ? "SESSION_EXPIRED"
         : status === 429 ? "RATE_LIMITED" : "BACKEND_ERROR", Number.isInteger(status) ? status : null, e.retryAtMs ?? retryAtMs) };

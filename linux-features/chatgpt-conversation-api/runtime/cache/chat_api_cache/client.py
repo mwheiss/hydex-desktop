@@ -123,7 +123,7 @@ class NativeClient:
             status = status if isinstance(status, int) else None
             message = f"Native conversation API: {code}" + (f" (HTTP {status})" if status else "")
             failure = NativeError(message, code=code, status=status, retry_at_ms=details.get("retry_at_ms"), details=details)
-            if code == "RATE_LIMITED" or status == 429:
+            if code in ("RATE_LIMITED", "PACING_WAIT", "CAPABILITY_REQUIRED") or status == 429:
                 # The importer owns cooldown/resumption; search callers receive a clear temporary error.
                 raise failure
             if attempt == 3 or status not in (408, 429, 500, 502, 503, 504):
@@ -176,6 +176,7 @@ class NativeClient:
             raise NativeError("Native API could not establish complete active-branch coverage")
         if conversation.get("id") != conversation_id or conversation.get("branch") != "active":
             raise NativeError("Native API returned a different conversation or branch")
+        conversation["source_snapshot_sha256"] = (result.get("cache_info") or {}).get("snapshot_sha256")
         return conversation
 
     def indexing_conversation(self, context: dict, conversation_id: str) -> dict:
@@ -206,6 +207,7 @@ class NativeClient:
             if "error" in projected:
                 raise NativeError("Local indexing projection is unavailable: " + projected["error"]["code"])
             conversation = projected["conversation"]
+            conversation["source_snapshot_sha256"] = sha
             if conversation.get("id") != conversation_id or not conversation.get("complete"):
                 raise NativeError("Local indexing projection has incomplete or different source data")
             return conversation

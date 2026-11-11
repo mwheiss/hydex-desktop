@@ -38,6 +38,21 @@ class Journal {
     return job;
   }
   saveJob(job) { atomicJson(this.file("job", job.id), job); }
+  pacing(key) {
+    const file = this.file("pacing", key);
+    if (!fs.existsSync(file)) return null;
+    const value = readJson(file);
+    if (!value || !Number.isFinite(value.cooldown_until_ms) || !Number.isFinite(value.next_request_ms) || !value.buckets || typeof value.buckets !== "object") {
+      fail("JOURNAL_INTEGRITY", "Stored native request pacing is invalid.");
+    }
+    for (const [name, bucket] of Object.entries(value.buckets)) {
+      if (!["bodies", "metadata", "writes"].includes(name) || ![bucket.interval_ms, bucket.next_request_ms, bucket.limits, bucket.successes].every(Number.isFinite) || bucket.interval_ms < 0 || bucket.interval_ms > 60000) {
+        fail("JOURNAL_INTEGRITY", "Stored native request pacing bucket is invalid.");
+      }
+    }
+    return value;
+  }
+  savePacing(key, value) { atomicJson(this.file("pacing", key), value); }
   jobs() { return fs.readdirSync(this.directory).filter(n => /^job-[a-f0-9-]+\.json$/.test(n)).map(n => readJson(path.join(this.directory, n))); }
   newJob(context, kind, extra = {}) {
     const job = { schema_version: 1, id: crypto.randomUUID(), context, kind, status: "running",

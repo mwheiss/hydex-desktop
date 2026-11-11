@@ -26,7 +26,7 @@ function fixture(t, options = {}) {
   const service = new ConversationService({ backend, directory: path.join(directory, "journal"),
     settings: { mutationsEnabled: true, minDelayMs: 0, ...options.settings },
     approve: options.approve ?? (async (p, meta) => { approvals.push({ plan: p, meta }); return true; }),
-    sleep: async () => {},
+    sleep: options.sleep ?? (async () => {}), clock: options.clock,
   });
   t.after(async () => { await service.close(); fs.rmSync(directory, { recursive: true, force: true }); });
   return { directory, backend, service, approvals };
@@ -264,15 +264,16 @@ test("sharing changes invalidate a plan and shared moves require the distinct fe
   assert.equal(backend.mutations.length, 0);
 });
 test("read rate limits honor Retry-After while mutations stop and require a freshly approved resume", async t => {
-  const { service, backend, approvals } = fixture(t);
+  let clock = Date.now();
+  const { service, backend, approvals } = fixture(t, { clock: () => clock, sleep: async ms => { clock += ms; } });
   const plan = await preview(service, [op("rename", { title: "New" })]);
   let limited = true;
-  backend.hook = async operation => { if (operation === "rename" && limited) throw new ApiError("RATE_LIMITED", "Wait.", { retry_at_ms: Date.now() + 60000 }); };
+  backend.hook = async operation => { if (operation === "rename" && limited) throw new ApiError("RATE_LIMITED", "Wait.", { retry_at_ms: clock + 60000 }); };
   const run = await execute(service, plan), job = await finish(service, run.job_id);
   assert.equal(job.status, "paused"); assert.equal(job.entries[0].status, "failed");
   assert.equal(backend.mutations.length, 0);
-  await assert.rejects(execute(service, plan, { resume_job_id: job.id }), code("RATE_LIMITED"));
-  limited = false; service.nextRequestAt = 0;
+  await assert.rejects(execute(service, plan, { resume_job_id: job.id }), code("PACING_WAIT"));
+  limited = false; clock += 61000;
   const resumed = await execute(service, plan, { resume_job_id: job.id });
   assert.equal((await finish(service, resumed.job_id)).status, "completed");
   assert.equal(backend.mutations.length, 1); assert.equal(approvals.length, 2);
@@ -368,11 +369,52 @@ test("concurrent reads and inventory calls have bounded backend concurrency", as
   await Promise.all(["c1", "c2", "c3"].map(id => service.getConversation({ context: CONTEXT, id })));
   assert.equal(peak, 1);
 });
-test("a rate-limit read retries only a bounded number of times and preserves the cooldown", async t => {
-  const { service, backend } = fixture(t); let calls = 0;
-  backend.hook = async operation => { if (operation === "conversation") { calls++; throw new ApiError("RATE_LIMITED", "Wait.", { retry_at_ms: Date.now() + 1000 }); } };
+test("a rate-limit read makes one wire attempt and preserves the shared adaptive cooldown", async t => {
+  let clock = Date.now();
+  const { service, backend } = fixture(t, { clock: () => clock, sleep: async ms => { clock += ms; } }); let calls = 0;
+  backend.hook = async operation => { if (operation === "conversation") { calls++; throw new ApiError("RATE_LIMITED", "Wait.", { retry_at_ms: clock + 60000 }); } };
   await assert.rejects(service.getConversation({ context: CONTEXT, id: "c1" }), code("RATE_LIMITED"));
-  assert.equal(calls, 3); assert.ok(service.nextRequestAt > Date.now());
+  await assert.rejects(service.getConversation({ context: CONTEXT, id: "c1" }), code("PACING_WAIT"));
+  assert.equal(calls, 1); assert.ok(service.pacing.status(CONTEXT).cooldown_until_ms >= clock + 60000);
+});
+test("adaptive pacing persists across clients/restarts and metadata success cannot erase body penalties", t => {
+  const { Journal } = require("./runtime/journal.js"), { Pacing } = require("./runtime/pacing.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hydex-pacing-test-")); t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  let now = 1000000;
+  const journal = new Journal(dir), first = new Pacing(journal, { minimum: 500, clock: () => now });
+  first.failure(CONTEXT, "conversation", true, new ApiError("RATE_LIMITED", "Wait", { retry_at_ms: now + 120000 }));
+  const resumed = new Pacing(new Journal(dir), { minimum: 500, clock: () => now });
+  assert.equal(resumed.readyAt(CONTEXT, "conversation", true), now + 120000);
+  resumed.failure(CONTEXT, "conversation", true, new ApiError("RATE_LIMITED", "Wait", { retry_at_ms: now + 1000 }));
+  const penalty = resumed.status(CONTEXT).buckets.bodies.interval_ms;
+  for (let i = 0; i < 24; i++) resumed.success(CONTEXT, "list", true);
+  assert.equal(resumed.status(CONTEXT).buckets.bodies.interval_ms, penalty);
+  for (let i = 0; i < 12; i++) resumed.success(CONTEXT, "conversation", true);
+  assert.ok(resumed.status(CONTEXT).buckets.bodies.interval_ms < penalty);
+  assert.equal(resumed.status({ ...CONTEXT, workspace_id: "another" }).cooldown_until_ms, 0);
+});
+test("background inventory resumes its current page after adaptive cooldown", async t => {
+  let clock = Date.now(), rejected = false;
+  const { service, backend } = fixture(t, { clock: () => clock, sleep: async ms => { clock += ms; } });
+  const original = backend.call.bind(backend), offsets = [];
+  backend.call = async (operation, args, context) => {
+    if (operation === "project_conversations" && args.id === "g-p-one") {
+      offsets.push(args.cursor);
+      if (!rejected && args.cursor !== null) {
+        rejected = true; throw new ApiError("RATE_LIMITED", "Wait", { retry_at_ms: clock + 60000 });
+      }
+    }
+    return original(operation, args, context);
+  };
+  const job = await service.listConversations({ context: CONTEXT });
+  assert.equal((await finish(service, job.inventory_job_id)).status, "completed");
+  assert.equal(rejected, true);
+  assert.deepEqual(offsets, [null, "2", "2", "4", "6", "8"]);
+});
+test("Project hints never borrow an owner from a different saved Project", t => {
+  const { service } = fixture(t);
+  service.inventory = { context: CONTEXT, items: new Map([["c4", { project_id: "g-p-one", owner_id: "original-owner" }]]) };
+  assert.deepEqual(service.readContext(CONTEXT, "c4", { project_id: "g-p-other" }), { project_id: "g-p-other" });
 });
 test("account changes during native reads discard the response and restricted records are explicit", async t => {
   const { service, backend } = fixture(t);
@@ -400,7 +442,7 @@ test("published input and output schemas validate the actual public results", as
   }
 });
 
-function nativeHarness(t, authOverrides = {}) {
+function nativeHarness(t, authOverrides = {}, cachedHeaders = {}) {
   const backend = new MockBackend(), handlers = new Map();
   const sender = new EventEmitter(); Object.assign(sender, { id: 1, mainFrame: {}, isDestroyed: () => false });
   const event = { sender, senderFrame: sender.mainFrame, trusted: true };
@@ -424,17 +466,19 @@ function nativeHarness(t, authOverrides = {}) {
       assert.deepEqual(Object.keys(body), ["conversation_ids"]);
       assert.equal(body.conversation_ids.length, 1);
     }
-    const operation = route === "/conversations/batch" ? "conversation_metadata" : route === "/conversations" ? "list" : route.endsWith("/sidebar") ? "projects"
+    const operation = route === "/conversations/{conversation_id}" ? "conversation_modern" : route === "/conversations/batch" ? "conversation_metadata" : route === "/conversations" ? "list" : route.endsWith("/sidebar") ? "projects"
       : route.endsWith("/rename") ? "rename" : route === "/projects" ? "create_project"
       : route.includes("gizmo_id_or_short_url") ? "project" : route.includes("/gizmos/") ? "project_conversations"
       : method === "safePatch" ? body.is_archived === undefined ? "move" : "archive" : "conversation";
     const result = await backend.call(operation, { ...body, id: body.conversation_ids?.[0] ?? a.conversation_id ?? a.gizmo_id ?? a.gizmo_id_or_short_url,
-      offset: q.offset, limit: q.limit, archived: q.is_archived ?? body.is_archived, cursor: q.cursor, project_id: body.gizmo_id }, CONTEXT);
+      offset: q.offset, limit: q.limit, archived: q.is_archived ?? body.is_archived, cursor: q.cursor,
+      project_id: body.gizmo_id ?? options.additionalHeaders["chatgpt-project-id"],
+      owner_id: options.additionalHeaders["chatgpt-conv-owner-id"] }, CONTEXT);
     options.assertRequestCurrent(); return result;
   }]));
   const scope = { get: atom => { assert.equal(atom, accountAtom); return auth; } };
-  const world = { scope, accountAtom, request, hydexConversationBridge: bridge, addEventListener: () => {} };
-  vm.runInNewContext(`(${installRenderer.toString()})(scope,accountAtom,()=>request)`, world);
+  const world = { scope, accountAtom, request, cachedHeaders, hydexConversationBridge: bridge, addEventListener: () => {} };
+  vm.runInNewContext(`(${installRenderer.toString()})(scope,accountAtom,()=>request,()=>cachedHeaders)`, world);
   return { backend, native, handlers, event, auth, sender, world };
 }
 test("authenticated renderer bridge uses native request identity and trusted main-frame IPC", async t => {
@@ -446,6 +490,65 @@ test("authenticated renderer bridge uses native request identity and trusted mai
   assert.equal(await handlers.get(PREFIX + "hello")({ ...event, senderFrame: {} }, CONTEXT), false);
   auth.authenticatedUserId = "other";
   await assert.rejects(native.identity(), code("CONTEXT_CHANGED"));
+});
+test("Project body reads forward only closed routing hints and keep the authenticated principal", async t => {
+  const { native, backend } = nativeHarness(t);
+  await native.call("conversation", { id: "c4", read_context: { project_id: "g-p-one", owner_id: "owner-user" } }, CONTEXT);
+  assert.equal(backend.calls.at(-1).args.project_id, "g-p-one");
+  assert.equal(backend.calls.at(-1).args.owner_id, "owner-user");
+  await assert.rejects(native.call("conversation", { id: "c4", read_context: { project_id: "g-p-one", owner_id: "bad\r\nheader" } }, CONTEXT), code("UNSUPPORTED_READ_CONTEXT"));
+});
+test("native SDK cached Project context takes precedence without mixing owner hints across Projects", async t => {
+  const { native, backend } = nativeHarness(t, {}, { "chatgpt-project-id": "g-p-native" });
+  await native.call("conversation", { id: "c4", read_context: { project_id: "g-p-other", owner_id: "other-owner" } }, CONTEXT);
+  assert.equal(backend.calls.at(-1).args.project_id, "g-p-native");
+  assert.equal(backend.calls.at(-1).args.owner_id, undefined);
+});
+test("modern-only Project retrieval paginates every older page and reports branch coverage honestly", async t => {
+  const { service, backend } = fixture(t);
+  service.inventory = { context: CONTEXT, items: new Map([["c4", { project_id: "g-p-one", owner_id: "owner-user" }]]) };
+  const msg = (id, text) => message(id, "user", "text", { parts: [text] });
+  backend.hook = async (operation, args) => {
+    assert.equal(args.read_context.project_id, "g-p-one"); assert.equal(args.read_context.owner_id, "owner-user");
+    if (operation === "conversation" && !args.page) throw new ApiError("BACKEND_ERROR", "Legacy route not found", { status: 404 });
+    if (operation === "conversation_modern") return { conversation_id: "c4", title: "Modern", gizmo_id: "g-p-one", update_time: 20,
+      is_archived: false, messages: [msg("new", "New")], page_info: { has_previous_page: true, has_next_page: false, start_cursor: "older" } };
+    if (args.page) return { messages: [msg("old", "Old")], page_info: { has_previous_page: false, has_next_page: true, end_cursor: "newer" } };
+  };
+  const raw = await dispatch(service, "chatgpt_get_conversation", { context: CONTEXT, id: "c4", mode: "raw", branch: "all" });
+  assert.equal(raw.complete, true); assert.equal(raw.page_count, 2); assert.equal(raw.branch_coverage, "active_only");
+  const active = await service.getConversation({ context: CONTEXT, id: "c4", branch: "active" });
+  assert.deepEqual(active.conversation.messages.map(m => m.id), ["old", "new"]);
+  assert.equal(backend.calls.filter(c => c.operation === "conversation" && !c.args.page).length, 1, "Remember the unavailable legacy route");
+  await assert.rejects(service.getConversation({ context: CONTEXT, id: "c4", branch: "all" }), code("BRANCHES_UNAVAILABLE"));
+});
+test("Project read recovery can preserve an accessible complete batch graph", async t => {
+  const { service, backend } = fixture(t);
+  backend.hook = async (operation, args) => {
+    if (["conversation", "conversation_modern"].includes(operation)) throw new ApiError("BACKEND_ERROR", "Not found", { status: 404 });
+    if (operation === "conversation_metadata") return [{ ...tree("c4"), id: "c4", gizmo_id: "g-p-one", owner: { user_id: "owner-user" } }];
+  };
+  const result = await service.getConversation({ context: CONTEXT, id: "c4", mode: "raw", branch: "all", read_context: { project_id: "g-p-one" } });
+  assert.equal(result.complete, true); assert.equal(result.pages[0].owner.user_id, "owner-user");
+  assert.equal(result.branch_coverage, "all_available"); assert.equal(backend.mutations.length, 0);
+});
+test("routing metadata can recover an owner-dependent legacy read without guessing ownership", async t => {
+  const { service, backend } = fixture(t);
+  backend.hook = async (operation, args) => {
+    if (operation === "conversation_metadata") return [{ id: "c4", title: "Header", gizmo_id: "g-p-one", owner: { user_id: "actual-owner" } }];
+    if (["conversation", "conversation_modern"].includes(operation) && args.read_context?.owner_id !== "actual-owner") {
+      throw new ApiError("BACKEND_ERROR", "Owner context required", { status: 404 });
+    }
+  };
+  const result = await service.getConversation({ context: CONTEXT, id: "c4", mode: "raw", read_context: { project_id: "g-p-one" } });
+  assert.equal(result.complete, true);
+  assert.equal(backend.calls.at(-1).args.read_context.owner_id, "actual-owner");
+});
+test("modern fallback never retries authorization failures under another route", async t => {
+  const { service, backend } = fixture(t);
+  backend.hook = async () => { throw new ApiError("SESSION_EXPIRED", "Restricted", { status: 403 }); };
+  await assert.rejects(service.getConversation({ context: CONTEXT, id: "c4", mode: "raw", read_context: { project_id: "g-p-one" } }), code("SESSION_EXPIRED"));
+  assert.deepEqual(backend.calls.map(c => c.operation), ["conversation"]);
 });
 test("native request identity supports a distinct ChatGPT membership user ID", async t => {
   const { native } = nativeHarness(t, { userId: "membership-user" });
@@ -722,7 +825,8 @@ const AUTH = 'cE1j(e,t,n){var g=n("AUTH");function sync(W,N,Z){let v=W.get(g.PO)
 const ROUTES = ['"/conversation/{conversation_id}"', '"/conversations/batch"', '"/gizmos/{gizmo_id}/conversations"', '"/gizmos/snorlax/sidebar"',
   '"/conversation/id/{conversation_id}/rename"', '"/conversations/{conversation_id}/messages"', 'Request.safePost("/projects",{})', '"ChatGPT-Account-ID"', '({exclude_conversation_origin:flag?void 0:"tpp"})'].join(";");
 const EVENTS = 'events(e,t,n){function receive(r){if(signal.aborted||scope.get(auth.key)!==account)return;let m=!1,g=ee.safeParse(r);if(g.success){let{conversation_id:c}=g.data.payload,u="conversation-history-update"===g.data.type?g.data.payload.update_type:void 0;}}t.receive=receive;let eh=ea.onPotentialMissedMessages(()=>{for(let q of scope.queryClient.getQueryCache().findAll({queryKey:["chatgpt-conversation"],type:"active"})){};});}';
-const CHUNK = `export const __webpack_modules__={${REQUEST},${AUTH},${EVENTS},routes(e,t,n){${ROUTES}}};`;
+const HEADERS = 'CTX(e,t,n){n.d(t,{headers:()=>context});function context(scope,id){let cached=scope.queryClient.getQueryData(["chatgpt-conversation",id]),h={};if(cached){h["chatgpt-project-id"]=cached.gizmo_id;h["chatgpt-conv-owner-id"]=cached.owner?.user_id}return h}}';
+const CHUNK = `export const __webpack_modules__={${REQUEST},${AUTH},${HEADERS},${EVENTS},routes(e,t,n){${ROUTES}}};`;
 test("patched module captures the request loader outside a shadowing account effect", async () => {
   const accountAtom = {}, exports = {}, replies = [], hellos = [], calls = [];
   let onRequest, requestLoads = 0;
@@ -737,6 +841,7 @@ test("patched module captures the request loader outside a shadowing account eff
   }};
   const load = id => {
     if (id === "AUTH") return {PO: accountAtom};
+    if (id === "CTX") return {headers: () => ({})};
     assert.equal(id, "Ghh3"); requestLoads++; return {Request: nativeRequest};
   };
   const bridge = {hello: async c => { hellos.push(clone(c)); },
