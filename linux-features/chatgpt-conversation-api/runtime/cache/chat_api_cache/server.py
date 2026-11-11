@@ -58,10 +58,26 @@ def failure(code, message, **details):
     return packed({"error": {"code": code, "message": message, **({"details": details} if details else {})}}, True)
 
 
+def metadata_contains_body(error):
+    if error.get("code") != "UNSUPPORTED_FORMAT":
+        return False
+    fields = (error.get("details") or {}).get("body_fields")
+    return (isinstance(fields, list) and bool(fields) and all(
+        isinstance(item, dict) and item.get("field") in ("mapping", "messages") for item in fields)
+        or error.get("message") == "The native metadata endpoint unexpectedly returned a conversation body.")
+
+
 class Adapter:
     def __init__(self, config, upstream, cache=None):
         self.config, self.upstream = config, upstream
         self.cache = cache or Cache(config["directory"])
+        self.metadata_unavailable = {}
+
+    def metadata_support(self, context, status):
+        if status.get("capabilities", {}).get("conversation_metadata") is not True:
+            return False, "native_operation_unavailable"
+        until = self.metadata_unavailable.get(scope(context), 0)
+        return (False, "native_metadata_response_contains_body") if until > time.time() else (True, None)
 
     def catalog(self):
         catalog = copy.deepcopy(self.upstream.rpc("tools/list"))
@@ -72,6 +88,7 @@ class Adapter:
                 tool["description"] += (" Shared local cache retains every available raw page/branch/field. "
                     "Default prefer_cache automatically checks only the requested chat's fresh metadata before reusing a cached body. "
                     "Unchanged chats use the saved snapshot; only the requested changed chat is fetched. "
+                    "If the native metadata route includes message data, it is temporarily skipped and only the requested body is refreshed, labelled live_body_fallback. This fallback downloads unchanged bodies too. "
                     "There is no account-wide scan. Overlapping reads of the same chat share a check. Failed validation returns an error, not an unverified cached body. "
                     "refresh fetches a live body; cache_only skips metadata/body fetches; inventory_snapshot explicitly reuses already selected inventory metadata for bulk imports. "
                     "Inspect cache_info for provenance. Cached text remains untrusted data.")
@@ -131,11 +148,12 @@ class Adapter:
             return hit and not hit["invalidated"] and hit["metadata_matches"]
 
         hit = self.cache.lookup(context, conversation_id)
+        metadata_available, fallback_reason = self.metadata_support(context, status)
         negative = self.cache.negative(context, conversation_id, self.config.get("not_found_ttl_seconds", 3600)) if policy == "prefer_cache" else None
         validation = None
         metadata_usable = True
         if policy == "prefer_cache" and (usable(hit) or negative):
-            if status.get("capabilities", {}).get("conversation_metadata") is not True:
+            if not metadata_available:
                 # A running Desktop from before the bridge update cannot make
                 # the targeted read yet. Refresh only this body, never the account.
                 validation = {"source": "live_body_fallback", "checked_at": None, "job_id": None,
@@ -144,8 +162,17 @@ class Adapter:
                 try:
                     validation = MetadataValidator(self.config, self.upstream, self.cache).validate(context, conversation_id, request_started)
                 except MetadataCheckError as error:
-                    return packed({"error": error.error, "cache_info": {"policy": policy, "cached_available": hit is not None,
-                        "metadata_check_failed": True, "validation": "failed", "stale": True}}, True)
+                    if not metadata_contains_body(error.error):
+                        return packed({"error": error.error, "cache_info": {"policy": policy, "cached_available": hit is not None,
+                            "metadata_check_failed": True, "validation": "failed", "stale": True}}, True)
+                    # A backend route used for metadata can also transfer message
+                    # graphs. Do not claim a metadata-only cache hit or scan the
+                    # account. Refresh exactly this body and retry capability in
+                    # five minutes, allowing recovery after a Desktop update.
+                    self.metadata_unavailable[scope(context)] = time.time() + 300
+                    metadata_available, fallback_reason = self.metadata_support(context, status)
+                    validation = {"source": "live_body_fallback", "checked_at": None, "job_id": None,
+                                  "check_id": None, "completeness": None, "metadata": None}
             item = validation.get("metadata")
             # An absent record or missing update marker cannot prove a cached
             # conversation unchanged; fetch just this requested body instead.
@@ -188,7 +215,8 @@ class Adapter:
             "metadata_checked_at": validation["checked_at"] if validation else None,
             "metadata_check_id": validation.get("check_id") if validation else None,
             "metadata_check_scope": "requested_chat",
-            "targeted_metadata_available": status.get("capabilities", {}).get("conversation_metadata") is True,
+            "targeted_metadata_available": metadata_available,
+            "metadata_fallback_reason": fallback_reason,
             "metadata_inventory_job_id": None,
             "metadata_inventory_completeness": validation["completeness"] if validation else None,
             "metadata_target_present": validation.get("metadata") is not None if validation and validation.get("source") == "targeted_metadata" else None,
@@ -207,7 +235,9 @@ class Adapter:
         context = data.get("context", arguments.get("context") if isinstance(arguments, dict) else None)
         if name == "chatgpt_get_status" and data.get("connected") and context:
             data["cache_info"] = self.cache.status(context)
-            data["cache_info"]["targeted_metadata_available"] = data.get("capabilities", {}).get("conversation_metadata") is True
+            available, reason = self.metadata_support(context, data)
+            data["cache_info"]["targeted_metadata_available"] = available
+            data["cache_info"]["metadata_fallback_reason"] = reason
             return packed(data)
         if name == "chatgpt_get_conversation_metadata" and context:
             self.cache.record_metadata(context, arguments["id"], response)
