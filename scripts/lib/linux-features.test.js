@@ -286,6 +286,26 @@ test("absent optional config applies manifest defaults without spurious warnings
   assert.throws(() => linuxFeaturesConfig({ featuresRoot, featuresConfigPath: explicit, strictConfig: true }), /enabled array/);
 });
 
+test("directory resources omit generated Python caches without changing source files", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-resource-python-cache-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const { featureDir, featuresRoot } = makeFeatureRoot(root, { id: "unsafe-link", resources: [
+    { source: "runtime", target: ".codex-linux/features/fixture", mode: "0644" },
+  ] });
+  for (const name of ["module.py", "nested/worker.py", "__pycache__/module.cpython-314.pyc", "nested/__pycache__/worker.cpython-314.pyc"]) {
+    const file = path.join(featureDir, "runtime", name);
+    fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, name);
+  }
+  const app = path.join(root, "app"); fs.mkdirSync(app);
+  stageEnabledLinuxFeatureInstall(app, { featuresRoot });
+  const dest = path.join(app, ".codex-linux/features/fixture");
+  assert.equal(fs.readFileSync(path.join(dest, "module.py"), "utf8"), "module.py");
+  assert.equal(fs.readFileSync(path.join(dest, "nested/worker.py"), "utf8"), "nested/worker.py");
+  assert.equal(fs.existsSync(path.join(dest, "__pycache__")), false);
+  assert.equal(fs.existsSync(path.join(dest, "nested/__pycache__")), false);
+  assert.equal(fs.existsSync(path.join(featureDir, "runtime/__pycache__/module.cpython-314.pyc")), true);
+});
+
 function makeFeatureRoot(root, featureManifest) {
   const featuresRoot = path.join(root, "linux-features");
   const featureDir = path.join(featuresRoot, "unsafe-link");

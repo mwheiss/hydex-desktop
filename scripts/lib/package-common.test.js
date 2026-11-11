@@ -816,12 +816,13 @@ test("update-builder omits test-only files without changing private features or 
   }
   fs.writeFileSync(path.join(features, "features.json"), JSON.stringify({ enabled: ["public-fixture", "private-fixture"] }));
   const trees = ["linux-features/public-fixture", "linux-features/local/private-fixture", "scripts/patches/filter-fixture"];
-  const omitted = ["test.js", "nested/example.test.js", "nested/example.test-helpers.js", "fixtures/input.json", "nested/fixtures/input.json"];
+  const omitted = ["test.js", "nested/example.test.js", "nested/example.test-helpers.js", "nested/test_fixture.py", "fixtures/input.json", "nested/fixtures/input.json"];
+  const generated = ["__pycache__/module.cpython-314.pyc", "nested/__pycache__/other.cpython-314.pyc"];
   const retained = ["patch.js", "nested/runtime.js", "fixtures.json", "nested/tests/runtime.js"];
   const original = new Map();
   for (const relative of trees) {
     const dir = path.join(source, relative);
-    for (const name of [...omitted, ...retained]) {
+    for (const name of [...omitted, ...retained, ...generated]) {
       const file = path.join(dir, name);
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, `${relative}/${name}\n`, { mode: 0o640 });
@@ -849,6 +850,7 @@ test("update-builder omits test-only files without changing private features or 
   const builder = path.join(packageRoot, "opt/codex-desktop/update-builder");
   for (const relative of trees) {
     const privateFeature = relative.startsWith("linux-features/local/");
+    for (const name of generated) assert.equal(fs.existsSync(path.join(builder, relative, name)), false, `${relative}/${name}`);
     for (const name of omitted) {
       assert.equal(fs.existsSync(path.join(builder, relative, name)), privateFeature, `${relative}/${name}`);
     }

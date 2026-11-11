@@ -148,3 +148,11 @@ Native write arguments, plan hashes, principal checks and exact-batch dialogs
 remain in the original executor. The new workers can dispatch only reads. No
 conversation content, credential, machine configuration or cache database is
 tracked in source.
+
+Native package inspection rejected the first cache-refresh candidate because
+ignored Python `__pycache__` directories from the tests were copied into both
+runtime resources and updater inputs. Common resource staging now excludes those
+generated directories; updater staging also omits repository Python unit tests.
+Linux-feature and package-common regression suites passed, including preservation
+of private feature source/test files and the original source tree. The corrected
+package must pass a complete payload scan before activation.
