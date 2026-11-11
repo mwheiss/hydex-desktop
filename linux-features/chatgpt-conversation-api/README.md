@@ -47,6 +47,7 @@ omit_tools_from = ["direct"]
 enabled_tools = [
   "chatgpt_get_status", "chatgpt_list_conversations",
   "chatgpt_search_conversations", "chatgpt_get_conversation",
+  "chatgpt_get_conversation_metadata",
   "chatgpt_list_projects", "chatgpt_get_inventory_status",
   "chatgpt_get_job_status",
 ]
@@ -91,6 +92,59 @@ operations are never blindly repeated. Undo requires another native approval,
 checks for concurrent changes, and restores only reversible verified changes.
 Created Projects remain because this API has no permanent-deletion capability.
 
+### Targeted metadata and optional shared raw cache
+
+`chatgpt_get_conversation_metadata` reads one requested conversation through
+the native read-only `POST /conversations/batch` contract with
+`conversation_ids: [id]`. It does not scan history or download messages. The
+result includes normalized metadata, unknown raw metadata fields, explicit
+missing-record status and redaction provenance. Archived records remain
+readable. Account/workspace identity is checked before and after the request.
+
+An optional Python 3.9+ cache adapter ships in the same tracked feature runtime:
+
+```toml
+[mcp_servers.chatgpt_conversations]
+command = "python3"
+args = ["/opt/hydex-desktop/.codex-linux/features/chatgpt-conversation-api/cache/mcp.py"]
+omit_tools_from = ["direct"]
+```
+
+Use `--config /absolute/path/api-cache-config.json` for a project-specific cache
+directory/upstream configuration. Otherwise the adapter connects to the adjacent
+native Node bridge and stores snapshots under
+`$XDG_DATA_HOME/hydex-desktop/conversation-cache` (or `~/.local/share`). It never
+registers globally or bypasses native write approval.
+
+The default `prefer_cache` read validates only the requested chat's metadata.
+Unchanged chats use their saved snapshots; only a changed or uncached requested
+chat is fetched. Concurrent reads of one chat share validation and body fetches.
+It never starts an account-wide inventory for a single-chat read. Until Desktop
+is refreshed/restarted with the native operation, it falls back to one live read
+of the requested body. `cache_info` reports this fallback and capability.
+
+`refresh` forces a live body read; `cache_only` explicitly reads saved data;
+`inventory_snapshot` reuses a bulk job's selected metadata. Missing or unversioned
+metadata cannot prove a body unchanged and requires that one body read. Metadata
+failures never silently return an unverified cached body as fresh. Update times
+are not guaranteed revision identifiers; explicit refresh remains available.
+
+Native raw responses are saved before normalization. Compressed, checksummed
+snapshots retain every exposed page, available branch, tool record, unknown
+field and opaque field; earlier versions are kept. Credential redactions and
+completeness limitations remain intact. This does not add attachment downloads
+or decrypt reasoning. Storage is private (0700/0600), account/workspace scoped,
+and retained across Desktop refreshes.
+
+Oversized normalized views return bounded `RESPONSE_TOO_LARGE` results referring
+to the retained raw snapshot. Read-only clients can explicitly derive an indexing
+projection locally. The full copy is not truncated, and one large frame cannot
+poison later reads. Unicode stays UTF-8; lone surrogates remain JSON escapes.
+
+The cache launcher and code are declared feature resources under `runtime/cache/`,
+so refresh staging copies them automatically. Tests live in `cache/tests/` and use
+synthetic records. No live chat data, credentials or machine configuration is tracked.
+
 Disabling the feature takes effect after rebuild/restart and removes its staged
 resources. The journal is intentionally retained for audit/recovery. After all
 jobs are resolved and the application has exited, the user may remove that
@@ -107,6 +161,7 @@ Run the feature tests with:
 
 ```bash
 node --test linux-features/chatgpt-conversation-api/test.js
+PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider linux-features/chatgpt-conversation-api/cache/tests
 node linux-features/chatgpt-conversation-api/fixtures/demo.js
 node linux-features/chatgpt-conversation-api/fixtures/demo.js --codex /opt/hydex-desktop/resources/codex
 node linux-features/chatgpt-conversation-api/fixtures/audit-bundle.js /path/to/verified/official/app.asar

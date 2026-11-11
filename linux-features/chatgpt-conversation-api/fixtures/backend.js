@@ -55,6 +55,9 @@ class MockBackend {
       case "project": if (!this.projectRecords.has(args.id)) throw new ApiError("BACKEND_ERROR", "Project not found."); return clone(this.projectRecords.get(args.id));
       case "project_conversations": return page([...this.records.values()].filter(r => r.gizmo_id === args.id).map(r => ({ id: r.conversation_id, title: r.title, is_archived: r.is_archived, gizmo_id: r.gizmo_id, update_time: r.update_time })), args.cursor, args.limit);
       case "conversation": if (!record) throw new ApiError("SESSION_EXPIRED", "Conversation restricted."); return clone(record);
+      case "conversation_metadata": return record ? [{ id: record.conversation_id, title: record.title,
+        create_time: record.create_time, update_time: record.update_time, is_archived: record.is_archived,
+        gizmo_id: record.gizmo_id, unknown_metadata: { keep: true } }] : [];
       case "rename": record.title = args.title; break;
       case "move": record.gizmo_id = args.project_id || null; break;
       case "archive": record.is_archived = args.archived; break;

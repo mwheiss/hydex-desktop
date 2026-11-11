@@ -123,6 +123,7 @@ inventory and rejected before raw, normalized or mutation-state output.
 | Project contents | `GET /gizmos/{gizmo_id}/conversations`, cursor/limit, `owned_only=false` |
 | Project identity/access | `GET /gizmos/{gizmo_id_or_short_url}` |
 | Complete legacy tree | `GET /conversation/{conversation_id}` |
+| Targeted metadata for one chat | Read-only `POST /conversations/batch`, `{conversation_ids:[id]}`; no body/inventory read |
 | Older ordered messages | `GET /conversations/{conversation_id}/messages`, `before`, `num_turns`, `include_has_versions` |
 | Rename | `POST /conversation/id/{conversation_id}/rename`, `{title}` |
 | Move/unassign | `PATCH /conversation/{conversation_id}`, `{gizmo_id}`; empty string unassigns |
@@ -157,7 +158,7 @@ concurrent account changes/overlapping-page disagreement invalidate confidence.
 
 ## Schemas and fidelity
 
-`runtime/tools.js` publishes strict input schemas for all 15 tools, with no
+`runtime/tools.js` publishes strict input schemas for all 16 tools, with no
 arbitrary JavaScript, URL, headers or backend request tool. It exports raw and
 normalized output schemas as well. The normalized conversation includes its ID,
 title, timestamps, Project/archive state, format, branch coverage, nodes and

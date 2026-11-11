@@ -1,7 +1,7 @@
 {
   "id": "chatgpt-conversation-api",
   "title": "ChatGPT Conversation API",
-  "description": "Opt-in desktop-owned ChatGPT history and Project access through a private MCP bridge, with native batch approval and a durable operation journal.",
+  "description": "Opt-in desktop-owned ChatGPT history, targeted metadata and Project access through a private MCP bridge, with optional durable raw caching and native batch approval.",
   "defaultEnabled": false,
   "entrypoints": { "patchDescriptors": "./patch.js" },
   "resources": [
