@@ -14,6 +14,7 @@ if not __package__:
 from chat_api_cache.cache import Cache
 from chat_api_cache.server import Adapter, unpack
 from chat_api_cache.transport import StdioClient
+from chat_api_cache.transport import StdioProtocolError
 
 
 class ReadFailure(RuntimeError):
@@ -41,7 +42,31 @@ def refresh_inventory(config, cache, upstream, context):
     started = time.time()
     page = native_read(upstream, "chatgpt_list_conversations", {"context": context, "refresh": True, "limit": 1000}, context)
     job_id = page["inventory_job_id"]
+    completed = False
+    try:
+        _collect_inventory(config, cache, upstream, context, adapter, page, job_id, started)
+        completed = True
+    finally:
+        if not completed:
+            # Cancel only this account-bound read job. Never dispatch a
+            # conversation mutation or leave an unattended scan after failure.
+            control = None
+            try:
+                control = StdioClient(config["upstream"], timeout=8)
+                control.rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "hydex-stop-inventory", "version": "5"}})
+                control.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+                control.tool("chatgpt_cancel_job", {"context": context, "job_id": job_id})
+            except Exception:
+                cache.suspend_reads(context, code="INVENTORY_CANCEL_UNCONFIRMED",
+                                    message="Read-job cancellation could not be confirmed; verify native job state before resuming")
+            finally:
+                if control:control.close()
+
+
+def _collect_inventory(config, cache, upstream, context, adapter, page, job_id, started):
     while page.get("status") in ("running", "cancelling"):
+        if cache.read_control(context):
+            raise ReadFailure({"code": "READS_PAUSED", "message": "Native reads were suspended"})
         if time.time() - started > config.get("inventory_timeout_seconds", 1800):
             raise ReadFailure({"code": "INVENTORY_TIMEOUT", "message": "Shared metadata synchronization is still running"})
         status = native_read(upstream, "chatgpt_get_inventory_status", {"context": context}, context)
@@ -72,6 +97,10 @@ def refresh_inventory(config, cache, upstream, context):
 
 
 def run_job(config, cache, upstream, job):
+    if cache.read_control(job["context"]):
+        error = {"code": "READS_PAUSED", "message": "Native reads are suspended"}
+        cache.pause_refresh(job, error)
+        return error
     cache.start_refresh(job)
     error = None
     try:
@@ -86,11 +115,18 @@ def run_job(config, cache, upstream, job):
             raise ValueError("Not a background read job")
     except ReadFailure as failure:
         error = failure.error
+    except (StdioProtocolError, TimeoutError) as failure:
+        error = unpack(Adapter(config, upstream, cache=cache).trip(job["context"], failure))["error"]
     except Exception as failure:
         error = {"code": "REFRESH_FAILED", "message": type(failure).__name__}
     temporary = error and (error.get("code") in ("PACING_WAIT", "RATE_LIMITED", "CAPABILITY_REQUIRED", "DESKTOP_DISCONNECTED", "SESSION_UNAVAILABLE")
                            or (error.get("details") or {}).get("status") in (429, 503))
-    if temporary:
+    if (error and error.get("code") not in ("PACING_WAIT", "RATE_LIMITED", "CAPABILITY_REQUIRED", "CONTEXT_CHANGED", "SESSION_UNAVAILABLE", "READS_PAUSED", "READ_CIRCUIT_OPEN", "RESOURCE_SCOPE_MISMATCH")
+            and (error.get("details") or {}).get("status") not in (404, 429)):
+        error = unpack(Adapter(config, upstream, cache=cache).trip(job["context"], StdioProtocolError(error.get("code", "REFRESH_FAILED"), "Native refresh stopped")))["error"]
+    if error and error.get("code") in ("READS_PAUSED", "READ_CIRCUIT_OPEN"):
+        cache.pause_refresh(job, error)
+    elif temporary:
         cache.defer_refresh(job, error)
     else:
         cache.finish_refresh(job, error, retry_delay=config.get("inventory_refresh_seconds", 1800) if job["kind"] == "inventory" else 30)

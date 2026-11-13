@@ -189,6 +189,25 @@ The cache launcher and code are declared feature resources under `runtime/cache/
 so refresh staging copies them automatically. Tests live in `cache/tests/` and use
 synthetic records. No live chat data, credentials or machine configuration is tracked.
 
+Cache revision 5 shares a bounded Node MCP serializer with the standalone native
+entry point. Large results retain full structured data once, avoiding duplication
+as escaped text; the cache preserves the exact structured JSON. Over-limit
+results return an error for that request and never poison later valid input.
+The cache can load this serializer against an older installed IPC runtime without
+changing native authentication or approval. No extra endpoint is introduced.
+
+Transport/protocol failures, backend outages and unexpected read errors open a
+durable read circuit. Later clients and workers stop instead of advancing through
+the account. Failed connections are closed. Inventory read jobs are cancelled on
+failure; uncertain cancellation blocks resumption. `cache_only` remains available
+with account verification during a circuit outage, and an explicit maintenance
+pause blocks ordinary native calls. Only an explicit bounded probe bypasses it.
+`--pause-reads`, `--read-status`, and one-shot
+`--probe-read ID [--resume-after-probe]` are local recovery actions. A successful
+probe retains a complete raw snapshot, checks identity/connection and requires
+no old active inventory before explicitly clearing the gate. It never grants
+write permission or retries a native mutation.
+
 Disabling the feature takes effect after rebuild/restart and removes its staged
 resources. The journal is intentionally retained for audit/recovery. After all
 jobs are resolved and the application has exited, the user may remove that

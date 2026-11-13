@@ -1,3 +1,32 @@
+# 2026-11-13 bounded MCP framing and read circuits
+
+A synthetic 34 MiB result reproduced a poisoned native MCP stream: duplicated
+text/structured serialization exceeded 64 MiB, and both that request and the next
+ping timed out. The bounded serializer retains complete structured data once,
+returns typed bounded errors when necessary, and preserves later input handling.
+The Python transport retains the exact native JSON and discards broken streams.
+
+The formerly failing live conversation then returned 35,394,435 bytes of complete
+raw JSON in one page. Its following ping succeeded; a local projection produced
+330 visible messages and 119 passages with zero additional backend reads. No
+conversation mutation was performed. These are scoped probes, not a claim that
+every remaining conversation or the account inventory is complete.
+
+Validation: 70 adjacent native tests, 58 portable cache tests, and 105 workspace
+tests pass. Coverage includes persistent stop-after-first-failure behavior,
+worker suspension/cancellation, explicit one-shot recovery, exact large-payload
+retention, and preserving snapshots/vectors. Native account and batch-approval
+authority remain in the installed Desktop; the corrected cache transport can
+load against that IPC runtime without a Desktop reinstall.
+
+The required isolated official-package build was attempted against freshly
+verified signed stable `26.1111.21308`. This feature's desktop-service descriptor
+applied. The overall candidate was rejected by the existing required core
+`quit-confirmation-focus` patch, which could not prove the new before-quit owner.
+No signature or critical-patch bypass was used and no application was installed.
+That full-Desktop rebuild limitation is separate from the deployed, live-tested
+project transport correction.
+
 # 2026-11-11 Project routing, pacing and cache revision 4
 
 The adjacent native suite passes all 70 tests, including Project/owner header

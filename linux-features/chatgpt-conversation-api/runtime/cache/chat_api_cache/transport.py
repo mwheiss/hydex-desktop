@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import selectors
 import subprocess
 import time
@@ -18,6 +19,7 @@ class StdioClient:
 
     def __init__(self, settings, timeout=120):
         self.timeout, self.sequence = timeout, 0
+        self.closed = False
         self.buffer = bytearray()
         self.process = subprocess.Popen([settings["command"], *settings.get("args", [])],
                                         cwd=settings.get("cwd"), env={**os.environ, **settings.get("env", {})},
@@ -27,8 +29,18 @@ class StdioClient:
         self.selector.register(self.process.stdout, selectors.EVENT_READ)
 
     def send(self, data):
-        self.process.stdin.write((json.dumps(data, ensure_ascii=False) + "\n").encode())
-        self.process.stdin.flush()
+        if self.closed:
+            raise StdioProtocolError("UPSTREAM_CLOSED", "The failed native connection has been discarded")
+        try:
+            self.process.stdin.write((json.dumps(data, ensure_ascii=False) + "\n").encode())
+            self.process.stdin.flush()
+        except (BrokenPipeError, OSError):
+            self.close()
+            raise StdioProtocolError("UPSTREAM_DISCONNECTED", "The native connection closed") from None
+
+    def broken(self, code, message):
+        self.close()
+        raise StdioProtocolError(code, message)
 
     def rpc(self, method, params=None):
         self.sequence += 1
@@ -41,18 +53,43 @@ class StdioClient:
                 if len(line) > 64 * 1024 * 1024:
                     self.buffer.clear(); self.close()
                     raise StdioProtocolError("UPSTREAM_FRAME_TOO_LARGE", "Native upstream frame exceeds 64 MiB")
-                response = json.loads(line)
+                try:
+                    response = json.loads(line)
+                except (ValueError, UnicodeError):
+                    self.broken("UPSTREAM_PROTOCOL_ERROR", "The native connection returned invalid JSON")
+                if not isinstance(response, dict):
+                    self.broken("UPSTREAM_PROTOCOL_ERROR", "The native connection returned an invalid response")
+                if response.get("id") is None and "error" in response:
+                    self.broken("UPSTREAM_PROTOCOL_ERROR", "The native MCP input/output stream failed")
                 if response.get("id") != request_id:
-                    continue
+                    if "id" not in response and isinstance(response.get("method"), str):
+                        continue
+                    self.broken("UPSTREAM_PROTOCOL_ERROR", "The native connection returned an unexpected response ID")
                 if "error" in response:
-                    raise RuntimeError(f"Native MCP error {response['error'].get('code')}")
-                return response["result"]
+                    self.broken("UPSTREAM_PROTOCOL_ERROR", "The native MCP request failed")
+                result = response["result"]
+                if isinstance(result, dict) and result.get("_meta", {}).get("hydex/structured-json-text") is True:
+                    # Preserve the exact native structured JSON, including its
+                    # number/Unicode serialization, without duplicating it on
+                    # the MCP wire. The outer native key precedes its payload.
+                    text = line.decode("utf-8")
+                    match = re.search(r'(?<!\\)"structuredContent"\s*:\s*', text)
+                    if match is None:
+                        self.broken("UPSTREAM_PROTOCOL_ERROR", "The native structured payload is missing")
+                    try:
+                        value, end = json.JSONDecoder().raw_decode(text, match.end())
+                    except ValueError:
+                        self.broken("UPSTREAM_PROTOCOL_ERROR", "The native structured payload is invalid")
+                    if value != result.get("structuredContent"):
+                        self.broken("UPSTREAM_PROTOCOL_ERROR", "The native structured payload is inconsistent")
+                    result["_native_json_text"] = text[match.end():end]
+                return result
             remaining = deadline - time.monotonic()
             if remaining <= 0 or not self.selector.select(remaining):
-                raise TimeoutError("Native conversation API timed out")
+                self.broken("NATIVE_READ_TIMEOUT", "The native read timed out; the connection was discarded")
             chunk = os.read(self.process.stdout.fileno(), 65536)
             if not chunk:
-                raise RuntimeError("Native conversation API disconnected")
+                self.broken("UPSTREAM_DISCONNECTED", "The native connection closed before replying")
             self.buffer.extend(chunk)
             if b"\n" not in self.buffer and len(self.buffer) > 64 * 1024 * 1024:
                 self.buffer.clear(); self.close()
@@ -62,6 +99,9 @@ class StdioClient:
         return self.rpc("tools/call", {"name": name, "arguments": arguments})
 
     def close(self):
+        if self.closed:
+            return
+        self.closed = True
         if self.process.poll() is None:
             self.process.terminate()
             try:
@@ -70,5 +110,6 @@ class StdioClient:
                 self.process.kill()
                 self.process.wait()
         self.selector.close()
-        self.process.stdin.close()
-        self.process.stdout.close()
+        for stream in (self.process.stdin, self.process.stdout):
+            try:stream.close()
+            except OSError:pass

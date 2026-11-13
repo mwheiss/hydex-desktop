@@ -92,11 +92,39 @@ class Cache:
             CREATE INDEX IF NOT EXISTS index_events_chat ON index_events(scope,id,sequence);
             CREATE TABLE IF NOT EXISTS fetch_failures(scope TEXT,id TEXT,signature TEXT,error TEXT,
                 at REAL,retry_at REAL,count INTEGER,PRIMARY KEY(scope,id));
+            CREATE TABLE IF NOT EXISTS read_controls(scope TEXT PRIMARY KEY,state TEXT,error TEXT,at REAL);
         ''')
         self.db.execute("PRAGMA user_version=1")
 
     def close(self):
         self.db.close()
+
+    def read_control(self, context=None):
+        keys = ["global"]
+        if context is not None:
+            keys.append(scope(context))
+        for key in keys:
+            row = self.db.execute("SELECT state,error,at FROM read_controls WHERE scope=?", (key,)).fetchone()
+            if row:
+                return {"state": row["state"], "error": json.loads(row["error"]), "at": row["at"]}
+        return None
+
+    def suspend_reads(self, context=None, *, code="MAINTENANCE", message="Native reads are paused"):
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO read_controls VALUES (?,?,?,?)",
+                            (scope(context) if context is not None else "global", "paused" if code == "MAINTENANCE" else "open",
+                             json.dumps({"code": code, "message": message}), time.time()))
+
+    def resume_reads(self, context=None):
+        # Only a local operator after a bounded successful probe calls this.
+        # No tool argument or expiry can clear the circuit automatically.
+        with self.db:
+            self.db.execute("DELETE FROM read_controls WHERE scope=?", (scope(context) if context is not None else "global",))
+
+    def pause_refresh(self, job, error):
+        with self.db:
+            self.db.execute("UPDATE refresh_jobs SET state='paused',finished_at=?,retry_at=NULL,error=? WHERE token=?",
+                            (time.time(), json.dumps(error), job["token"]))
 
     def version(self, context, conversation_id):
         row = self.db.execute("SELECT version FROM metadata WHERE scope=? AND id=?",
@@ -280,7 +308,7 @@ class Cache:
                             (scope(context), conversation_id, timestamp, zlib.compress(encoded), error.get("code"),
                              (error.get("details") or {}).get("status"), version))
             if not response.get("isError") and "error" not in data:
-                text = next((c["text"] for c in response.get("content", []) if c.get("type") == "text"),
+                text = response.get("_native_json_text") or next((c["text"] for c in response.get("content", []) if c.get("type") == "text"),
                             json.dumps(data, ensure_ascii=False))
                 raw = text.encode()
                 if json.loads(raw) != data or data.get("context") != context or not isinstance(data.get("pages"), list) or not data["pages"]:
@@ -526,6 +554,7 @@ class Cache:
                 "recorded_fetch_attempts": self.db.execute("SELECT count(*) FROM attempts WHERE scope=?", (bound,)).fetchone()[0],
                 "default_policy": "prefer_cache", "automatic_metadata_check": False, "freshness_strategy": "cache_age_and_change_notifications",
                 "background_refresh_jobs": self.db.execute("SELECT count(*) FROM refresh_jobs WHERE scope=? AND state IN ('queued','running')", (bound,)).fetchone()[0],
+                "read_control": self.read_control(context),
                 "last_metadata_check": self.targeted_check(context, latest[0]) if latest else self.metadata_check(context),
                 "targeted_metadata_reads": self.db.execute("SELECT count(*) FROM metadata_reads WHERE scope=?", (bound,)).fetchone()[0],
                 "storage": "verbatim_native_raw_json_compressed"}

@@ -386,8 +386,9 @@ def test_snapshot_integrity_is_checked(setup):
     read(adapter, mode="raw")
     with adapter.cache.db:
         adapter.cache.db.execute("UPDATE snapshots SET payload=?", (zlib.compress(b'{}'),))
-    with pytest.raises(ValueError, match="integrity"):
-        read(adapter, mode="raw")
+    result=unpack(read(adapter, mode="raw"))
+    assert result['error']['code']=='READ_CIRCUIT_OPEN'
+    assert result['error']['details']['read_control']['error']['code']=='READ_PIPELINE_FAILED'
 
 
 @pytest.mark.skipif(not (NATIVE / "normalize.js").exists(), reason="Native normalizer not installed")

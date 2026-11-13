@@ -16,6 +16,14 @@ from .transport import StdioProtocolError
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def native_transport_config(config):
+    """Use the bounded MCP serializer against the same native IPC authority."""
+    args = config["upstream"].get("args", [])
+    if args and Path(args[0]).name == "mcp.js" and (Path(args[0]).parent / "ipc.js").is_file():
+        config["upstream"] = {**config["upstream"], "args": [str(Path(__file__).with_name("native_mcp.cjs")), str(Path(args[0]).parent)]}
+    return config
+
+
 def load_config(path=None):
     path = Path(path or ROOT / "api-cache-config.json").resolve()
     config = json.loads(path.read_text())
@@ -28,7 +36,7 @@ def load_config(path=None):
         raise ValueError("The cache upstream must point to the original native server, not this adapter")
     entry = Path(config["upstream"]["args"][0])
     config["normalizer"] = str(entry.parent / "normalize.js")
-    return config
+    return native_transport_config(config)
 
 
 def unpack(response):
@@ -71,6 +79,26 @@ class Adapter:
         self.config, self.upstream = config, upstream
         self.cache = cache or Cache(config["directory"])
         self.launcher = launcher
+
+    def read_block(self, context=None, *, local_only=False):
+        try:
+            control = self.cache.read_control(context)
+        except ValueError:
+            control = self.cache.read_control()
+        if control and not (local_only and control["state"] == "open"):
+            return failure("READS_PAUSED" if control["state"] == "paused" else "READ_CIRCUIT_OPEN",
+                           "Native reads are stopped; a local bounded health probe is required before resuming.",
+                           read_control=control)
+        return None
+
+    def trip(self, context, error):
+        code = getattr(error, "code", None) or ("NATIVE_READ_TIMEOUT" if isinstance(error, TimeoutError) else "READ_PIPELINE_FAILED")
+        try:
+            scope(context)
+        except ValueError:
+            context = None
+        self.cache.suspend_reads(context, code=code, message="The native read pipeline failed; no further reads will be attempted automatically")
+        return self.read_block(context)
 
     def catalog(self):
         catalog = copy.deepcopy(self.upstream.rpc("tools/list"))
@@ -154,6 +182,14 @@ class Adapter:
                 self.schedule(context, "inventory", force=True)
 
     def fetch_body(self, context, conversation_id, request_started, *, force=False, read_context=None):
+        blocked = self.read_block(context)
+        if blocked:return blocked
+        try:
+            return self._fetch_body(context, conversation_id, request_started, force=force, read_context=read_context)
+        except Exception as error:
+            return self.trip(context, error)
+
+    def _fetch_body(self, context, conversation_id, request_started, *, force=False, read_context=None):
         with self.cache.fetch_lock(context, conversation_id):
             status = self.identity(context)
             if status is None:
@@ -176,7 +212,15 @@ class Adapter:
             args = {"context": context, "id": conversation_id, "mode": "raw", "branch": "all"}
             if hint:
                 args["read_context"] = hint
+            blocked = self.read_block(context)
+            if blocked:return blocked
             response = self.upstream.tool("chatgpt_get_conversation", args)
+            native_error = unpack(response).get("error") or {}
+            native_status = (native_error.get("details") or {}).get("status")
+            if isinstance(native_status, int) and (native_status in (401, 403) or native_status >= 500):
+                return self.trip(context, StdioProtocolError("AUTH_REQUIRED" if native_status in (401, 403) else "BACKEND_UNAVAILABLE", "The backend read failed"))
+            if native_error and native_status not in (404, 429) and native_error.get("code") not in {"RATE_LIMITED", "PACING_WAIT", "RESOURCE_SCOPE_MISMATCH"}:
+                return self.trip(context, StdioProtocolError(native_error.get("code", "READ_PIPELINE_FAILED"), "Native read pipeline stopped"))
             # Consume events emitted during the read before deciding whether the
             # new snapshot can be called clean. Its raw bytes are always retained.
             current = self.identity(context)
@@ -187,6 +231,8 @@ class Adapter:
                               failure_signature=signature)
             if response.get("isError") or "error" in unpack(response):
                 return response
+            if unpack(response).get("complete") is not True:
+                return self.trip(context, StdioProtocolError("INCOMPLETE_NATIVE_READ", "Incomplete raw data was retained; native reads stopped"))
             job = self.cache.refresh_job(context, "body", conversation_id)
             if job and job["state"] in ("queued", "running") and job["requested_at"] <= started_at:
                 self.cache.finish_refresh(job)
@@ -206,6 +252,8 @@ class Adapter:
         mode, branch, policy = arguments.get("mode", "normalized"), arguments.get("branch", "active"), arguments.get("cache_policy", "prefer_cache")
         if mode not in ("raw", "normalized") or branch not in ("active", "all") or policy not in ("prefer_cache", "refresh", "cache_only", "inventory_snapshot"):
             return failure("INVALID_ARGUMENT", "Invalid mode, branch or cache_policy")
+        blocked = self.read_block(context, local_only=policy == "cache_only")
+        if blocked:return blocked
         status = self.identity(context)
         if status is None:
             return failure("CONTEXT_CHANGED", "The authenticated native account/workspace does not match the request")
@@ -260,6 +308,15 @@ class Adapter:
         return packed(data, result.get("isError", False))
 
     def tool(self, name, arguments):
+        context = arguments.get("context") if isinstance(arguments, dict) else None
+        blocked = self.read_block(context, local_only=name == "chatgpt_get_conversation" and isinstance(arguments, dict) and arguments.get("cache_policy") == "cache_only")
+        if blocked:return blocked
+        try:
+            return self._tool(name, arguments)
+        except Exception as error:
+            return self.trip(context, error)
+
+    def _tool(self, name, arguments):
         if name == "chatgpt_get_conversation":
             return self.conversation(arguments)
         # Forward every write/preview/approval/undo unchanged. Cached plans only

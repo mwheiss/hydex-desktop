@@ -29,6 +29,9 @@ def launch_worker(config, kind, descriptor):
 def schedule(config, cache, context, kind, identifier="", *, interval=0, force=False, launcher=None):
     if kind not in ("body", "inventory"):
         raise ValueError("Only native read jobs can run in the background")
+    control = cache.read_control(context)
+    if control:
+        return {"state": "paused", "retry_at": None, "error": {"code": "READS_PAUSED", "message": "Native reads are suspended"}}
     with cache.queue_lock():
         job = cache.queue_refresh(context, kind, identifier, interval=interval, force=force)
         if job["state"] not in ("queued", "running"):
