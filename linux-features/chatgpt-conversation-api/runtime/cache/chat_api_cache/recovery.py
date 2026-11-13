@@ -24,7 +24,9 @@ def probe(config, identifier, *, resume=False):
             started=time.time();version=cache.version(context,identifier)
             response=upstream.tool('chatgpt_get_conversation',args)
             data=unpack(response)
-            cache.record(context,identifier,response,started_at=started,metadata_version=version)
+            error=data.get('error') or {}
+            cache.record(context,identifier,response,started_at=started,metadata_version=version,
+                         attempt_only=bool(error) and (error.get('details') or {}).get('status')!=404)
             if response.get('isError') or not data.get('complete'):
                 raise StdioProtocolError((data.get('error') or {}).get('code','PROBE_INCOMPLETE'),'The probe did not return a complete raw snapshot')
             current=unpack(upstream.tool('chatgpt_get_status',{}))

@@ -208,6 +208,10 @@ probe retains a complete raw snapshot, checks identity/connection and requires
 no old active inventory before explicitly clearing the gate. It never grants
 write permission or retries a native mutation.
 
+Revision 6 advances a shared recovery generation after explicit resumption.
+Persistent MCP adapters may replace a closed connection only after that change;
+an old poisoned stream cannot reopen the circuit immediately after a good probe.
+
 Disabling the feature takes effect after rebuild/restart and removes its staged
 resources. The journal is intentionally retained for audit/recovery. After all
 jobs are resolved and the application has exited, the user may remove that

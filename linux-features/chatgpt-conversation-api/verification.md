@@ -12,7 +12,7 @@ raw JSON in one page. Its following ping succeeded; a local projection produced
 conversation mutation was performed. These are scoped probes, not a claim that
 every remaining conversation or the account inventory is complete.
 
-Validation: 70 adjacent native tests, 58 portable cache tests, and 105 workspace
+Validation: 70 adjacent native tests, 59 portable cache tests, and 106 workspace
 tests pass. Coverage includes persistent stop-after-first-failure behavior,
 worker suspension/cancellation, explicit one-shot recovery, exact large-payload
 retention, and preserving snapshots/vectors. Native account and batch-approval

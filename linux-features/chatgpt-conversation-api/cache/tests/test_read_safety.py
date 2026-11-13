@@ -116,6 +116,7 @@ def test_server_failure_trips_circuit_without_marking_chat_unavailable(setup):
     adapter,upstream,_=setup
     upstream.error_status=503
     assert unpack(read(adapter,mode='raw'))['error']['code']=='READ_CIRCUIT_OPEN'
+    assert adapter.cache.db.execute('SELECT http_status FROM attempts ORDER BY sequence DESC LIMIT 1').fetchone()[0]==503
     assert adapter.cache.db.execute("SELECT count(*) FROM index_events WHERE kind='unavailable'").fetchone()[0]==0
 
 
@@ -202,3 +203,30 @@ def test_suspended_inventory_cancels_only_its_native_read_job(setup,monkeypatch)
     assert worker.run_job(config,adapter.cache,upstream,job)['code']=='READS_PAUSED'
     assert cancelled==['inventory-one']
     assert adapter.cache.refresh_job(CTX,'inventory')['state']=='paused'
+
+
+def test_persistent_adapter_reconnects_only_after_explicit_recovery_epoch(setup,monkeypatch):
+    import chat_api_cache.server as server
+    from test_cache import Upstream
+    adapter,upstream,_=setup
+    original=upstream.tool;upstream.closed=False
+    def fail(name,args):
+        if name=='chatgpt_get_conversation':
+            upstream.closed=True
+            raise StdioProtocolError('NATIVE_READ_TIMEOUT','Synthetic timeout')
+        return original(name,args)
+    upstream.tool=fail
+    assert unpack(read(adapter,mode='raw'))['error']['code']=='READ_CIRCUIT_OPEN'
+    opened=[]
+    class Recovered(Upstream):
+        def __init__(self):super().__init__();self.closed=False
+        def rpc(self,method,params=None):return {} if method=='initialize' else super().rpc(method,params)
+        def send(self,*_):pass
+    def connect(*_a,**_k):
+        fresh=Recovered();opened.append(fresh);return fresh
+    monkeypatch.setattr(server,'StdioClient',connect)
+    assert unpack(read(adapter,mode='raw'))['error']['code']=='READ_CIRCUIT_OPEN'
+    assert opened==[]
+    adapter.cache.resume_reads(CTX)
+    assert not read(adapter,mode='raw')['isError']
+    assert len(opened)==1 and opened[0].reads==1

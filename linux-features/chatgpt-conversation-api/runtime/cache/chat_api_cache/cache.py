@@ -120,6 +120,11 @@ class Cache:
         # No tool argument or expiry can clear the circuit automatically.
         with self.db:
             self.db.execute("DELETE FROM read_controls WHERE scope=?", (scope(context) if context is not None else "global",))
+            self.db.execute("INSERT OR REPLACE INTO events VALUES ('read_recovery_epoch',?)", (str(uuid.uuid4()),))
+
+    def read_epoch(self):
+        row = self.db.execute("SELECT value FROM events WHERE key='read_recovery_epoch'").fetchone()
+        return row[0] if row else None
 
     def pause_refresh(self, job, error):
         with self.db:
@@ -294,9 +299,9 @@ class Cache:
                              json.dumps(error) if error else None))
         return self.targeted_check(context, conversation_id)
 
-    def record(self, context, conversation_id, response, *, started_at=None, metadata_version=None, failure_signature=None):
+    def record(self, context, conversation_id, response, *, started_at=None, metadata_version=None, failure_signature=None, attempt_only=False):
         """Retain the native API's exact JSON text, including unknown fields and errors."""
-        encoded = json.dumps(response, ensure_ascii=True, separators=(",", ":")).encode()
+        encoded = json.dumps({key:value for key,value in response.items() if key != "_native_json_text"}, ensure_ascii=True, separators=(",", ":")).encode()
         data = response.get("structuredContent")
         if data is None:
             data = json.loads(next(c["text"] for c in response["content"] if c.get("type") == "text"))
@@ -307,6 +312,8 @@ class Cache:
             self.db.execute("INSERT INTO attempts(scope,id,at,response,error_code,http_status,metadata_version) VALUES (?,?,?,?,?,?,?)",
                             (scope(context), conversation_id, timestamp, zlib.compress(encoded), error.get("code"),
                              (error.get("details") or {}).get("status"), version))
+            if attempt_only:
+                return
             if not response.get("isError") and "error" not in data:
                 text = response.get("_native_json_text") or next((c["text"] for c in response.get("content", []) if c.get("type") == "text"),
                             json.dumps(data, ensure_ascii=False))

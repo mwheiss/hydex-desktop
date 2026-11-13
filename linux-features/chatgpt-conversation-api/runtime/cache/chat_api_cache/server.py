@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .cache import Cache, scope
 from .transport import StdioProtocolError
+from .transport import StdioClient
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -79,6 +80,21 @@ class Adapter:
         self.config, self.upstream = config, upstream
         self.cache = cache or Cache(config["directory"])
         self.launcher = launcher
+        self.recovery_epoch = self.cache.read_epoch()
+        self.cached_catalog = None
+
+    def ensure_upstream(self):
+        epoch = self.cache.read_epoch()
+        if getattr(self.upstream, "closed", False) and epoch != self.recovery_epoch:
+            # A closed stream is never reused. Reconnect only after an explicit
+            # successful recovery advanced the shared epoch, never on a timer.
+            self.recovery_epoch = epoch
+            self.upstream = StdioClient(self.config["upstream"])
+            self.upstream.rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "hydex-read-recovery", "version": "5"}})
+            self.upstream.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+            self.cached_catalog = None
+        if not getattr(self.upstream, "closed", False):
+            self.recovery_epoch = epoch
 
     def read_block(self, context=None, *, local_only=False):
         try:
@@ -101,7 +117,10 @@ class Adapter:
         return self.read_block(context)
 
     def catalog(self):
-        catalog = copy.deepcopy(self.upstream.rpc("tools/list"))
+        if self.cached_catalog is None:
+            self.ensure_upstream()
+            self.cached_catalog = copy.deepcopy(self.upstream.rpc("tools/list"))
+        catalog = copy.deepcopy(self.cached_catalog)
         for tool in catalog["tools"]:
             if tool["name"] == "chatgpt_get_conversation":
                 tool["inputSchema"]["properties"]["cache_policy"] = {
@@ -118,6 +137,7 @@ class Adapter:
         return catalog
 
     def identity(self, context):
+        self.ensure_upstream()
         response = self.upstream.tool("chatgpt_get_status", {})
         data = unpack(response)
         if response.get("isError") or not data.get("connected") or data.get("context") != context:
@@ -218,8 +238,10 @@ class Adapter:
             native_error = unpack(response).get("error") or {}
             native_status = (native_error.get("details") or {}).get("status")
             if isinstance(native_status, int) and (native_status in (401, 403) or native_status >= 500):
+                self.cache.record(context, conversation_id, response, started_at=started_at, metadata_version=version, attempt_only=True)
                 return self.trip(context, StdioProtocolError("AUTH_REQUIRED" if native_status in (401, 403) else "BACKEND_UNAVAILABLE", "The backend read failed"))
             if native_error and native_status not in (404, 429) and native_error.get("code") not in {"RATE_LIMITED", "PACING_WAIT", "RESOURCE_SCOPE_MISMATCH"}:
+                self.cache.record(context, conversation_id, response, started_at=started_at, metadata_version=version, attempt_only=True)
                 return self.trip(context, StdioProtocolError(native_error.get("code", "READ_PIPELINE_FAILED"), "Native read pipeline stopped"))
             # Consume events emitted during the read before deciding whether the
             # new snapshot can be called clean. Its raw bytes are always retained.
@@ -317,6 +339,7 @@ class Adapter:
             return self.trip(context, error)
 
     def _tool(self, name, arguments):
+        self.ensure_upstream()
         if name == "chatgpt_get_conversation":
             return self.conversation(arguments)
         # Forward every write/preview/approval/undo unchanged. Cached plans only
@@ -382,7 +405,8 @@ def serve(config, upstream, input_stream, output_stream):
                     result["serverInfo"]["name"] += "-cached"
                     result["instructions"] = result.get("instructions", "") + " Raw API responses are retained locally. Read cache_info for provenance and freshness. All native write approvals remain mandatory."
                 elif method == "ping":
-                    result = upstream.rpc(method, {})
+                    adapter.ensure_upstream()
+                    result = adapter.upstream.rpc(method, {})
                 elif not initialized:
                     send({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32002, "message": "Initialize the MCP session first"}})
                     continue
@@ -405,4 +429,4 @@ def serve(config, upstream, input_stream, output_stream):
                       "error": {"code": -32600, "message": f"{type(error).__name__}: {error}"}})
     finally:
         adapter.cache.close()
-        upstream.close()
+        adapter.upstream.close()
