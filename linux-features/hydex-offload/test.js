@@ -944,7 +944,7 @@ const {
 } = require("./patch.js");
 
 function fullLocalSubmitFixture() {
-  return 'function localAdapter(e){let scope=e.scope,host=e.hostId,follow=e.followUp,kind=scope.value.kind===`local`?`thread`:`home`,quotaAtom={},readQuota=flag=>{onQuotaRead();return flag&&e.quotaBlocked},quota=readQuota(host===`local`&&quotaAtom);(0,React.useRef)(null);if(e.stop){}else if(follow?.type===`cloud`){}let pending=e.pending&&"pending",policy=e.policyBlocked&&"policy-blocked",approval=e.approvalPending&&"approval-pending",quotaReason=quota&&"usage-limit";let reasons=[pending,policy,approval,quotaReason].filter(Boolean);let disabledReasons=reasons.join(",");return{submitDisabledReasons:disabledReasons,kind,isNativeWork:!0,localFollowUpPreparation:null}}function afterAdapter(){}';
+  return 'function localAdapter(e){let {localFollowUpPreparation:prep}=e;let scope=e.scope,host=e.hostId,kind=scope.value.kind===`local`?`thread`:`home`,quotaAtom={},readQuota=flag=>{onQuotaRead();return flag&&e.quotaBlocked},quota=readQuota(host===`local`&&quotaAtom);(0,React.useRef)(null);let queued=helper({localFollowUpPreparation:prep}),prototype=scope.value.cloudThreadPrototype;let pending=e.pending&&"pending",policy=e.policyBlocked&&"policy-blocked",approval=e.approvalPending&&"approval-pending",quotaReason=quota&&"usage-limit";let reasons=[pending,policy,approval,quotaReason].filter(Boolean);let disabledReasons=reasons.join(",");return{submitDisabledReasons:disabledReasons,kind,isNativeWork:!0,queuedFollowUpSubmission:queued}}function afterAdapter(){}';
 }
 
 function evaluateFullLocalSubmit(mode, configured = false) {
@@ -957,6 +957,7 @@ function evaluateFullLocalSubmit(mode, configured = false) {
     localStorage: storage,
     codexLinuxHydexFullLocalConfigured: configured,
     onQuotaRead() { reads++; },
+    helper:()=>null,
     window: {
       addEventListener(name, fn) { listeners.set(name, fn); },
       removeEventListener(name) { listeners.delete(name); },
@@ -995,7 +996,6 @@ test("non-Full and cloud composers retain their quota submission gates", () => {
     {...local, scope: {value: {kind: "cloud"}}},
     {...local, scope: {value: {kind: "chatgpt"}}},
     {...local, scope: {value: {kind: "new", cloudThreadPrototype: true}}},
-    {...local, followUp: {type: "cloud"}},
   ]) assert.equal(submit(params).submitDisabled, true);
   const remote = {...local, hostId: "remote-host", policyBlocked: true};
   assert.equal(submit(remote).submitDisabled, true);
@@ -1399,4 +1399,23 @@ test('submit-gate asset preflight rejects an ambiguous copy before changing anot
     assert.throws(()=>applyHydexFullLocalSubmitGateAssets(root),/Ambiguous local submit-admission/);
     assert.equal(fs.readFileSync(path.join(root,'webview/assets/async/first.js'),'utf8'),original);
   });
+});
+
+test('current routed follow-up owner retains local-only quota admission and fails on forwarding drift',()=>{
+  const original=fullLocalSubmitFixture();
+  assert.equal(matchesHydexFullLocalSubmitGateContract(original),true);
+  const patched=applyHydexFullLocalSubmitGatePatch(original);
+  assert.notEqual(patched,original);new vm.Script(patched);
+  assert.equal(applyHydexFullLocalSubmitGatePatch(patched),patched);
+  assert.equal(matchesHydexFullLocalSubmitGateContract(original.replace('helper({localFollowUpPreparation:prep})','helper({localFollowUpPreparation:other})')),false);
+  assert.equal(matchesHydexFullLocalSubmitGateContract(original.replace('queuedFollowUpSubmission:queued','unknown:queued')),false);
+  const render=vm.runInNewContext(patched+';localAdapter',{
+    localStorage:{getItem:()=> 'force_full'},window:{addEventListener(){},removeEventListener(){}},
+    React:{useRef(){},useSyncExternalStore(_subscribe,read){return read();}},helper:()=>null,onQuotaRead(){},
+  });
+  const props={scope:{value:{kind:'local'}},hostId:'local',quotaBlocked:true};
+  assert.equal(render(props).submitDisabledReasons,'');
+  assert.equal(render({...props,hostId:'remote',policyBlocked:true}).submitDisabledReasons,'policy-blocked');
+  assert.match(render({...props,scope:{value:{kind:'new',cloudThreadPrototype:true}}}).submitDisabledReasons,/usage-limit/);
+  assert.match(render({...props,policyBlocked:true}).submitDisabledReasons,/policy-blocked/);
 });

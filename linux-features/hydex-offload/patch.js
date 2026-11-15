@@ -416,9 +416,16 @@ function fullLocalSubmitGateMatches(source) {
     const owner=enclosingFunction(source,match.index,60_000);
     if (!owner) return [];
     const region=owner.region,scopeNames=localScopeNames(region),react=uniqueAlias(region,"useRef");
-    const followNames=[...new Set([...region.matchAll(new RegExp(`(${IDENT})\\?\\.type===["\x60]cloud["\x60]`,"g"))].map(m=>m[1]))];
-    if(scopeNames.length!==1 || followNames.length!==1 || !quotaDisabledReasonContract(region, match[1]) || !react) return [];
-    return [{...owner,quota:match,host:match[5]||match[6],scope:scopeNames[0],follow:followNames[0],react}];
+    // Current signed Linux routes queued follow-ups in the local submission
+    // helper, rather than testing a followUp.type in the composer owner. Prove
+    // the unchanged preparation argument is forwarded and the queued result is
+    // rendered before accepting that contract. The local host/scope and
+    // cloudThreadPrototype exclusions below still gate the quota exception.
+    const preparation=[...region.matchAll(new RegExp(`localFollowUpPreparation:(${IDENT})`,"g"))];
+    const routedFollowUp=preparation.length===2 && preparation[0][1]===preparation[1][1] &&
+      /queuedFollowUpSubmission:[A-Za-z_$][\w$]*/.test(region) && region.includes(".value.cloudThreadPrototype");
+    if(scopeNames.length!==1 || !routedFollowUp || !quotaDisabledReasonContract(region, match[1]) || !react) return [];
+    return [{...owner,quota:match,host:match[5]||match[6],scope:scopeNames[0],react}];
   });
 }
 
@@ -435,8 +442,7 @@ function applyHydexFullLocalSubmitGatePatch(source) {
   }
   const match = matches[0];
   const local = `hydexFullLocal&&${match.host}===\`local\`&&` +
-    `(${match.scope}.value.kind===\`local\`||${match.scope}.value.kind===\`new\`&&${match.scope}.value.cloudThreadPrototype!==!0)&&` +
-    `${match.follow}?.type!==\`cloud\``;
+    `(${match.scope}.value.kind===\`local\`||${match.scope}.value.kind===\`new\`&&${match.scope}.value.cloudThreadPrototype!==!0)`;
   let region = match.region.replace(match.quota[0], `${match.quota[0]}&&!(${local})`);
   region = match.opening +
     `let hydexFullLocal=(0,${match.react}.useSyncExternalStore)(codexLinuxHydexFullLocalSubscribe,codexLinuxHydexFullLocalRead,()=>!1);` +
