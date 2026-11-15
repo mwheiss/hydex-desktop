@@ -23,9 +23,10 @@ interpreter metadata beyond the first 2 KiB, where the bundled libc detector
 can no longer see it. The derivation relocates that metadata into verified
 `patchelf` padding so the detector selects glibc without using Electron's
 unsafe report fallback. These checks run against both official architectures.
-Builds apply the required core compatibility patch to `resources/app.asar`;
-the official ELF and native-module payload stays byte-for-byte intact. Optional
-ASAR features remain disabled unless explicitly selected.
+The current signed stable package needs no core compatibility patch. Without
+optional ASAR features, `resources/app.asar` stays byte-for-byte intact, as do
+the official ELF and native modules. Optional ASAR features remain disabled
+unless explicitly selected.
 
 ```bash
 nix run github:ilysenko/hydex-desktop

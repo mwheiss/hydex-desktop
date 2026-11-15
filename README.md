@@ -264,7 +264,7 @@ state.
 | Transactional update manager | Native packages | Included unless built with `PACKAGE_WITH_UPDATER=0` |
 | Official Browser and Chrome integrations | Upstream | Reused from the official Linux package; no legacy port layer |
 | Reliable shell environment startup | Always | Owned by the verified upstream runtime; no core shell-startup patch is applied |
-| Reliable approved quit completion | Always | A required core patch consumes upstream quit approval in the unique `before-quit` owner so teardown reaches `will-quit` |
+| Reliable approved quit completion | Native | The signed upstream runtime consumes quit approval and completes teardown; no core repair is required |
 | Linux feature framework | Tracked defaults plus local overrides | Configure with `make setup-native` |
 | Distinct desktop identity | Always | **Hydex Desktop**, upstream icon, `hydex-desktop` package identity |
 

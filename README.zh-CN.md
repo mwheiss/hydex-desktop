@@ -236,7 +236,7 @@ Nix 用户应从 profile、Home Manager 配置或 NixOS module 中删除该包�
 | 事务式更新管理器 | 原生包 | 除非设置 `PACKAGE_WITH_UPDATER=0` |
 | 官方 Browser 和 Chrome 集成 | 上游提供 | 直接复用官方 Linux 实现，不保留旧移植层 |
 | 可靠的 shell 环境启动 | 始终启用 | 由已验证的上游 runtime 负责；不应用核心 shell 启动补丁 |
-| 可靠地完成已批准的退出 | 始终启用 | 必需的核心补丁在唯一的 `before-quit` owner 中消费上游退出批准，使清理流程能够到达 `will-quit` |
+| 可靠地完成已批准的退出 | 原生支持 | 已签名的上游运行时会消费退出批准并完成清理；无需核心修复补丁 |
 | Linux 可选扩展框架 | 默认关闭 | 使用 `make setup-native` 配置 |
 | 独立桌面标识 | 始终启用 | **Hydex Desktop**、上游原始图标、`hydex-desktop` package identity |
 
