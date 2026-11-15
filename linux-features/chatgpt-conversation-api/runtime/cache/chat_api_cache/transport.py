@@ -17,8 +17,9 @@ class StdioProtocolError(RuntimeError):
 class StdioClient:
     """Dependency-free JSON-lines MCP transport to the existing native server."""
 
-    def __init__(self, settings, timeout=120):
+    def __init__(self, settings, timeout=120, *, approval_timeout=420):
         self.timeout, self.sequence = timeout, 0
+        self.approval_timeout = approval_timeout
         self.closed = False
         self.buffer = bytearray()
         self.process = subprocess.Popen([settings["command"], *settings.get("args", [])],
@@ -42,11 +43,11 @@ class StdioClient:
         self.close()
         raise StdioProtocolError(code, message)
 
-    def rpc(self, method, params=None):
+    def rpc(self, method, params=None, *, timeout=None, timeout_code="NATIVE_READ_TIMEOUT"):
         self.sequence += 1
         request_id = self.sequence
         self.send({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}})
-        deadline = time.monotonic() + self.timeout
+        deadline = time.monotonic() + (self.timeout if timeout is None else timeout)
         while True:
             while b"\n" in self.buffer:
                 line, _, self.buffer = self.buffer.partition(b"\n")
@@ -86,7 +87,7 @@ class StdioClient:
                 return result
             remaining = deadline - time.monotonic()
             if remaining <= 0 or not self.selector.select(remaining):
-                self.broken("NATIVE_READ_TIMEOUT", "The native read timed out; the connection was discarded")
+                self.broken(timeout_code, "The native reply timed out; the connection was discarded without retrying the request")
             chunk = os.read(self.process.stdout.fileno(), 65536)
             if not chunk:
                 self.broken("UPSTREAM_DISCONNECTED", "The native connection closed before replying")
@@ -96,6 +97,12 @@ class StdioClient:
                 raise StdioProtocolError("UPSTREAM_FRAME_TOO_LARGE", "Native upstream frame exceeds 64 MiB")
 
     def tool(self, name, arguments):
+        if name in ("chatgpt_execute_approved_plan", "chatgpt_undo_job"):
+            # Human approval is not a backend body read. Keep its deadline
+            # separate, bounded below the outer project's 480-second tool limit.
+            # Timeout still discards the stream; a write is never replayed.
+            return self.rpc("tools/call", {"name": name, "arguments": arguments},
+                            timeout=self.approval_timeout, timeout_code="NATIVE_APPROVAL_TIMEOUT")
         return self.rpc("tools/call", {"name": name, "arguments": arguments})
 
     def close(self):

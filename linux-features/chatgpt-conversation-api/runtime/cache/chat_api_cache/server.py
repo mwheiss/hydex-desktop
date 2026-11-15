@@ -113,7 +113,8 @@ class Adapter:
             scope(context)
         except ValueError:
             context = None
-        self.cache.suspend_reads(context, code=code, message="The native read pipeline failed; no further reads will be attempted automatically")
+        message = "Native approval/execution did not reply before its deadline; reconcile the plan/job before any retry" if code == "NATIVE_APPROVAL_TIMEOUT" else "The native read pipeline failed; no further reads will be attempted automatically"
+        self.cache.suspend_reads(context, code=code, message=message)
         return self.read_block(context)
 
     def catalog(self):
@@ -347,6 +348,10 @@ class Adapter:
         try:
             return self._tool(name, arguments)
         except Exception as error:
+            if getattr(error, "code", None) == "NATIVE_APPROVAL_TIMEOUT":
+                self.trip(context, error)
+                return failure("UNCERTAIN_MUTATION", "The native approval/execution reply timed out; approval may still be pending. Inspect the native plan/job before retrying. No write was repeated.",
+                               plan_id=arguments.get("plan_id"), job_id=arguments.get("job_id"), approval_may_be_pending=True)
             return self.trip(context, error)
 
     def _tool(self, name, arguments):

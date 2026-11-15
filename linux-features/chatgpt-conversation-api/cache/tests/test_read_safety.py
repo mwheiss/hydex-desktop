@@ -81,6 +81,54 @@ for line in sys.stdin:
     client.close()
 
 
+def test_native_approval_has_its_own_deadline_and_is_not_repeated(tmp_path):
+    import sys
+    script=tmp_path/'approval.py'
+    script.write_text('''import json,sys,time
+for line in sys.stdin:
+ r=json.loads(line)
+ if 'id' not in r:continue
+ if r['method']=='initialize':print(json.dumps({'id':r['id'],'result':{}}),flush=True)
+ else:
+  time.sleep(.15)
+  print(json.dumps({'id':r['id'],'result':{'structuredContent':{'job_id':'fixture-job'}}}),flush=True)
+''')
+    client=StdioClient({'command':sys.executable,'args':[str(script)]},timeout=.04,approval_timeout=.4)
+    try:
+        client.rpc('initialize',{})
+        assert client.tool('chatgpt_execute_approved_plan',{'approval':'request-native'})['structuredContent']['job_id']=='fixture-job'
+        with pytest.raises(StdioProtocolError) as error:client.rpc('ping',{})
+        assert error.value.code=='NATIVE_READ_TIMEOUT' and client.closed
+    finally:client.close()
+
+
+def test_approval_timeout_is_reported_as_uncertain_not_a_read_failure(tmp_path,setup):
+    import sys
+    script=tmp_path/'no-approval.py'
+    script.write_text('''import json,sys,time
+for line in sys.stdin:
+ r=json.loads(line)
+ if 'id' not in r:continue
+ if r['method']=='initialize':print(json.dumps({'id':r['id'],'result':{}}),flush=True)
+ else:time.sleep(10)
+''')
+    client=StdioClient({'command':sys.executable,'args':[str(script)]},timeout=.1,approval_timeout=.05)
+    try:
+        client.rpc('initialize',{})
+        with pytest.raises(StdioProtocolError) as caught:client.tool('chatgpt_execute_approved_plan',{})
+        assert caught.value.code=='NATIVE_APPROVAL_TIMEOUT' and client.closed
+    finally:client.close()
+    adapter,upstream,_=setup
+    calls=[]
+    def pending(name,args):calls.append(name);raise StdioProtocolError('NATIVE_APPROVAL_TIMEOUT','Synthetic human wait')
+    upstream.tool=pending
+    result=unpack(adapter.tool('chatgpt_execute_approved_plan',{'context':CTX,'plan_id':'fixture-plan','approval':'request-native'}))
+    assert result['error']['code']=='UNCERTAIN_MUTATION'
+    assert result['error']['details']['plan_id']=='fixture-plan'
+    assert len(calls)==1 and adapter.cache.read_control(CTX)['error']['code']=='NATIVE_APPROVAL_TIMEOUT'
+
+
+
 def test_one_timeout_opens_persistent_circuit_and_next_chat_makes_no_call(setup):
     adapter,upstream,config=setup
     original=upstream.tool
