@@ -197,8 +197,19 @@ class Adapter:
             job_id = data.get("job_id", data.get("id"))
             if job_id:
                 targets = self.cache.targets(context, job_id, job=True)
-                self.cache.mutation_job(context, job_id, "finished")
+                # A reconstruction creates IDs that did not exist at preview.
+                # Discover them from native job readback, then refresh only those
+                # bodies. The job is evidence, never approval for another write.
+                created = {e.get("after", {}).get("conversation_id") or e.get("result", {}).get("conversation_id")
+                           for e in data.get("entries", []) if isinstance(e, dict)}
+                created = {identifier for identifier in created if isinstance(identifier, str)
+                           and re.fullmatch(r"[A-Za-z0-9_-]{1,200}", identifier)}
+                if targets is not None:
+                    targets = sorted(set(targets) | created)
+                self.cache.mutation_job(context, job_id, "finished", targets)
                 self.cache.invalidate(context, ["job_finished", job_id, data.get("finished_at"), data.get("status")], targets)
+                for identifier in sorted(created):
+                    self.schedule(context, "body", identifier, force=True)
                 self.schedule(context, "inventory", force=True)
 
     def fetch_body(self, context, conversation_id, request_started, *, force=False, read_context=None):

@@ -2,7 +2,7 @@
 
 // Serialized into the authenticated application renderer by patch.js. No Node
 // APIs, tokens, arbitrary URL input, or generic request entrypoint cross IPC.
-function installRenderer(scope, accountAtom, getRequest, getReadHeaders = () => ({})) {
+function installRenderer(scope, accountAtom, getRequest, getReadHeaders = () => ({}), getExperimentClients = null, createExperiments = null) {
   const bridge = globalThis.hydexConversationBridge;
   if (!bridge) return;
   const slot = "__hydexConversationApiRendererV1";
@@ -21,10 +21,13 @@ function installRenderer(scope, accountAtom, getRequest, getReadHeaders = () => 
     globalThis[slot].identity = identity;
     globalThis[slot].getRequest = getRequest;
     globalThis[slot].getReadHeaders = id => getReadHeaders(scope, id);
+    globalThis[slot].getExperimentClients = getExperimentClients;
     bridge.hello(identity()).catch(() => {});
     return;
   }
-  const state = { identity, getRequest, getReadHeaders: id => getReadHeaders(scope, id) };
+  const state = { identity, getRequest, getReadHeaders: id => getReadHeaders(scope, id), getExperimentClients };
+  state.experiments = createExperiments && getExperimentClients ? createExperiments(
+    () => state.getExperimentClients(scope), () => state.getRequest(), () => state.identity()) : null;
   const changed = event => {
     const context = state.identity();
     if (context && typeof bridge.changed === "function") bridge.changed(context, event).catch(() => {});
@@ -57,6 +60,9 @@ function installRenderer(scope, accountAtom, getRequest, getReadHeaders = () => 
       });
       let result;
       switch (request.operation) {
+        case "experiment_start": case "experiment_status": case "experiment_cancel":
+          if (!state.experiments) throw error("OPERATION_UNAVAILABLE");
+          result = await state.experiments(request.operation, a, { before, options, assertRequestCurrent }); break;
         case "identity": result = before; break;
         case "list": result = await client.safeGet("/conversations", options({ parameters: { query: {
           offset: a.offset, limit: a.limit, order: "updated", is_archived: a.archived,

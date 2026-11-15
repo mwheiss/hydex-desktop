@@ -15,9 +15,15 @@ const readContext = { type: "object", additionalProperties: false, properties: {
 const state = { type: "object", additionalProperties: false, required: ["title", "project_id", "archived"],
   properties: { title, project_id: projectId, archived: { type: "boolean" } } };
 const operation = { type: "object", additionalProperties: false, required: ["type", "reason"], properties: {
-  type: { enum: ["rename", "move", "archive", "create_project"] }, reason,
+  type: { enum: ["rename", "move", "archive", "create_project", "create_chat", "send_message", "branch_chat", "import_chat"] }, reason,
   conversation_id: id, title, project_id: projectId, archived: { type: "boolean" }, name: { ...string },
   expected_before: state, memory_scope: { enum: ["project_v2"] },
+  model: { type: "string", minLength: 1, maxLength: 100 }, text: { type: "string", minLength: 1, maxLength: 100000 },
+  message_id: id, source_conversation_id: id,
+  source_snapshot_sha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
+  test_file: { type: "object", additionalProperties: false, required: ["name", "text", "synthetic"], properties: {
+    name: { type: "string", maxLength: 84 }, text: { type: "string", minLength: 1, maxLength: 65536 }, synthetic: { const: true },
+  } }, history: { type: "object" }, loss_report: { type: "string", minLength: 1, maxLength: 16000 },
 } };
 const plan = { type: "object", additionalProperties: false, required: ["operations"], properties: {
   operations: { type: "array", minItems: 1, maxItems: 1000, items: operation },

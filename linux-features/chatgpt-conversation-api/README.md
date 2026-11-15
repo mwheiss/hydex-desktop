@@ -1,5 +1,52 @@
 # ChatGPT Conversation API
 
+## Experimental chat continuation and text-history import
+
+`experimental-settings.example.json` enables `mutationsEnabled` and the separate
+`experimentalChatWrites` opt-in. Both are required for execution; the normal
+profile stays read-only. Rebuild and restart Desktop to activate the renderer
+and main-process support. Every write still requires the actual native dialog
+for that exact hash-bound batch.
+
+`chatgpt_preview_changes` accepts four additional operation types in a separate
+experimental batch:
+
+- `create_chat`: explicit native `model` slug and initial `text`; optional
+  `test_file: {name, text, synthetic:true}` uploads one synthetic `.txt` file of
+  at most 64 KiB using the official native upload helper, without library storage.
+- `send_message`: `conversation_id`, explicit `model`, and `text`. Preview freezes
+  the current parent and full source snapshot digest. A changed source invalidates
+  approval. At most one write per target chat per batch is allowed.
+- `branch_chat`: `conversation_id` and optional message node `message_id` (default
+  current node). Uses the native new-branch route; its returned nested conversation
+  identity must differ from the source.
+- `import_chat`: validated Claude-format plain-text `history`, a mandatory
+  `loss_report`, and optional `source_conversation_id` with its canonical
+  `source_snapshot_sha256` for provenance/concurrency checks. This creates a
+  new identity. It does not restore private context,
+  opaque reasoning, executable tools, files, memory or Project/GPT configuration.
+
+All operations require a `reason`. Plans are limited to 1 MiB with no automatic
+truncation. Source continuation currently supports completed, unarchived ordinary
+chats outside Projects/GPTs. Text/role readback verifies imports. A mismatch keeps
+the new identity in the journal and reports a fidelity failure. Created chats,
+messages and uploaded files have no automatic undo or deletion.
+
+Message generation reuses the official high-level transport, including its
+requirements/integrity handling. Renderer tasks are polled locally rather than
+keeping IPC open for a long generation. The main journal records intent before
+dispatch and preserves discovered chat/file IDs. Unknown outcomes never trigger
+another write on resume. Cancellation requests native transport cancellation; it
+does not prove that a server-side generation stopped or undo its output.
+
+The organization workspace provides `python -m chat_reconstitution` for private
+plans, provenance/loss reports, exact-batch execution receipts and canary controls.
+Its separate write workflow does not broaden the search client's read allow-list.
+The web canary serves an unguessable HTTPS-proxied page with a persistent timeout,
+`no-store` headers and token-free access logs. Recall requires fresh public
+`410 Gone` verification. Expiry cannot erase prior tool output or a fetcher's
+cached page, so passing a single fact never establishes full context fidelity.
+
 An experimental, disabled-by-default native ChatGPT conversation management
 feature. It manages ordinary ChatGPT conversations and native Projects through
 the desktop's authenticated request service. Codex sessions and cloud Work tasks

@@ -933,3 +933,136 @@ test("feature resources stage with traversable directories, exact file modes and
   fs.writeFileSync(config, JSON.stringify({ enabled: [] }));
   stageEnabledLinuxFeatureInstall(app, options); assert.equal(fs.existsSync(installed), false);
 });
+
+
+// Reconstitution is opt-in and always uses the same native approval executor.
+const reconstruction = require("./runtime/reconstitution.js");
+const { installExperiments } = require("./renderer-experiments.js");
+function importFixture() {
+  const stamp = "2026-11-15T12:00:00Z";
+  return { uuid: "11111111-1111-4111-8111-111111111111", name: "Synthetic import", created_at: stamp, updated_at: stamp,
+    chat_messages: [{ uuid: "22222222-2222-4222-8222-222222222222", sender: "human", text: "Synthetic source",
+      created_at: stamp, updated_at: stamp, content: [{ type: "text", text: "Synthetic source" }], attachments: [], files: [] }] };
+}
+function experimentBackend(backend) {
+  const original = backend.call.bind(backend); let issued = 0;
+  backend.call = async (operation, args, context) => {
+    if (operation === "experiment_cancel") return {task_id: args.task_id, status: "unknown"};
+    if (operation !== "experiment_start") return original(operation, args, context);
+    issued++; const op = args.operation, id = op.conversation_id && op.type === "send_message" ? op.conversation_id : `new-chat-${issued}`;
+    let raw;
+    if (op.type === "branch_chat") { raw = clone(backend.records.get(op.conversation_id)); raw.conversation_id = id; raw.current_node = op.message_id; }
+    else {
+      raw = op.type === "send_message" ? clone(backend.records.get(id)) : { conversation_id: id, title: "Synthetic", is_archived: false, gizmo_id: null, current_node: "root", mapping: { root: { id: "root", parent: null, children: [], message: null } } };
+      const messages = op.type === "import_chat" ? op.history.chat_messages.map(m => message(m.uuid, m.sender === "human" ? "user" : "assistant", "text", {parts:[m.text]}))
+        : [message(op.user_message_id, "user", "text", {parts:[op.text]}), message(`reply-${issued}`, "assistant", "text", {parts:["READY"]})];
+      for (const m of messages) { raw.mapping[raw.current_node].children.push(m.id); raw.mapping[m.id]={id:m.id,parent:raw.current_node,children:[],message:m};raw.current_node=m.id; }
+    }
+    backend.records.set(id, raw);
+    return {task_id:args.task_id,status:"completed",result:{conversation_id:id,stream_complete:true}};
+  };
+  return () => issued;
+}
+test("experimental writes default off, use closed schemas and preview never mutates", async t => {
+  const {service,backend} = fixture(t);
+  await assert.rejects(preview(service,[{type:"create_chat",model:"native-model",text:"Synthetic",reason:"Test"}]), code("EXPERIMENTS_DISABLED"));
+  assert.equal(backend.mutations.length,0);
+  assert.equal(patch.settingsOf().experimentalChatWrites,false);
+  assert.throws(()=>patch.settingsOf({experimentalChatWrites:"yes"}));
+  assert.throws(()=>reconstruction.importPayload({...importFixture(),url:"https://example.test"}),code("INVALID_ARGUMENT"));
+  const history=importFixture();history.chat_messages.push(clone(history.chat_messages[0]));
+  assert.throws(()=>reconstruction.importPayload(history),code("INVALID_ARGUMENT"));
+  assert.throws(()=>reconstruction.testFile({name:"../secret.txt",text:"x",synthetic:true}),code("INVALID_ARGUMENT"));
+  assert.throws(()=>reconstruction.testFile({name:"test.txt",text:"x",synthetic:false}),code("INVALID_ARGUMENT"));
+});
+test("creating, importing and branching chats require one native exact-batch approval and verified readback", async t => {
+  const {service,backend,approvals}=fixture(t,{settings:{experimentalChatWrites:true}}), issued=experimentBackend(backend);
+  const plan=await preview(service,[{type:"create_chat",model:"native-model",text:"Synthetic prompt",reason:"Test"},
+    {type:"import_chat",history:importFixture(),loss_report:"Text-only synthetic test",reason:"Test"},
+    {type:"branch_chat",conversation_id:"c1",reason:"Test"}]);
+  assert.equal(issued(),0);assert.equal(approvals.length,0);
+  const job=await finish(service,(await execute(service,plan)).job_id);
+  assert.equal(job.status,"completed");assert.equal(issued(),3);assert.equal(approvals.length,1);
+  assert.equal(job.entries.every(e=>e.status==="verified"),true);
+  assert.equal(backend.records.get("c1").current_node,"reply");
+  assert.equal((await service.undo({context:CONTEXT,job_id:job.id,approval:"request-native"})).status,"nothing_to_undo");
+});
+test("experimental rejection and parent/source races never issue writes", async t => {
+  const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true},approve:async()=>false}), issued=experimentBackend(backend);
+  const plan=await preview(service,[{type:"send_message",conversation_id:"c1",model:"native-model",text:"test",reason:"Test"}]);
+  await assert.rejects(execute(service,plan),code("APPROVAL_DENIED"));assert.equal(issued(),0);
+  service.approve=async()=>true;backend.records.get("c1").update_time++;
+  await assert.rejects(execute(service,plan),code("CONCURRENT_UPDATE"));assert.equal(issued(),0);
+  await assert.rejects(preview(service,[{type:"send_message",conversation_id:"c4",model:"native-model",text:"test",reason:"Test"}]),code("OPERATION_UNAVAILABLE"));
+});
+test("uncertain chat creation is durable and never submitted a second time", async t => {
+  const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true}});let issued=0;
+  backend.hook=async name=>{if(name==="experiment_start"){issued++;throw new ApiError("NATIVE_TIMEOUT","Synthetic lost response");}};
+  const plan=await preview(service,[{type:"create_chat",model:"native-model",text:"test",reason:"Test"}]);
+  const first=await finish(service,(await execute(service,plan)).job_id);
+  assert.equal(first.entries[0].status,"uncertain");assert.equal(issued,1);
+  const second=await finish(service,(await execute(service,plan,{resume_job_id:first.id})).job_id);
+  assert.equal(second.entries[0].status,"uncertain");assert.equal(issued,1);
+});
+test("import readback mismatch retains the new identity and reports a fidelity failure", async t => {
+  const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true}});experimentBackend(backend);
+  const original=backend.call.bind(backend);
+  backend.call=async(name,args,context)=>{const r=await original(name,args,context);if(name==="experiment_start")backend.records.get(r.result.conversation_id).mapping[importFixture().chat_messages[0].uuid].message.content.parts=["Changed"];return r;};
+  const plan=await preview(service,[{type:"import_chat",history:importFixture(),loss_report:"Text-only",reason:"Test"}]);
+  const job=await finish(service,(await execute(service,plan)).job_id);
+  assert.equal(job.entries[0].status,"uncertain");assert.equal(job.entries[0].error.code,"IMPORT_FIDELITY_MISMATCH");
+  assert.ok(job.entries[0].result.conversation_id);
+});
+test("renderer tasks reuse native transport, retain upload IDs, and reject duplicate-task changes",async()=>{
+  let starts=0,uploads=0,callbacks;const requests=[];
+  const client={transport:{startCompletionStream:async options=>{starts++;callbacks=options;requests.push(options.request);return {streamRequestId:"stream-1"};},cancelStream:()=>{}},
+    upload:async()=>{uploads++;return {id:"file-synthetic",name:"canary.txt",size:4,mimeType:"text/plain"};}};
+  const originalFile=globalThis.File;globalThis.File??=class {constructor(parts,name,options){this.name=name;this.type=options.type;}};
+  try{
+    const run=installExperiments(()=>client,()=>({}),()=>CONTEXT);
+    const env={before:CONTEXT,options:x=>x,assertRequestCurrent:()=>{}};
+    const operation={type:"create_chat",model:"native-model",text:"Read file",user_message_id:"frozen-message",parent_message_id:"root",test_file:{name:"canary.txt",text:"held-out"}};
+    const args={task_id:"task-1",operation};await run("experiment_start",args,env);
+    await new Promise(r=>setImmediate(r));await run("experiment_start",args,env);
+    assert.equal(starts,1);assert.equal(uploads,1);assert.equal(requests[0].messages[0].metadata.attachments[0].id,"file-synthetic");
+    assert.equal(JSON.stringify(requests[0]).includes("held-out"),false);
+    callbacks.onDecodedEvent({update:{conversationId:"new-native-chat"}});callbacks.onComplete();
+    const result=await run("experiment_status",{task_id:"task-1"},env);
+    assert.equal(result.status,"completed");assert.equal(result.result.file_id,"file-synthetic");assert.equal(result.result.conversation_id,"new-native-chat");
+    await assert.rejects(run("experiment_start",{...args,operation:{...operation,text:"Changed"}},env));
+    await assert.rejects(run("experiment_status",{task_id:"task-1"},{...env,before:{...CONTEXT,account_id:"other"}}));
+  }finally{globalThis.File=originalFile;}
+});
+test("experimental patch resolution is unique, opt-in, idempotent and fails closed on native drift",()=>{
+  const transport='transport(e,t,n){n.d(t,{client:()=>H});class F{async startCompletionStream(o){Request.streamPost("/f/conversation",o)}}let H=(0,s.vP)(c.u,({scope:e})=>new F(e));}';
+  const upload='upload(e,t,n){n.d(t,{uploadChatGptConversationFile:()=>b});function b(){}}';
+  const routes='experimentalRoutes(e,t,n){let x=["/conversation/new_branch",{is_do_not_remember:true,parent_message_id:1,mime_type:e.mimeType}];}';
+  const chunk=CHUNK.replace('routes(e,t,n){',`${transport},${upload},${routes},routes(e,t,n){`);
+  const importer='Request.safePost("/data-import/conversation",{requestBody:{source:q,conversation:a.source}})';
+  const patched=patch.patchRenderer(chunk,{experimentalChatWrites:true},importer);
+  assert.equal(patch.patchRenderer(patched,{experimentalChatWrites:true},importer),patched);
+  assert.throws(()=>patch.patchRenderer(chunk,{experimentalChatWrites:true},""));
+  assert.throws(()=>patch.patchRenderer(chunk.replace('"/f/conversation"','"/wrong"'),{experimentalChatWrites:true},importer));
+  assert.throws(()=>patch.patchRenderer(patched,{}));
+});
+
+
+test("lost start response is recovered by local task lookup without resubmission",async t=>{
+  const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true}});const issued=experimentBackend(backend),original=backend.call.bind(backend);let retained;
+  backend.call=async(name,args,context)=>{if(name==="experiment_status")return retained;const result=await original(name,args,context);if(name==="experiment_start"){retained=result;throw new ApiError("NATIVE_TIMEOUT","Lost response");}return result;};
+  const plan=await preview(service,[{type:"create_chat",model:"native-model",text:"Synthetic",reason:"Test"}]);
+  const first=await finish(service,(await execute(service,plan)).job_id);assert.equal(first.entries[0].status,"uncertain");
+  const resumed=await finish(service,(await execute(service,plan,{resume_job_id:first.id})).job_id);
+  assert.equal(resumed.entries[0].status,"verified");assert.equal(issued(),1);
+});
+test("an import source digest must match the actual current snapshot",async t=>{
+  const {service}=fixture(t,{settings:{experimentalChatWrites:true}});
+  await assert.rejects(preview(service,[{type:"import_chat",source_conversation_id:"c1",source_snapshot_sha256:"0".repeat(64),history:importFixture(),loss_report:"Text-only",reason:"Test"}]),code("CONCURRENT_UPDATE"));
+});
+test("native branch readback uses the documented nested conversation response",async()=>{
+  const requests=[];const run=installExperiments(()=>({}),()=>({safePost:async(route,options)=>{requests.push([route,options.requestBody]);return {conversation:{conversation_id:"new-branch"}};}}),()=>CONTEXT);
+  const env={before:CONTEXT,options:x=>x,assertRequestCurrent(){}};
+  await run("experiment_start",{task_id:"branch-task",operation:{type:"branch_chat",conversation_id:"c1",message_id:"reply"}},env);
+  await new Promise(r=>setImmediate(r));const task=await run("experiment_status",{task_id:"branch-task"},env);
+  assert.equal(task.result.conversation_id,"new-branch");assert.equal(task.status,"completed");assert.equal(requests[0][0],"/conversation/new_branch");
+});

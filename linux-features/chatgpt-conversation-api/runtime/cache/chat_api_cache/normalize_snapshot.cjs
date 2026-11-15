@@ -31,7 +31,8 @@ try {
     conversation.projection = { kind: "visible_message_text", source_snapshot_sha256: snapshot_sha256,
       note: "Indexing projection only; the full raw API response is retained separately." };
   }
-  process.stdout.write(JSON.stringify({ conversation }));
+  const { digest } = require(path.join(path.dirname(path.resolve(process.argv[2])), "common.js"));
+  process.stdout.write(JSON.stringify({ conversation, source_pages_sha256: digest(pages) }));
 } catch (error) {
   process.stdout.write(JSON.stringify({ error: { code: error.code ?? "CACHE_NORMALIZATION_FAILED", message: error.message } }));
 }

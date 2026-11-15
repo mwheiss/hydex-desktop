@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { installRenderer, installPreload } = require("./renderer.js");
+const { installExperiments } = require("./renderer-experiments.js");
 const { extractedAppPatch } = require("../../scripts/patches/descriptor.js");
 const { findMatchingBrace, escapeRegExp } = require("../../scripts/patches/lib/minified-js.js");
 
@@ -34,14 +35,14 @@ function chunkModules(source) {
 }
 
 function settingsOf(settings = {}) {
-  const allowed = ["mutationsEnabled", "sharedProjectMovesEnabled", "minDelayMs", "maxOperations"];
+  const allowed = ["mutationsEnabled", "experimentalChatWrites", "sharedProjectMovesEnabled", "minDelayMs", "maxOperations"];
   if (Object.keys(settings).some(k => !allowed.includes(k))) throw Error("Unknown conversation API setting.");
-  for (const key of ["mutationsEnabled", "sharedProjectMovesEnabled"]) {
+  for (const key of ["mutationsEnabled", "experimentalChatWrites", "sharedProjectMovesEnabled"]) {
     if (settings[key] !== undefined && typeof settings[key] !== "boolean") throw Error(`${key} must be boolean.`);
   }
   if (settings.minDelayMs !== undefined && (!Number.isInteger(settings.minDelayMs) || settings.minDelayMs < 250 || settings.minDelayMs > 60000)) throw Error("minDelayMs must be between 250 and 60000.");
   if (settings.maxOperations !== undefined && (!Number.isInteger(settings.maxOperations) || settings.maxOperations < 1 || settings.maxOperations > 1000)) throw Error("maxOperations must be between 1 and 1000.");
-  return { mutationsEnabled: false, sharedProjectMovesEnabled: false, minDelayMs: 500, maxOperations: 1000, ...settings };
+  return { mutationsEnabled: false, experimentalChatWrites: false, sharedProjectMovesEnabled: false, minDelayMs: 500, maxOperations: 1000, ...settings };
 }
 function unique(source, regex, description) {
   const found = [...source.matchAll(regex)];
@@ -83,7 +84,7 @@ function patchChangeHooks(source) {
   if (hadChanges && next !== source) throw Error("Conversation API change hooks are partially patched.");
   return next;
 }
-function patchRenderer(source) {
+function patchRenderer(source, settings = {}, experimentalContracts = source) {
   const anchor = unique(source, identityAnchor, "authenticated ChatGPT account snapshot");
   const modules = chunkModules(source);
   const auth = modules.find(m => m.start <= anchor.index && m.end > anchor.index);
@@ -118,14 +119,27 @@ function patchRenderer(source) {
   });
   if (contexts.length !== 1) throw Error("Conversation API drift: expected one native Project/owner header resolver.");
   const headers = "hydexConversationApiReadHeadersV1";
+  let experiments = "";
+  if (settingsOf(settings).experimentalChatWrites) {
+    const transports = modules.filter(m => m.source.includes('Request.streamPost(') && m.source.includes('"/f/conversation"') && m.source.includes("async startCompletionStream("));
+    const uploads = modules.filter(m => m.source.includes("uploadChatGptConversationFile:"));
+    if (transports.length !== 1 || uploads.length !== 1) throw Error("Conversation API drift: experimental native transport/upload helpers missing or ambiguous.");
+    const atom = unique(transports[0].source, new RegExp(String.raw`let (?<atom>${ID})=\(0,${ID}\.${ID}\)\(${ID}\.${ID},\(\{scope:(?<scope>${ID})\}\)=>new ${ID}\(\k<scope>\)\)`, "g"), "native transport atom");
+    const exported = unique(transports[0].source, new RegExp(String.raw`(?<key>${ID}):\(\)=>${escapeRegExp(atom.groups.atom)}(?=[,}])`, "g"), "native transport atom export");
+    experiments = `const hydexConversationApiExperimentsV1=scope=>({transport:scope.get(${auth.require}(${JSON.stringify(transports[0].id)})[${JSON.stringify(exported.groups.key)}]),upload:(file,options)=>${auth.require}(${JSON.stringify(uploads[0].id)}).uploadChatGptConversationFile(scope,file,options)});`;
+    if (!experimentalContracts.includes('Request.safePost("/data-import/conversation"') || !experimentalContracts.includes('requestBody:{source:')) throw Error("Conversation API drift: native text-history importer is missing.");
+    for (const contract of ['"/conversation/new_branch"', 'is_do_not_remember:', 'parent_message_id:', 'mime_type:e.mimeType']) {
+      if (!source.includes(contract)) throw Error(`Conversation API drift: missing experimental native contract ${contract}.`);
+    }
+  }
   const capture = `const ${loader}=()=>${auth.require}(${JSON.stringify(requests[0].id)}).Request;` +
-    `const ${headers}=(scope,id)=>${auth.require}(${JSON.stringify(contexts[0].module)})[${JSON.stringify(contexts[0].key)}](scope,id);`;
+    `const ${headers}=(scope,id)=>${auth.require}(${JSON.stringify(contexts[0].module)})[${JSON.stringify(contexts[0].key)}](scope,id);` + experiments;
   const bodyStart = auth.start + auth.source.indexOf("{") + 1;
   const captured = source.startsWith(capture, bodyStart);
   if (captured !== source.includes(MARK) || !captured && (auth.source.includes(loader) || auth.source.includes(headers))) {
     throw Error("Conversation API request loader is incomplete or collides with a native binding.");
   }
-  const extra = `,(${installRenderer.toString()})(${scope},${current.groups.account},${loader},${headers})${MARK}`;
+  const extra = `,(${installRenderer.toString()})(${scope},${current.groups.account},${loader},${headers}${experiments ? `,hydexConversationApiExperimentsV1,(${installExperiments.toString()})` : ""})${MARK}`;
   const next = insert(source, anchor, extra);
   return patchChangeHooks(captured ? next : next.slice(0, bodyStart) + capture + next.slice(bodyStart));
 }
@@ -144,11 +158,13 @@ function patchExtracted(extractedDir, { feature } = {}) {
   if (main.length !== 1 || renderer.length !== 1) throw Error("Conversation API drift: expected one native main and renderer bundle.");
   const preload = { file: path.join(build, "preload.js") };
   preload.source = fs.readFileSync(preload.file, "utf8");
+  const importers = feature?.settings?.experimentalChatWrites ? find(assets, s => s.includes('Request.safePost("/data-import/conversation"')) : [];
+  if (feature?.settings?.experimentalChatWrites && importers.length !== 1) throw Error("Conversation API drift: expected one native history importer.");
   // Precompute every result before writing anything: drift leaves all bytes intact.
   const edits = [
     [main[0], patchMain(main[0].source, feature?.settings)],
     [preload, patchPreload(preload.source)],
-    [renderer[0], patchRenderer(renderer[0].source)],
+    [renderer[0], patchRenderer(renderer[0].source, feature?.settings, importers[0]?.source)],
   ];
   const changed = edits.filter(([original, next]) => original.source !== next);
   for (const [original, next] of changed) fs.writeFileSync(original.file, next);

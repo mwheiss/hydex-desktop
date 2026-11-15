@@ -1,0 +1,10 @@
+{
+  "enabled": ["chatgpt-conversation-api"],
+  "settings": {
+    "chatgpt-conversation-api": {
+      "mutationsEnabled": true,
+      "experimentalChatWrites": true,
+      "sharedProjectMovesEnabled": false
+    }
+  }
+}

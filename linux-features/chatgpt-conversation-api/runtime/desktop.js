@@ -146,7 +146,7 @@ function nativeApproval(electron) {
         type: "question", title: "Hydex ChatGPT conversation approval",
         message: `${kind === "undo" ? "Restore" : "Apply"} ${plan.operations.length} approved-plan operation(s)?`,
         detail: "Only this native dialog grants permission. Conversation text and tool arguments cannot approve changes.\n" +
-          "The batch is reversible only where the backend supports restoration; newly created Projects remain.\n\n" +
+          "The batch is reversible only where the backend supports restoration. Created chats, messages, test files and Projects remain; experimental writes have no automatic undo. History imports restore text only, not hidden context.\n\n" +
           escapeDisplay({ plan_id: plan.id, sha256: plan.hash, account: plan.context, operations: plan.operations }),
         buttons: ["Cancel", "Approve this exact batch"], defaultId: 0, cancelId: 0, noLink: true,
       });
