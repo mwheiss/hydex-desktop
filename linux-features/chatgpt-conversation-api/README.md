@@ -57,6 +57,12 @@ rebuild using the repository's signed Linux package process. Reads become
 available when the feature is enabled. Backend mutations remain disabled unless
 `settings.chatgpt-conversation-api.mutationsEnabled` is explicitly `true`.
 Every mutation batch then needs an actual native desktop approval dialog.
+The Desktop-owned review window fits the available screen and keeps Cancel and
+Approve in a fixed footer. The full batch details have their own visible
+scrollbar and remain selectable, untruncated text. Cancel has initial keyboard
+focus; Escape, closing the window, or a load failure grants no approval.
+The isolated local review can answer only for its own exact plan ID and hash;
+shared Project access still needs its separate confirmation.
 The explicit Hydex native release profile includes this private read bridge;
 both mutation settings remain false. Generic source builds still require
 selection of the disabled-by-default feature, and Codex MCP registration is

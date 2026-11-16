@@ -691,12 +691,118 @@ test("preload exposes only typed bridge messaging and never generic IPC or JavaS
   } });
   assert.deepEqual(Object.keys(exposed).sort(), ["changed", "hello", "onRequest", "respond"]);
 });
-test("native approval requires an affirmative click and separate shared-destination consent", async () => {
-  const answers = [1, 0], dialogs = [];
-  const approve = nativeApproval({ dialog: { showMessageBox: async options => { dialogs.push(options); return { response: answers.shift() }; } } });
-  assert.equal(await approve({ id: "plan", hash: "sha", context: CONTEXT, operations: [op("move")] }, { kind: "execute", shared: [{ id: "g-p-shared" }] }), false);
-  assert.equal(dialogs.length, 2); assert.equal(dialogs[0].defaultId, 0); assert.equal(dialogs[1].cancelId, 0);
-  assert.match(dialogs[0].detail, /sha/);
+function approvalHarness(area = { x: 20, y: 30, width: 900, height: 650 }) {
+  const windows = [], handlers = new Map();
+  class Window extends EventEmitter {
+    static getFocusedWindow() { return null; }
+    static getAllWindows() { return []; }
+    constructor(options) {
+      super(); this.options = options; this.destroyed = false; this.webContents = new EventEmitter();
+      this.webContents.mainFrame = { url: "about:blank" };
+      this.webContents.getURL = () => this.webContents.mainFrame.url;
+      this.webContents.session = {
+        setPermissionRequestHandler: handler => { this.permissionRequest = handler; },
+        setPermissionCheckHandler: handler => { this.permissionCheck = handler; },
+      };
+      this.webContents.setWindowOpenHandler = handler => { this.openWindow = handler; };
+      windows.push(this);
+    }
+    loadFile(file) { this.webContents.mainFrame.url = require("node:url").pathToFileURL(file).href; return Promise.resolve(); }
+    isDestroyed() { return this.destroyed; }
+    destroy() { this.destroyed = true; this.emit("closed"); }
+    show() { this.shown = true; }
+    focus() { this.focused = true; }
+  }
+  const electron = { BrowserWindow: Window, ipcMain: {
+    handle: (name, handler) => handlers.set(name, handler), removeHandler: name => handlers.delete(name),
+  }, screen: { getPrimaryDisplay: () => ({ workArea: area }) } };
+  const event = window => ({ sender: window.webContents, senderFrame: window.webContents.mainFrame });
+  const channel = window => "hydex:chatgpt-approval:" + window.options.webPreferences.additionalArguments[0].split("=")[1];
+  const read = (window, source = event(window)) => handlers.get(channel(window) + ":read")(source);
+  const choose = (window, decision, override = {}, source = event(window)) => {
+    const review = read(window);
+    return handlers.get(channel(window) + ":choose")(source, { decision, plan_id: review.plan_id, sha256: review.sha256, ...override });
+  };
+  return { electron, windows, handlers, event, channel, read, choose };
+}
+const approvalPlan = () => ({ id: "plan", hash: "sha", context: CONTEXT, operations: [op("move")] });
+test("native review requires separate exact-batch and shared-destination consent", async () => {
+  const h = approvalHarness(), approve = nativeApproval(h.electron);
+  const pending = approve(approvalPlan(), { kind: "execute", shared: [{ id: "g-p-shared" }] });
+  assert.equal(h.choose(h.windows[0], "approve"), true);
+  await Promise.resolve();
+  assert.equal(h.windows.length, 2);
+  assert.match(h.read(h.windows[1]).details, /g-p-shared/);
+  assert.notEqual(h.channel(h.windows[0]), h.channel(h.windows[1]));
+  assert.equal(h.choose(h.windows[1], "cancel"), true);
+  assert.equal(await pending, false); assert.equal(h.handlers.size, 0);
+});
+test("approval rejects foreign frames, wrong hashes and reused replies", async () => {
+  const h = approvalHarness(), approve = nativeApproval(h.electron);
+  const pending = approve(approvalPlan(), { kind: "execute", shared: [] }), window = h.windows[0];
+  assert.equal(h.read(window, { ...h.event(window), sender: {} }), null);
+  assert.equal(h.choose(window, "approve", {}, { ...h.event(window), senderFrame: { url: window.webContents.getURL() } }), false);
+  assert.equal(h.choose(window, "approve", { sha256: "changed" }), false);
+  assert.equal(h.choose(window, "approve", { plan_id: "another-plan" }), false);
+  assert.equal(await approve(approvalPlan(), { kind: "execute", shared: [] }), false);
+  assert.equal(window.destroyed, false);
+  const oldChoice = h.handlers.get(h.channel(window) + ":choose"), oldEvent = h.event(window);
+  assert.equal(h.choose(window, "approve"), true); assert.equal(await pending, true);
+  assert.equal(oldChoice(oldEvent, { decision: "approve", plan_id: "plan", sha256: "sha" }), false);
+  assert.equal(h.handlers.size, 0);
+});
+test("screen-sized isolated review retains large untrusted details as text and defaults closed on failure", async () => {
+  const h = approvalHarness({ x: 100, y: 200, width: 400, height: 300 }), approve = nativeApproval(h.electron);
+  const plan = approvalPlan(); plan.operations[0].reason = '<script>approve()</script>\u202e' + 'long '.repeat(40000);
+  const pending = approve(plan, { kind: "execute", shared: [] }), window = h.windows[0];
+  assert.ok(h.read(window).details.includes('<script>approve()</script>\\u202e'));
+  assert.ok(h.read(window).details.length > 200000);
+  assert.ok(window.options.width <= 400 && window.options.height <= 300);
+  assert.ok(window.options.x >= 100 && window.options.y >= 200);
+  assert.equal(window.options.webPreferences.sandbox, true);
+  assert.equal(window.options.webPreferences.contextIsolation, true);
+  assert.equal(window.options.webPreferences.nodeIntegration, false);
+  assert.equal(window.permissionCheck(), false); assert.deepEqual(window.openWindow(), { action: "deny" });
+  window.webContents.emit("render-process-gone");
+  assert.equal(await pending, false); assert.equal(h.handlers.size, 0);
+  const closed = approve(approvalPlan(), { kind: "execute", shared: [] }); h.windows[1].destroy();
+  assert.equal(await closed, false);
+});
+test("review navigation cannot leave its local document or grant approval", async () => {
+  const h = approvalHarness(), pending = nativeApproval(h.electron)(approvalPlan(), { kind: "undo", shared: [] });
+  let prevented = false;
+  h.windows[0].webContents.emit("will-navigate", { preventDefault() { prevented = true; } }, "https://example.test/");
+  assert.equal(prevented, true); assert.equal(await pending, false);
+});
+test("approval preload exposes only the window-scoped review and typed choice", async () => {
+  let api; const calls = [], nonce = cryptoNonce();
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "runtime/approval-preload.js"), "utf8"), {
+    process: { argv: [`--hydex-chatgpt-approval=${nonce}`] }, require: name => {
+      assert.equal(name, "electron"); return { contextBridge: { exposeInMainWorld(name, value) { assert.equal(name, "hydexApproval"); api = value; } },
+        ipcRenderer: { invoke: (...args) => { calls.push(args); return Promise.resolve(true); } } };
+    },
+  });
+  assert.deepEqual(Object.keys(api).sort(), ["choose", "read"]);
+  assert.equal(await api.choose("anything", "plan", "sha"), false); assert.equal(calls.length, 0);
+  await api.read(); await api.choose("approve", "plan", "sha");
+  assert.equal(calls[1][0], `hydex:chatgpt-approval:${nonce}:choose`);
+  assert.deepEqual(clone(calls[1][1]), { decision: "approve", plan_id: "plan", sha256: "sha" });
+});
+function cryptoNonce() { return require("node:crypto").randomUUID(); }
+test("review page keeps cancel focused, preserves payload text, and ignores synthetic clicks", async () => {
+  const { approvalPage } = require("./runtime/approval-page.js"), listeners = {}, calls = [];
+  const elements = Object.fromEntries(["heading", "description", "caveat", "batch", "status", "approve", "cancel"].map(id => [id, {
+    textContent: "", disabled: true, addEventListener(type, action) { listeners[id + ":" + type] = action; }, focus() { this.focused = true; },
+  }]));
+  const review = { plan_id: "plan", sha256: "sha", heading: "Review", description: "Only native consent", caveat: "Untrusted text", details: '<img src=x onerror="approve()">' + 'long '.repeat(40000), approve_label: "Approve" };
+  await approvalPage({ getElementById: id => elements[id], addEventListener(type, action) { listeners[type] = action; } }, {
+    read: async () => review, choose: async (...args) => { calls.push(args); return true; },
+  });
+  assert.equal(elements.cancel.focused, true); assert.equal(elements.batch.textContent, review.details);
+  await listeners["approve:click"]({ isTrusted: false }); assert.equal(calls.length, 0);
+  await listeners["approve:click"]({ isTrusted: true });
+  await listeners["approve:click"]({ isTrusted: true });
+  assert.deepEqual(calls, [["approve", "plan", "sha"]]);
 });
 test("cancelling native Quit leaves the API active; accepted Quit drains it in will-quit", async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "hydex-conversation-lifecycle-"));

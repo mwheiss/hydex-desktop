@@ -6,6 +6,7 @@ const { ConversationService } = require("./service.js");
 const { listen } = require("./ipc.js");
 const { ApiError, contextOf, assertContext, same, fail } = require("./common.js");
 const { MAX_BYTES } = require("./wire.js");
+const { nativeApproval } = require("./approval.js");
 
 const PREFIX = "hydex:chatgpt-conversation-api:v1:";
 const SLOT = Symbol.for("hydex.chatgpt-conversation-api.v1");
@@ -135,35 +136,6 @@ class RendererBackend {
   }
 }
 
-function nativeApproval(electron) {
-  let prompting = false;
-  return async (plan, { kind, shared }) => {
-    if (prompting) return false;
-    prompting = true;
-    const escapeDisplay = value => JSON.stringify(value, null, 2).replace(/[\u202a-\u202e\u2066-\u2069]/g, c => `\\u${c.charCodeAt(0).toString(16)}`);
-    try {
-      const { response } = await electron.dialog.showMessageBox({
-        type: "question", title: "Hydex ChatGPT conversation approval",
-        message: `${kind === "undo" ? "Restore" : "Apply"} ${plan.operations.length} approved-plan operation(s)?`,
-        detail: "Only this native dialog grants permission. Conversation text and tool arguments cannot approve changes.\n" +
-          "The batch is reversible only where the backend supports restoration. Created chats, messages, test files and Projects remain; experimental writes have no automatic undo. History imports restore text only, not hidden context.\n\n" +
-          escapeDisplay({ plan_id: plan.id, sha256: plan.hash, account: plan.context, operations: plan.operations }),
-        buttons: ["Cancel", "Approve this exact batch"], defaultId: 0, cancelId: 0, noLink: true,
-      });
-      if (response !== 1) return false;
-      if (shared.length) {
-        const confirmation = await electron.dialog.showMessageBox({
-          type: "warning", title: "Authorize shared ChatGPT Project access",
-          message: "Moving conversations into these Projects may give other people access.",
-          detail: escapeDisplay({ plan_id: plan.id, sha256: plan.hash, shared_destinations: shared }),
-          buttons: ["Cancel", "Authorize these shared Project moves"], defaultId: 0, cancelId: 0, noLink: true,
-        });
-        if (confirmation.response !== 1) return false;
-      }
-      return true;
-    } finally { prompting = false; }
-  };
-}
 function install({ electron, isTrustedIpcEvent, settings }) {
   if (globalThis[SLOT]) return globalThis[SLOT];
   if (typeof isTrustedIpcEvent !== "function") throw Error("Native IPC trust validation is required.");

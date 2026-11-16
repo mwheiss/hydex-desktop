@@ -1,3 +1,24 @@
+# 2026-11-16 scrollable native approval
+
+Large import plans made the platform message box grow past the screen, hiding
+its buttons. Approval now uses a Desktop-owned, screen-sized modal review with
+an explicitly scrollable detail region and a fixed action footer. Complete
+details remain plain, selectable text. The isolated preload can read and answer
+only its window's exact plan ID/hash; foreign windows, subframes, stale replies
+and changed bindings are rejected. Cancel is initially focused, and closing,
+navigation, renderer failure or load failure grants no approval. Shared Project
+access still requires a separate review.
+
+All 89 adjacent native tests pass. Offline headless-browser checks pass at
+960x720, 640x360, 400x300 and 320x240 with a long synthetic batch, verifying
+scrolling, both buttons inside the viewport before/after scrolling, Cancel
+focus, complete text retention and ignored scripted clicks. These checks have
+no native approval authority and made zero live approval requests. The final
+feature-only build passed against freshly verified signed stable
+`26.1111.21308`. Full-package build and installed native review remain separate
+activation gates. The preceding live four-arm batch was denied; it created no
+native job or comparison chats, and its receipts were preserved.
+
 # 2026-11-16 paced batch preview and preflight
 
 The retained 43.35-second body interval exposed repeated source reads and a
