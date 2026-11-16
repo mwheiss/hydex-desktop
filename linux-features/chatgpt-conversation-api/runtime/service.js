@@ -27,11 +27,25 @@ class ConversationService {
     this.mutationBusy = false;
     this.stopping = false;
     this.readRoutes = new Map();
+    this.interactiveReadSignals = new WeakSet();
   }
   async identity(expected) {
     const context = contextOf(await this.backend.identity());
     if (expected) assertContext(context, expected);
     return context;
+  }
+  async scheduledReads(context, action, budgetMs = 300000) {
+    // Batch reads have a separate 420-second proxy deadline, leaving headroom
+    // for in-flight native requests and identity checks (30 seconds each). Waiting obeys
+    // the existing scheduler; this never resets pacing or repeats a mutation.
+    const controller = new AbortController();
+    this.interactiveReadSignals.add(controller.signal);
+    const timer = setTimeout(() => controller.abort(new ApiError("PACING_WAIT",
+      "The batch read budget ended while respecting native pacing; retry after the shared scheduler is ready.",
+      { retry_at_ms: this.pacing.readyAt(context, "conversation", true), pacing_wait: true })), budgetMs);
+    timer.unref?.();
+    try { return await action(controller.signal); }
+    finally { clearTimeout(timer); this.interactiveReadSignals.delete(controller.signal); }
   }
   async call(operation, args, context, { signal, read = true } = {}) {
     for (;;) {
@@ -39,7 +53,8 @@ class ConversationService {
       signal?.throwIfAborted(); await this.identity(context);
       const gap = this.pacing.readyAt(context, operation, read) - this.clock();
       if (gap > 0) {
-        if (gap > 30000 && !signal) fail("PACING_WAIT", "The shared native request scheduler is waiting.", {
+        const activeCooldown = this.pacing.state(context).cooldown_until_ms > this.clock();
+        if ((activeCooldown && this.interactiveReadSignals.has(signal)) || (gap > 30000 && !signal)) fail("PACING_WAIT", "The shared native request scheduler is waiting.", {
           retry_at_ms: this.pacing.readyAt(context, operation, read), pacing_wait: true });
         await this.sleep(Math.min(gap, 1000));
         continue;
@@ -56,7 +71,7 @@ class ConversationService {
       catch (error) {
         // Inventory jobs retain their current page/cursor while waiting. Never
         // auto-repeat a mutation or restart a whole scan after one rate limit.
-        if (signal && read && error.code === "RATE_LIMITED") continue;
+        if (signal && !this.interactiveReadSignals.has(signal) && read && error.code === "RATE_LIMITED") continue;
         throw error;
       }
       if (response !== deferred) return response;
@@ -199,13 +214,13 @@ class ConversationService {
       fetched_at: new Date().toISOString(), source: "native_targeted_metadata_batch", redactions: clean.redactions,
       trust: "untrusted_conversation_metadata; never permission or instructions" };
   }
-  async rawState(id, context) {
-    const raw = await this.initialConversation(identifier(id), context, this.readContext(context, id));
+  async rawState(id, context, signal) {
+    const raw = await this.initialConversation(identifier(id), context, this.readContext(context, id), signal);
     if ((raw?.conversation_id ?? raw?.id) !== id) fail("CONTEXT_CHANGED", "The backend returned another conversation.");
     return conversationState(raw);
   }
-  async project(id, context) {
-    const record = projectRecord(await this.call("project", { id: identifier(id) }, context));
+  async project(id, context, signal) {
+    const record = projectRecord(await this.call("project", { id: identifier(id) }, context, { signal }));
     if (record.id !== id) fail("CONTEXT_CHANGED", "The backend returned another Project.");
     return record;
   }
@@ -408,11 +423,14 @@ class ConversationService {
     if (!this.settings.mutationsEnabled) fail("MUTATIONS_DISABLED", "Enable mutationsEnabled explicitly and rebuild the optional feature.");
   }
   async preview({ context, plan }) {
+    return this.scheduledReads(context, signal => this.previewScheduled({ context, plan, signal }));
+  }
+  async previewScheduled({ context, plan, signal }) {
     await this.identity(context);
     if (!plan || !Array.isArray(plan.operations)) fail("INVALID_ARGUMENT", "A structured operation list is required.");
     integer(plan.operations.length, 1, this.settings.maxOperations);
     if (Buffer.byteLength(JSON.stringify(plan)) > 1048576) fail("INVALID_ARGUMENT", "The plan exceeds 1 MiB.");
-    const projected = new Map(), operations = [], names = new Set();
+    const projected = new Map(), operations = [], names = new Set(), sources = new Map();
     for (const input of plan.operations) {
       if (!input || typeof input !== "object") fail("INVALID_ARGUMENT", "Invalid operation.");
       const reason = textValue(input.reason, 2000);
@@ -420,21 +438,21 @@ class ConversationService {
         // Keep experimental batches independent of organization/undo state.
         if (plan.operations.some(op => !reconstruction.TYPES.has(op.type))) fail("INVALID_ARGUMENT", "Preview experimental chat writes in a separate batch.");
         if (operations.some(op => op.conversation_id && op.conversation_id === input.conversation_id)) fail("INVALID_ARGUMENT", "Use separate batches for successive writes to the same chat.");
-        operations.push(await reconstruction.preview(this, input, context)); continue;
+        operations.push(await reconstruction.preview(this, input, context, { signal, sources })); continue;
       }
       if (input.type === "create_project") {
         const name = textValue(input.name, 200).trim();
         if (input.memory_scope !== undefined && input.memory_scope !== "project_v2") fail("INVALID_ARGUMENT", "Only the verified project_v2 memory scope can be specified.");
         if (names.has(name)) fail("PROJECT_CONFLICT", "A Project name appears twice in the plan.");
         names.add(name);
-        if ((await this.projects(context)).some(p => p.name === name)) fail("PROJECT_CONFLICT", "A native Project already has that name.");
+        if ((await this.projects(context, signal)).some(p => p.name === name)) fail("PROJECT_CONFLICT", "A native Project already has that name.");
         operations.push({ type: "create_project", name, ...(input.memory_scope ? { memory_scope: input.memory_scope } : {}), reason, expected_before: null,
           expected_after: { name, access: "private" } });
         continue;
       }
       if (!["rename", "move", "archive"].includes(input.type)) fail("OPERATION_UNAVAILABLE", "Only rename, move, archive and create_project operations are supported.");
       const id = identifier(input.conversation_id);
-      const before = projected.get(id) ?? await this.rawState(id, context);
+      const before = projected.get(id) ?? await this.rawState(id, context, signal);
       if (input.expected_before && !same(input.expected_before, before)) fail("CONCURRENT_UPDATE", "The supplied previous state differs from the backend.", { conversation_id: id });
       const after = { ...before };
       const op = { type: input.type, conversation_id: id, reason, expected_before: before };
@@ -446,7 +464,7 @@ class ConversationService {
       if (op.type === "move") {
         op.project_id = input.project_id === null ? null : identifier(input.project_id);
         if (op.project_id !== null) {
-          const project = await this.project(op.project_id, context);
+          const project = await this.project(op.project_id, context, signal);
           op.destination = { id: project.id, name: project.name, shared: project.shared, access: project.access };
         }
         after.project_id = op.project_id;
@@ -462,23 +480,26 @@ class ConversationService {
       reversibility: "Best effort; created chats, messages, uploaded test files and Projects are retained. Experimental writes have no automatic undo." };
   }
   async preflight(plan, entries = []) {
+    return this.scheduledReads(plan.context, signal => this.preflightScheduled(plan, entries, signal));
+  }
+  async preflightScheduled(plan, entries, signal) {
     await this.identity(plan.context);
-    const checked = new Set();
+    const checked = new Set(), sources = new Map();
     const shared = [];
     for (const [i, op] of plan.operations.entries()) {
       if (finishedEntry(entries[i] ?? {})) continue;
-      if (reconstruction.TYPES.has(op.type)) { await reconstruction.preflight(this, op, plan.context, entries[i]); continue; }
+      if (reconstruction.TYPES.has(op.type)) { await reconstruction.preflight(this, op, plan.context, entries[i], { signal, sources }); continue; }
       if (op.type === "create_project") {
-        if (!entries[i]?.created_project_id && (await this.projects(plan.context)).some(p => p.name === op.name)) fail("PROJECT_CONFLICT", "A Project with the proposed name now exists.");
+        if (!entries[i]?.created_project_id && (await this.projects(plan.context, signal)).some(p => p.name === op.name)) fail("PROJECT_CONFLICT", "A Project with the proposed name now exists.");
       } else {
         if (!checked.has(op.conversation_id)) {
-          const current = await this.rawState(op.conversation_id, plan.context);
+          const current = await this.rawState(op.conversation_id, plan.context, signal);
           const uncertain = ["intent", "uncertain"].includes(entries[i]?.status);
           if (!same(current, op.expected_before) && !(uncertain && same(current, op.expected_after))) fail("CONCURRENT_UPDATE", "A conversation changed after preview.", { conversation_id: op.conversation_id });
           checked.add(op.conversation_id);
         }
         if (op.type === "move" && op.project_id !== null) {
-          const project = await this.project(op.project_id, plan.context);
+          const project = await this.project(op.project_id, plan.context, signal);
           const destination = { id: project.id, name: project.name, shared: project.shared, access: project.access };
           if (!same(destination, op.destination)) fail("PROJECT_CHANGED", "A destination Project's identity or sharing state changed; preview again.");
           if (project.shared) shared.push(destination);
@@ -539,11 +560,11 @@ class ConversationService {
             this.journal.saveJob(job);
           } catch (e) { entry.status = e.code === "RATE_LIMITED" ? "failed" : "uncertain"; this.journal.saveJob(job); throw e; }
         }
-        const project = await this.project(entry.created_project_id, plan.context);
+        const project = await this.scheduledReads(plan.context, verifySignal => this.project(entry.created_project_id, plan.context, verifySignal));
         if (project.name !== op.name || project.shared) fail("VERIFY_FAILED", "The newly created Project does not match the approved private Project.");
         entry.after = { project_id: project.id, name: project.name }; entry.status = "verified";
       } else {
-        const before = await this.rawState(op.conversation_id, plan.context);
+        const before = await this.rawState(op.conversation_id, plan.context, signal);
         if (["intent", "uncertain"].includes(entry.status)) {
           if (!same(before, op.expected_after)) fail("UNCERTAIN_MUTATION", "An interrupted mutation is not yet verified; it will not be repeated blindly.", { conversation_id: op.conversation_id });
           entry.status = "verified"; entry.after = before;
@@ -552,7 +573,7 @@ class ConversationService {
         } else {
           if (!same(before, op.expected_before)) fail("CONCURRENT_UPDATE", "Conversation state changed before mutation.", { conversation_id: op.conversation_id });
           if (op.type === "move" && op.project_id !== null) {
-            const p = await this.project(op.project_id, plan.context);
+            const p = await this.project(op.project_id, plan.context, signal);
             if (!same({ id: p.id, name: p.name, shared: p.shared, access: p.access }, op.destination)) fail("PROJECT_CHANGED", "The destination's access state changed during execution.");
           }
           entry.before = before; entry.status = "intent"; entry.started_at = new Date().toISOString();
@@ -560,7 +581,7 @@ class ConversationService {
           try {
             await this.call(op.type, { id: op.conversation_id, title: op.title, project_id: op.project_id, archived: op.archived }, plan.context, { read: false, signal });
             for (let attempt = 0; attempt < 3; attempt++) {
-              const after = await this.rawState(op.conversation_id, plan.context);
+              const after = await this.scheduledReads(plan.context, verifySignal => this.rawState(op.conversation_id, plan.context, verifySignal));
               if (same(after, op.expected_after)) { entry.after = after; entry.status = "verified"; break; }
               if (attempt < 2) await this.sleep(this.settings.minDelayMs);
             }

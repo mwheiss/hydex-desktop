@@ -1066,3 +1066,51 @@ test("native branch readback uses the documented nested conversation response",a
   await new Promise(r=>setImmediate(r));const task=await run("experiment_status",{task_id:"branch-task"},env);
   assert.equal(task.result.conversation_id,"new-branch");assert.equal(task.status,"completed");assert.equal(requests[0][0],"/conversation/new_branch");
 });
+
+test("a comparison preview freezes one shared source and honors a long body interval", async t => {
+  let now=Date.now();const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true,minDelayMs:500},clock:()=>now,sleep:async ms=>{now+=ms;}});
+  const slot=service.pacing.slot(CONTEXT,"conversation",true);slot.bucket.interval_ms=43350;slot.bucket.next_request_ms=now+43350;
+  const hash=require("./runtime/common.js").digest([backend.records.get("c1")]);
+  const plan=await preview(service,[{type:"branch_chat",conversation_id:"c1",reason:"Test shared source"},
+    ...[1,2].map(()=>({type:"import_chat",source_conversation_id:"c1",source_snapshot_sha256:hash,history:importFixture(),loss_report:"Text-only",reason:"Test shared source"}))]);
+  assert.equal(backend.calls.filter(c=>c.operation==="conversation").length,1);
+  assert.equal(plan.operations.every(op=>op.expected_source.hash===hash),true);
+  assert.equal(slot.bucket.interval_ms,43350);assert.ok(now>=slot.bucket.next_request_ms-43350);
+  await service.preflight(service.journal.plan(plan.plan_id));
+  assert.equal(backend.calls.filter(c=>c.operation==="conversation").length,2);
+  backend.records.get("c1").update_time++;
+  await assert.rejects(service.preflight(service.journal.plan(plan.plan_id)),code("CONCURRENT_UPDATE"));
+  assert.equal(backend.mutations.length,0);
+});
+test("preflight refreshes one source per phase and paced job verification completes",async t=>{
+  let now=Date.now();const {service,backend,approvals}=fixture(t,{settings:{experimentalChatWrites:true,minDelayMs:500},clock:()=>now,sleep:async ms=>{now+=ms;}});
+  experimentBackend(backend);const slot=service.pacing.slot(CONTEXT,"conversation",true);slot.bucket.interval_ms=43350;
+  const plan=await preview(service,[{type:"branch_chat",conversation_id:"c1",reason:"Test paced branch"}]);
+  const job=await finish(service,(await execute(service,plan)).job_id);
+  assert.equal(job.status,"completed");assert.equal(job.entries[0].status,"verified");assert.equal(approvals.length,1);
+  assert.equal(slot.bucket.interval_ms,43350);
+  assert.equal(backend.records.get("c1").current_node,"reply");
+});
+test("five independent source checks respect pacing through preview and both approval preflights",async t=>{
+  const started=Date.now();let now=started;
+  const {service,backend,approvals}=fixture(t,{settings:{experimentalChatWrites:true,minDelayMs:500},clock:()=>now,sleep:async ms=>{now+=ms;}});
+  for(let i=2;i<=5;i++){const raw=clone(backend.records.get("c1"));raw.conversation_id=`c${i}`;backend.records.set(`c${i}`,raw);}
+  const slot=service.pacing.slot(CONTEXT,"conversation",true);slot.bucket.interval_ms=43350;
+  const plan=await preview(service,Array.from({length:5},(_,i)=>({type:"branch_chat",conversation_id:`c${i+1}`,reason:"Test paced batch"})));
+  assert.ok(now-started>120000);assert.equal(backend.calls.filter(c=>c.operation==="conversation").length,5);
+  // Exercise execute's two fresh preflights without issuing any test writes.
+  service.start=()=>({job_id:"test-no-writes"});
+  await execute(service,plan);
+  assert.equal(backend.calls.filter(c=>c.operation==="conversation").length,15);
+  assert.equal(approvals.length,1);assert.equal(backend.mutations.length,0);
+});
+test("scheduled reads remain bounded and a rate limit is never replayed interactively",async t=>{
+  const {service,backend}=fixture(t);let attempts=0;
+  backend.hook=async name=>{if(name==="conversation"){attempts++;throw new ApiError("RATE_LIMITED","Synthetic limit",{retry_at_ms:Date.now()+60000});}};
+  await assert.rejects(preview(service,[op("rename",{title:"After"})]),code("RATE_LIMITED"));
+  assert.equal(attempts,1);assert.equal(backend.mutations.length,0);
+  const hold=setTimeout(()=>{},100);
+  try{
+    await assert.rejects(service.scheduledReads(CONTEXT,signal=>new Promise((resolve,reject)=>signal.addEventListener("abort",()=>reject(signal.reason),{once:true})),5),code("PACING_WAIT"));
+  }finally{clearTimeout(hold);}
+});

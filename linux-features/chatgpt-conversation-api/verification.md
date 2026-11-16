@@ -1,3 +1,21 @@
+# 2026-11-16 paced batch preview and preflight
+
+The retained 43.35-second body interval exposed repeated source reads and a
+30-second interactive wait ceiling. Preview and each approval preflight now
+reuse one complete source snapshot per phase, with independent fresh checks
+before and after the native dialog and before each write. Bounded batch-read
+deadlines cover multiple sources without changing ordinary read deadlines,
+resetting pacing, replaying rate-limited requests, or bypassing approval.
+Already-issued writes still receive reconciliation when a job is cancelled.
+
+All 84 adjacent native tests, 62 portable cache tests, and 133 organization
+workspace tests pass. Coverage includes five independently paced sources through
+both approval preflights, shared-source reuse, changed-source rejection, one-shot
+interactive rate-limit errors, and stream disposal on timeout. The feature-only
+official-bundle build passed against freshly verified signed stable
+`26.1111.21308` with experimental writes enabled. Full-package validation and
+installed live-batch verification are separate gates.
+
 # 2026-11-13 bounded MCP framing and read circuits
 
 A synthetic 34 MiB result reproduced a poisoned native MCP stream: duplicated

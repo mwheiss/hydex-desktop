@@ -128,6 +128,24 @@ for line in sys.stdin:
     assert len(calls)==1 and adapter.cache.read_control(CTX)['error']['code']=='NATIVE_APPROVAL_TIMEOUT'
 
 
+def test_paced_batch_preview_has_its_own_deadline_without_extending_chat_reads(tmp_path):
+    import sys
+    script=tmp_path/'batch.py'
+    script.write_text('''import json,sys,time
+for line in sys.stdin:
+ r=json.loads(line)
+ if 'id' not in r:continue
+ if r['method']!='initialize':time.sleep(.15)
+ print(json.dumps({'id':r['id'],'result':{}}),flush=True)
+''')
+    client=StdioClient({'command':sys.executable,'args':[str(script)]},timeout=.04,batch_timeout=.4)
+    try:
+        client.rpc('initialize',{})
+        assert client.tool('chatgpt_preview_changes',{})=={}
+        with pytest.raises(StdioProtocolError) as error:client.tool('chatgpt_get_conversation',{})
+        assert error.value.code=='NATIVE_READ_TIMEOUT' and client.closed
+    finally:client.close()
+
 
 def test_one_timeout_opens_persistent_circuit_and_next_chat_makes_no_call(setup):
     adapter,upstream,config=setup

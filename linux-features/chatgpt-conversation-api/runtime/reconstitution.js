@@ -38,15 +38,15 @@ function testFile(value) {
   if (Buffer.byteLength(value.text) > 65536) fail("INVALID_ARGUMENT", "Canary files are limited to 64 KiB.");
   return { ...value, sha256: crypto.createHash("sha256").update(value.text).digest("hex"), bytes: Buffer.byteLength(value.text) };
 }
-async function snapshot(service, id, context) {
-  const result = await service.getConversation({ context, id, mode: "raw", branch: "all" });
+async function snapshot(service, id, context, signal) {
+  const result = await service.getConversation({ context, id, mode: "raw", branch: "all", signal });
   if (!result.complete || !result.pages?.length) fail("INCOMPLETE_CONVERSATION", "A complete source snapshot is required.");
   const raw = result.pages.at(-1), normalized = normalize(result.pages, { branch: "all", header: raw });
   if (normalized.project_id || raw.gizmo_id || raw.is_archived || !raw.current_node || !raw.mapping?.[raw.current_node]) fail("OPERATION_UNAVAILABLE", "Experimental continuation currently requires an unarchived ordinary chat outside a Project or GPT.");
   if (normalized.messages.some(m => ["in_progress", "incomplete"].includes(m.raw_message?.status))) fail("CONCURRENT_UPDATE", "Wait until the source turn has finished.");
   return { hash: digest(result.pages), current_node: raw.current_node, normalized, raw };
 }
-async function preview(service, input, context) {
+async function preview(service, input, context, { signal, sources = new Map() } = {}) {
   ensure(service);
   const allowed = ["type", "reason", "conversation_id", "model", "text", "test_file", "message_id", "history", "loss_report", "source_conversation_id", "source_snapshot_sha256"];
   keys(input, allowed);
@@ -64,7 +64,8 @@ async function preview(service, input, context) {
   const sourceId = op.type === "import_chat" ? input.source_conversation_id : input.conversation_id;
   if (sourceId !== undefined) {
     op.source_conversation_id = identifier(sourceId);
-    const source = await snapshot(service, sourceId, context);
+    if (!sources.has(sourceId)) sources.set(sourceId, await snapshot(service, sourceId, context, signal));
+    const source = sources.get(sourceId);
     if (op.type === "import_chat" && input.source_snapshot_sha256 !== source.hash) fail("CONCURRENT_UPDATE", "The imported history must come from the current complete source snapshot; prepare it again.");
     op.expected_source = { hash: source.hash, current_node: source.current_node };
     if (op.type === "send_message") { op.conversation_id = sourceId; op.parent_message_id = source.current_node; }
@@ -82,22 +83,28 @@ async function preview(service, input, context) {
   }
   return op;
 }
-async function preflight(service, op, context, entry = {}) {
+async function preflight(service, op, context, entry = {}, { signal, sources = new Map() } = {}) {
   ensure(service);
   // Any issued experimental request requires reconciliation, never resubmission.
   if (["intent", "uncertain"].includes(entry.status)) return;
   if (op.source_conversation_id) {
-    const current = await snapshot(service, op.source_conversation_id, context);
+    if (!sources.has(op.source_conversation_id)) sources.set(op.source_conversation_id, await snapshot(service, op.source_conversation_id, context, signal));
+    const current = sources.get(op.source_conversation_id);
     if (!same(op.expected_source, { hash: current.hash, current_node: current.current_node })) fail("CONCURRENT_UPDATE", "The source chat changed after preview; preview a fresh plan.");
   }
 }
 async function verify(service, op, entry, context) {
+  // Cancellation stops later writes. Reconcile an already-issued operation
+  // with its own bounded read scope, including a long legitimate pacing wait.
+  return service.scheduledReads(context, verifySignal => verifyScheduled(service, op, entry, context, verifySignal), 75000);
+}
+async function verifyScheduled(service, op, entry, context, signal) {
   if (entry.result?.already_imported) fail("IMPORT_NOT_CREATED", "The importer returned a pre-existing chat; no new reconstruction was confirmed.");
   const id = entry.result?.conversation_id ?? op.conversation_id;
   if (!id) fail("UNCERTAIN_MUTATION", "No created chat ID was confirmed. Reconcile manually; this request will not be repeated.");
   identifier(id);
   if (op.type !== "send_message" && id === op.source_conversation_id) fail("VERIFY_FAILED", "Reconstruction must create a different chat identity.");
-  const result = await service.getConversation({ context, id, mode: "raw", branch: "all" });
+  const result = await service.getConversation({ context, id, mode: "raw", branch: "all", signal });
   if (!result.complete) fail("VERIFY_FAILED", "The resulting chat snapshot is incomplete.");
   const normalized = normalize(result.pages, { branch: "active", header: result.pages.at(-1) });
   if (["create_chat", "send_message"].includes(op.type)) {
@@ -126,7 +133,7 @@ async function run(service, job, op, entry, signal) {
     catch (error) { if (error.code === "CONTEXT_CHANGED") throw error; }
     if (!recovered) { await verify(service, op, entry, context); entry.status = "verified"; return; }
   } else {
-    await preflight(service, op, context, entry);
+    await preflight(service, op, context, entry, { signal });
     entry.status = "intent"; entry.started_at = new Date().toISOString(); service.journal.saveJob(job);
   }
   let terminal = false;

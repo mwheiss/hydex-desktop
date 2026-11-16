@@ -17,9 +17,10 @@ class StdioProtocolError(RuntimeError):
 class StdioClient:
     """Dependency-free JSON-lines MCP transport to the existing native server."""
 
-    def __init__(self, settings, timeout=120, *, approval_timeout=420):
+    def __init__(self, settings, timeout=120, *, approval_timeout=1200, batch_timeout=420):
         self.timeout, self.sequence = timeout, 0
         self.approval_timeout = approval_timeout
+        self.batch_timeout = batch_timeout
         self.closed = False
         self.buffer = bytearray()
         self.process = subprocess.Popen([settings["command"], *settings.get("args", [])],
@@ -99,10 +100,15 @@ class StdioClient:
     def tool(self, name, arguments):
         if name in ("chatgpt_execute_approved_plan", "chatgpt_undo_job"):
             # Human approval is not a backend body read. Keep its deadline
-            # separate, bounded below the outer project's 480-second tool limit.
+            # separate, including paced preflight before and after the dialog.
+            # The project tool limit is 1260 seconds.
             # Timeout still discards the stream; a write is never replayed.
             return self.rpc("tools/call", {"name": name, "arguments": arguments},
                             timeout=self.approval_timeout, timeout_code="NATIVE_APPROVAL_TIMEOUT")
+        if name in ("chatgpt_preview_changes", "chatgpt_rename_conversation", "chatgpt_move_conversation",
+                    "chatgpt_set_archived", "chatgpt_create_project"):
+            return self.rpc("tools/call", {"name": name, "arguments": arguments},
+                            timeout=self.batch_timeout)
         return self.rpc("tools/call", {"name": name, "arguments": arguments})
 
     def close(self):

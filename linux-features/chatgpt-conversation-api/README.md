@@ -87,6 +87,18 @@ and recover gradually after healthy reads. State survives Desktop restarts.
 Waiting happens outside the HTTP queue. Inventory reads retain their page cursor
 through cooldowns; mutations execute serially and are never blindly retried.
 
+Batch preview and each approval preflight reuse one complete snapshot per source
+chat within that phase. The next phase fetches fresh snapshots and still rejects
+source changes. Their read budget is five minutes, with a separate seven-minute
+proxy deadline; ordinary reads retain their two-minute deadline. Execution allows
+up to twenty minutes for both preflights and the human dialog (the project tool
+limit must exceed this, for example 1260 seconds). A server cooldown fails an
+interactive request promptly with `PACING_WAIT`; legitimate adaptive spacing is
+waited out without resetting its retained state. Oversized batches that exceed
+the read budget must be split and previewed again. An interactive rate limit is
+reported after one request, without replay. Already-issued writes are reconciled
+even if cancellation arrives, then cancellation stops subsequent writes.
+
 After building and launching that application, register this MCP server in a
 dedicated trusted project's `.codex/config.toml`. This keeps it undiscoverable
 from other projects and excludes its schemas from the initial tool list:
