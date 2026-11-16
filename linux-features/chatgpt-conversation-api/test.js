@@ -1161,12 +1161,13 @@ test("experimental patch resolution is unique, opt-in, idempotent and fails clos
   const upload='upload(e,t,n){n.d(t,{uploadChatGptConversationFile:()=>b});function b(){}}';
   const routes='experimentalRoutes(e,t,n){let x=["/conversation/new_branch",{branching_from_conversation_id:1,branching_from_message_id:2,is_do_not_remember:true,parent_message_id:1,mime_type:e.mimeType}];}';
   const chunk=CHUNK.replace('routes(e,t,n){',`${transport},${upload},${routes},routes(e,t,n){`);
-  const importer='Request.safePost("/data-import/conversation",{requestBody:{source:q,conversation:a.source}})';
+  const importer='const guard="X-OpenAI-Expected-Account-Id";Request.safePost("/data-import/conversation",{requestBody:{source:q,conversation:a.source},additionalHeaders:{[r.zBc]:U.accountId}})';
   const patched=patch.patchRenderer(chunk,{experimentalChatWrites:true},importer);
   assert.equal(patch.patchRenderer(patched,{experimentalChatWrites:true},importer),patched);
   assert.throws(()=>patch.patchRenderer(chunk,{experimentalChatWrites:true},""));
   assert.throws(()=>patch.patchRenderer(chunk.replace('"/f/conversation"','"/wrong"'),{experimentalChatWrites:true},importer));
   assert.throws(()=>patch.patchRenderer(chunk.replace('branching_from_message_id:','changed_branch_field:'),{experimentalChatWrites:true},importer));
+  assert.throws(()=>patch.patchRenderer(chunk,{experimentalChatWrites:true},importer.replace('"X-OpenAI-Expected-Account-Id"','"wrong-header"')));
   assert.throws(()=>patch.patchRenderer(patched,{}));
 });
 
@@ -1321,4 +1322,43 @@ test("renderer loss after an uncertain branch continuation never repeats either 
   const stopped=await finish(service,(await execute(service,plan,{resume_job_id:paused.id})).job_id);
   assert.equal(stopped.entries[0].status,"uncertain");assert.equal(stopped.error.code,"UNCERTAIN_MUTATION");
   assert.equal(issued(),1);assert.equal(issued.continuations(),1);assert.ok(stopped.entries[0].result.branch_response);
+});
+test("native imports send the SDK expected-account guard and retain full response data",async()=>{
+  const requests=[],response={status:"success",conversation_id:"imported-chat",already_imported:false,unknown_field:{keep:true}};
+  const run=installExperiments(()=>({}),()=>({safePost:async(route,options)=>{requests.push({route,options});return response;}}),()=>CONTEXT);
+  const env={before:CONTEXT,assertRequestCurrent(){},options:(extra,headers)=>({...extra,additionalHeaders:headers})};
+  await run("experiment_start",{task_id:"guarded-import",operation:{type:"import_chat",history:importFixture()}},env);
+  await new Promise(resolve=>setImmediate(resolve));const task=await run("experiment_status",{task_id:"guarded-import"},env);
+  assert.equal(requests.length,1);assert.equal(requests[0].options.additionalHeaders["X-OpenAI-Expected-Account-Id"],CONTEXT.workspace_id);
+  assert.deepEqual(requests[0].options.requestBody,{source:"claude",conversation:importFixture()});
+  assert.equal(task.status,"completed");assert.deepEqual(task.result.import_response,response);
+});
+test("native import HTTP failures retain only safe status diagnostics without replay",async()=>{
+  let issued=0;const run=installExperiments(()=>({}),()=>({safePost:async()=>{issued++;throw Object.assign(new Error("Synthetic private error body"),{status:404,authorization:"synthetic-secret"});}}),()=>CONTEXT);
+  const env={before:CONTEXT,assertRequestCurrent(){},options:x=>x};const args={task_id:"failed-import",operation:{type:"import_chat",history:importFixture()}};
+  await run("experiment_start",args,env);await new Promise(resolve=>setImmediate(resolve));await run("experiment_start",args,env);
+  const task=await run("experiment_status",{task_id:args.task_id},env);
+  assert.equal(issued,1);assert.deepEqual(task.error,{code:"BACKEND_ERROR",status:404});assert.equal(JSON.stringify(task).includes("synthetic-secret"),false);
+});
+test("failed import response bodies remain private while native error details are reviewable",async t=>{
+  const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true}});
+  backend.hook=async(name,args)=>name==="experiment_start"?{task_id:args.task_id,status:"uncertain",result:{import_status:"skipped",import_response:{status:"skipped",private_note:"retained-import-response",access_token:"synthetic-credential"}},error:{code:"BACKEND_ERROR",status:422}}:undefined;
+  const plan=await preview(service,[{type:"import_chat",history:importFixture(),loss_report:"Text only",reason:"Test skipped response"}]);
+  const job=await finish(service,(await execute(service,plan)).job_id);
+  assert.equal(job.error.details.native_error.status,422);assert.equal(job.entries[0].result.import_response.private_note,"retained-import-response");
+  assert.equal(job.entries[0].result.import_response.access_token,"[redacted]");
+  const exposed=await dispatch(service,"chatgpt_get_job_status",{context:CONTEXT,job_id:job.id});
+  assert.equal(exposed.entries[0].result.import_response.retained_in_private_journal,true);assert.equal(JSON.stringify(exposed).includes("retained-import-response"),false);
+  assert.equal(exposed.approved_operation_sha256[0],require("./runtime/common.js").digest(plan.operations[0]));
+});
+test("existing imports require explicit reuse approval and exact text-role readback",async t=>{
+  for(const mode of ["denied","exact","changed"])await t.test(mode,async sub=>{
+    const {service,backend}=fixture(sub,{settings:{experimentalChatWrites:true}}),history=importFixture(),m=message(history.chat_messages[0].uuid,"user","text",{parts:[mode==="changed"?"Different source":history.chat_messages[0].text]});
+    backend.records.set("existing-import",{conversation_id:"existing-import",title:"Existing",is_archived:false,gizmo_id:null,current_node:m.id,mapping:{root:{id:"root",parent:null,children:[m.id],message:null},[m.id]:{id:m.id,parent:"root",children:[],message:m}}});
+    backend.hook=async(name,args)=>name==="experiment_start"?{task_id:args.task_id,status:"completed",result:{conversation_id:"existing-import",import_status:"success",already_imported:true}}:undefined;
+    const plan=await preview(service,[{type:"import_chat",history,loss_report:"Text only",reason:"Test exact existing import",...(mode!=="denied"?{reuse_existing:true}:{})}]);
+    const job=await finish(service,(await execute(service,plan)).job_id);
+    if(mode==="exact"){assert.equal(job.status,"completed");assert.equal(job.entries[0].after.reused_existing,true);}
+    else assert.equal(job.entries[0].error.code,mode==="denied"?"IMPORT_NOT_CREATED":"IMPORT_FIDELITY_MISMATCH");
+  });
 });

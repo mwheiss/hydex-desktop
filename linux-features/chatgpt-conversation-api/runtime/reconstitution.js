@@ -48,11 +48,11 @@ async function snapshot(service, id, context, signal) {
 }
 async function preview(service, input, context, { signal, sources = new Map() } = {}) {
   ensure(service);
-  const allowed = ["type", "reason", "conversation_id", "model", "text", "test_file", "message_id", "history", "loss_report", "source_conversation_id", "source_snapshot_sha256"];
+  const allowed = ["type", "reason", "conversation_id", "model", "text", "test_file", "message_id", "history", "loss_report", "source_conversation_id", "source_snapshot_sha256", "reuse_existing"];
   keys(input, allowed);
   const op = { type: input.type, reason: textValue(input.reason, 2000), task_id: crypto.randomUUID() };
   const fields = { create_chat: ["model", "text", "test_file"], send_message: ["conversation_id", "model", "text"],
-    branch_chat: ["conversation_id", "message_id", "model", "text"], import_chat: ["history", "loss_report", "source_conversation_id", "source_snapshot_sha256"] }[input.type];
+    branch_chat: ["conversation_id", "message_id", "model", "text"], import_chat: ["history", "loss_report", "source_conversation_id", "source_snapshot_sha256", "reuse_existing"] }[input.type];
   if (Object.keys(input).some(k => !["type", "reason", ...fields].includes(k))) fail("INVALID_ARGUMENT", "Field is not supported by this experimental operation.");
   if (["create_chat", "send_message", "branch_chat"].includes(op.type)) {
     op.model = textValue(input.model, 100);
@@ -75,6 +75,8 @@ async function preview(service, input, context, { signal, sources = new Map() } 
     }
   } else if (["send_message", "branch_chat"].includes(op.type)) fail("INVALID_ARGUMENT", "A conversation ID is required.");
   if (op.type === "import_chat") {
+    if (input.reuse_existing !== undefined && typeof input.reuse_existing !== "boolean") fail("INVALID_ARGUMENT", "reuse_existing must be an explicit boolean.");
+    if (input.reuse_existing !== undefined) op.reuse_existing = input.reuse_existing;
     if (input.source_snapshot_sha256 !== undefined && !input.source_conversation_id) fail("INVALID_ARGUMENT", "A source snapshot digest requires its conversation ID.");
     op.history = importPayload(input.history);
     // Provenance reports are reference material, never interpreted as commands.
@@ -99,7 +101,7 @@ async function verify(service, op, entry, context) {
   return service.scheduledReads(context, verifySignal => verifyScheduled(service, op, entry, context, verifySignal), 75000);
 }
 async function verifyScheduled(service, op, entry, context, signal) {
-  if (entry.result?.already_imported) fail("IMPORT_NOT_CREATED", "The importer returned a pre-existing chat; no new reconstruction was confirmed.");
+  if (entry.result?.already_imported && op.reuse_existing !== true) fail("IMPORT_NOT_CREATED", "The importer returned a pre-existing chat; reuse requires explicit approval and exact readback.");
   const id = entry.result?.conversation_id ?? (op.type === "send_message" ? op.conversation_id : null);
   if (!id) fail("UNCERTAIN_MUTATION", "No created chat ID was confirmed. Reconcile manually; this request will not be repeated.");
   identifier(id);
@@ -119,14 +121,18 @@ async function verifyScheduled(service, op, entry, context, signal) {
     if (actual.length !== expected.length || expected.some((m, i) => actual[i].role !== (m.sender === "human" ? "user" : "assistant") || actual[i].content?.parts?.join("") !== m.text)) fail("IMPORT_FIDELITY_MISMATCH", "The created chat exists, but imported text/role readback differs from the approved history.", { conversation_id: id });
   }
   if (op.type === "branch_chat" && !normalized.messages.some(m => m.node_id === op.message_id || m.id === op.message_id)) fail("VERIFY_FAILED", "The branch point was not found in the new chat.");
-  entry.after = { conversation_id: id, snapshot_sha256: digest(result.pages), fidelity: op.fidelity ?? "native_operation; context fidelity not measured" };
+  entry.after = { conversation_id: id, snapshot_sha256: digest(result.pages), fidelity: op.fidelity ?? "native_operation; context fidelity not measured",
+    ...(op.type === "import_chat" ? { reused_existing: entry.result?.already_imported === true } : {}) };
   service.recordChange(context, { kind: "chat_changed", id });
 }
-function publicJob(job) {
-  return { ...job, entries: (job.entries ?? []).map(entry => !entry.result?.branch_response ? entry : {
-    ...entry, result: { ...entry.result, branch_response: {
-      retained_in_private_journal: true, sha256: entry.branch_response_sha256 ?? digest(entry.result.branch_response),
-    } },
+function publicJob(job, plan) {
+  return { ...job, ...(plan ? { approved_operation_sha256: plan.operations.map(operation => digest(operation)) } : {}), entries: (job.entries ?? []).map(entry => {
+    if (!entry.result) return entry;
+    const result = { ...entry.result };
+    for (const key of ["branch_response", "import_response"]) if (result[key] !== undefined) result[key] = {
+      retained_in_private_journal: true, sha256: entry[key + "_sha256"] ?? digest(result[key]),
+    };
+    return { ...entry, result };
   }) };
 }
 function storeResult(service, job, entry, result) {
@@ -136,7 +142,7 @@ function storeResult(service, job, entry, result) {
   for (const [key, value] of Object.entries(clean)) {
     if (!same(entry.result[key], value)) {
       entry.result[key] = value; changed = true;
-      if (key === "branch_response") entry.branch_response_sha256 = digest(value);
+      if (["branch_response", "import_response"].includes(key)) entry[key + "_sha256"] = digest(value);
     }
   }
   if (changed) service.journal.saveJob(job);
@@ -183,7 +189,7 @@ async function run(service, job, op, entry, signal) {
         continue;
       }
       if (task.status === "completed") { terminal = true; break; }
-      if (task.status !== "running") fail("UNCERTAIN_MUTATION", "The renderer did not confirm completion; inspect the saved result before retrying.");
+      if (task.status !== "running") fail("UNCERTAIN_MUTATION", "The renderer did not confirm completion; inspect the saved result before retrying.", { native_error: task.error ?? null, import_status: entry.result?.import_status ?? null });
       signal.throwIfAborted();
       if (service.clock() > deadline) fail("UNCERTAIN_MUTATION", "Generation exceeded the operation time limit.");
       await service.sleep(1000);

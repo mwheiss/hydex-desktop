@@ -16,6 +16,7 @@ const state = { type: "object", additionalProperties: false, required: ["title",
   properties: { title, project_id: projectId, archived: { type: "boolean" } } };
 const operation = { type: "object", additionalProperties: false, required: ["type", "reason"], properties: {
   type: { enum: ["rename", "move", "archive", "create_project", "create_chat", "send_message", "branch_chat", "import_chat"] }, reason,
+  reuse_existing: { type: "boolean" },
   conversation_id: id, title, project_id: projectId, archived: { type: "boolean" }, name: { ...string },
   expected_before: state, memory_scope: { enum: ["project_v2"] },
   model: { type: "string", minLength: 1, maxLength: 100 }, text: { type: "string", minLength: 1, maxLength: 100000 },
@@ -127,7 +128,10 @@ async function dispatch(service, name, args) {
     case "chatgpt_get_inventory_status": return service.inventoryStatus(args);
     case "chatgpt_preview_changes": return service.preview(args);
     case "chatgpt_execute_approved_plan": return service.execute(args);
-    case "chatgpt_get_job_status": return require("./reconstitution.js").publicJob(await service.jobStatus(args));
+    case "chatgpt_get_job_status": {
+      const job = await service.jobStatus(args);
+      return require("./reconstitution.js").publicJob(job, job.plan_id ? service.journal.plan(job.plan_id) : null);
+    }
     case "chatgpt_cancel_job": return service.cancel(args);
     case "chatgpt_undo_job": return service.undo(args);
     default: {

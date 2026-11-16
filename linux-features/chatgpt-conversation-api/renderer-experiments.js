@@ -49,7 +49,11 @@ function installExperiments(getClients, getRequest, getIdentity) {
     const t = { id: args.task_id, fingerprint, operationType: op.type, context: before, controller, status: "running", result: {} };
     tasks.set(t.id, t); // Register before dispatch: duplicate IPC cannot issue twice.
     const assertCurrent = () => { controller.signal.throwIfAborted(); if (!same(before, getIdentity())) throw { code: "CONTEXT_CHANGED" }; assertRequestCurrent(); };
-    const failed = e => { t.status = "uncertain"; t.error = { code: e?.code === "CONTEXT_CHANGED" ? "CONTEXT_CHANGED" : "BACKEND_ERROR" }; };
+    const failed = e => {
+      t.status = "uncertain";
+      const status = [e?.status, e?.statusCode, e?.response?.status].find(value => Number.isInteger(value) && value >= 100 && value <= 599);
+      t.error = { code: e?.code === "CONTEXT_CHANGED" ? "CONTEXT_CHANGED" : "BACKEND_ERROR", ...(status ? { status } : {}) };
+    };
     const capture = event => {
       const u = event?.update ?? event;
       const id = u?.conversationId ?? u?.conversation_id;
@@ -99,10 +103,13 @@ function installExperiments(getClients, getRequest, getIdentity) {
       assertCurrent();
       if (op.type === "import_chat") {
         const response = await getRequest().safePost("/data-import/conversation", options({ signal: controller.signal,
-          requestBody: { source: "claude", conversation: op.history } }));
+          requestBody: { source: "claude", conversation: op.history } }, { "X-OpenAI-Expected-Account-Id": before.workspace_id }));
         assertCurrent();
-        if (response?.conversation_id) t.result = { conversation_id: response.conversation_id, import_status: response.status, already_imported: response.already_imported === true };
-        if (response?.status !== "success" || !response.conversation_id || response.already_imported) throw Error("Import did not create a new chat");
+        t.result.import_response = response;
+        t.result.import_status = response?.status;
+        t.result.already_imported = response?.already_imported === true;
+        if (response?.conversation_id) t.result.conversation_id = response.conversation_id;
+        if (response?.status !== "success" || !response.conversation_id || (response.already_imported && op.reuse_existing !== true)) throw Error("Import did not create an approved chat");
         t.status = "completed";
       } else if (op.type === "branch_chat") {
         const response = await getRequest().safePost("/conversation/new_branch", options({ signal: controller.signal,

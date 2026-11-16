@@ -29,6 +29,9 @@ experimental batch:
   `source_snapshot_sha256` for provenance/concurrency checks. This creates a
   new identity. It does not restore private context,
   opaque reasoning, executable tools, files, memory or Project/GPT configuration.
+  Optional `reuse_existing: true` explicitly permits the backend's existing
+  import result only after the same exact text/role verification. It defaults to
+  false; mismatched or inaccessible existing copies are never accepted.
 
 All operations require a `reason`. Plans are limited to 1 MiB with no automatic
 truncation. Source continuation currently supports completed, unarchived ordinary
@@ -48,6 +51,12 @@ job status returns a retained-response hash rather than repeatedly sending the
 full graph. Source checks run again before initialization; cancelled or invalid
 preparations cannot trigger it. A lost continuation is reconciled through its
 existing task; losing that renderer without a saved identity stays uncertain.
+Imports match the native SDK's `X-OpenAI-Expected-Account-Id` guard, in addition
+to the existing client identity checks. Complete responses stay in the private
+journal, while public status includes response hashes and safe HTTP diagnostics.
+Native job status also supplies approved-operation digests for verifying partial
+batch recovery without trusting an edited local preview or claiming that an
+unfinished native job completed.
 
 The organization workspace provides `python -m chat_reconstitution` for private
 plans, provenance/loss reports, exact-batch execution receipts and canary controls.

@@ -1,3 +1,30 @@
+# 2026-11-16 native import account guard and recovery evidence
+
+The durable branch passed live initialization and canonical readback. The next
+import returned HTTP 404, confirmed in the native HTTP log. Comparing signed
+`26.1111.21308` showed that its importer explicitly sends
+`X-OpenAI-Expected-Account-Id`; the adapter omitted that guard. The request now
+matches that native contract while keeping client identity and exact-batch
+approval checks. Header presence is a fail-closed signed-bundle requirement.
+Whether the correction resolves the live backend response remains a separate
+activation test; no second import was sent during diagnosis.
+
+Complete redacted import responses, including non-success responses, remain in
+the private journal. Public status supplies their hashes, safe HTTP diagnostics,
+and approved-operation hashes from the verified native plan. Existing imports
+may be reused only when the frozen plan explicitly opts in and canonical
+text/role readback matches exactly. The workspace can select verified entries
+across separately approved, stopped batches without marking a paused job
+complete or recreating its successful branch.
+
+All 103 adjacent native tests and 149 workspace tests pass, including expected
+account routing, one-shot failure diagnostics, response retention/redaction,
+explicit reuse and mismatch rejection, native digest binding, wrong-account,
+wrong-source/model/snapshot, duplicate identity, edited-preview and metadata-only
+receipt-assembly cases. The signed feature-only build passed. Full-package and
+live import checks remain separate gates. The source, verified branch, original
+failed import UUID and report A are retained.
+
 # 2026-11-16 durable native branch initialization
 
 The first live branch preparation returned an ID that could not be read back:

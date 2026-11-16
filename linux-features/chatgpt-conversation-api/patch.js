@@ -127,7 +127,9 @@ function patchRenderer(source, settings = {}, experimentalContracts = source) {
     const atom = unique(transports[0].source, new RegExp(String.raw`let (?<atom>${ID})=\(0,${ID}\.${ID}\)\(${ID}\.${ID},\(\{scope:(?<scope>${ID})\}\)=>new ${ID}\(\k<scope>\)\)`, "g"), "native transport atom");
     const exported = unique(transports[0].source, new RegExp(String.raw`(?<key>${ID}):\(\)=>${escapeRegExp(atom.groups.atom)}(?=[,}])`, "g"), "native transport atom export");
     experiments = `const hydexConversationApiExperimentsV1=scope=>({transport:scope.get(${auth.require}(${JSON.stringify(transports[0].id)})[${JSON.stringify(exported.groups.key)}]),upload:(file,options)=>${auth.require}(${JSON.stringify(uploads[0].id)}).uploadChatGptConversationFile(scope,file,options)});`;
-    if (!experimentalContracts.includes('Request.safePost("/data-import/conversation"') || !experimentalContracts.includes('requestBody:{source:')) throw Error("Conversation API drift: native text-history importer is missing.");
+    if (!experimentalContracts.includes('Request.safePost("/data-import/conversation"') || !experimentalContracts.includes('requestBody:{source:') ||
+        !experimentalContracts.includes('"X-OpenAI-Expected-Account-Id"') ||
+        !/Request\.safePost\("\/data-import\/conversation",\{.{0,500}?additionalHeaders:\{\[[^\]]+\]:[A-Za-z_$][\w$]*\.accountId\}\}/.test(experimentalContracts)) throw Error("Conversation API drift: native importer/expected-account guard is missing.");
     for (const contract of ['"/conversation/new_branch"', 'branching_from_conversation_id:', 'branching_from_message_id:', 'is_do_not_remember:', 'parent_message_id:', 'mime_type:e.mimeType']) {
       if (!source.includes(contract)) throw Error(`Conversation API drift: missing experimental native contract ${contract}.`);
     }
@@ -160,11 +162,13 @@ function patchExtracted(extractedDir, { feature } = {}) {
   preload.source = fs.readFileSync(preload.file, "utf8");
   const importers = feature?.settings?.experimentalChatWrites ? find(assets, s => s.includes('Request.safePost("/data-import/conversation"')) : [];
   if (feature?.settings?.experimentalChatWrites && importers.length !== 1) throw Error("Conversation API drift: expected one native history importer.");
+  const accountHeaders = feature?.settings?.experimentalChatWrites ? find(assets, s => s.includes('"X-OpenAI-Expected-Account-Id"')) : [];
+  if (feature?.settings?.experimentalChatWrites && !accountHeaders.length) throw Error("Conversation API drift: native expected-account header is missing.");
   // Precompute every result before writing anything: drift leaves all bytes intact.
   const edits = [
     [main[0], patchMain(main[0].source, feature?.settings)],
     [preload, patchPreload(preload.source)],
-    [renderer[0], patchRenderer(renderer[0].source, feature?.settings, importers[0]?.source)],
+    [renderer[0], patchRenderer(renderer[0].source, feature?.settings, importers[0] ? importers[0].source + accountHeaders.map(record => record.source).join("\n") : undefined)],
   ];
   const changed = edits.filter(([original, next]) => original.source !== next);
   for (const [original, next] of changed) fs.writeFileSync(original.file, next);
