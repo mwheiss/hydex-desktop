@@ -114,7 +114,11 @@ through cooldowns; mutations execute serially and are never blindly retried.
 
 Batch preview and each approval preflight reuse one complete snapshot per source
 chat within that phase. The next phase fetches fresh snapshots and still rejects
-source changes. Their read budget is five minutes, with a separate seven-minute
+source changes. Raw snapshot hashes/data remain unchanged. A separate comparison
+hash sorts only a validated top-level `safe_urls` list, whose backend ordering
+can vary; URL additions/removals, all message/opaque data, other array order,
+parent, scope and metadata changes still invalidate the batch. Older plans keep
+their original strict raw comparison. Their read budget is five minutes, with a separate seven-minute
 proxy deadline; ordinary reads retain their two-minute deadline. Execution allows
 up to twenty minutes for both preflights and the human dialog (the project tool
 limit must exceed this, for example 1260 seconds). A server cooldown fails an

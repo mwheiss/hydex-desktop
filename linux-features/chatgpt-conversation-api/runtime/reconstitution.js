@@ -38,13 +38,19 @@ function testFile(value) {
   if (Buffer.byteLength(value.text) > 65536) fail("INVALID_ARGUMENT", "Canary files are limited to 64 KiB.");
   return { ...value, sha256: crypto.createHash("sha256").update(value.text).digest("hex"), bytes: Buffer.byteLength(value.text) };
 }
+function comparisonDigest(pages) {
+  // The backend may reorder this allow-list. Preserve the
+  // complete raw response/hash; only its comparison copy sorts string URLs.
+  return digest(pages.map(page => Array.isArray(page.safe_urls) && page.safe_urls.every(url => typeof url === "string")
+    ? { ...page, safe_urls: [...page.safe_urls].sort() } : page));
+}
 async function snapshot(service, id, context, signal) {
   const result = await service.getConversation({ context, id, mode: "raw", branch: "all", signal });
   if (!result.complete || !result.pages?.length) fail("INCOMPLETE_CONVERSATION", "A complete source snapshot is required.");
   const raw = result.pages.at(-1), normalized = normalize(result.pages, { branch: "all", header: raw });
   if (normalized.project_id || raw.gizmo_id || raw.is_archived || !raw.current_node || !raw.mapping?.[raw.current_node]) fail("OPERATION_UNAVAILABLE", "Experimental continuation currently requires an unarchived ordinary chat outside a Project or GPT.");
   if (normalized.messages.some(m => ["in_progress", "incomplete"].includes(m.raw_message?.status))) fail("CONCURRENT_UPDATE", "Wait until the source turn has finished.");
-  return { hash: digest(result.pages), current_node: raw.current_node, normalized, raw };
+  return { hash: digest(result.pages), comparison_hash: comparisonDigest(result.pages), current_node: raw.current_node, normalized, raw };
 }
 async function preview(service, input, context, { signal, sources = new Map() } = {}) {
   ensure(service);
@@ -67,7 +73,7 @@ async function preview(service, input, context, { signal, sources = new Map() } 
     if (!sources.has(sourceId)) sources.set(sourceId, await snapshot(service, sourceId, context, signal));
     const source = sources.get(sourceId);
     if (op.type === "import_chat" && input.source_snapshot_sha256 !== source.hash) fail("CONCURRENT_UPDATE", "The imported history must come from the current complete source snapshot; prepare it again.");
-    op.expected_source = { hash: source.hash, current_node: source.current_node };
+    op.expected_source = { hash: source.hash, comparison_hash: source.comparison_hash, current_node: source.current_node };
     if (op.type === "send_message") { op.conversation_id = sourceId; op.parent_message_id = source.current_node; }
     if (op.type === "branch_chat") {
       op.conversation_id = sourceId; op.message_id = identifier(input.message_id ?? source.current_node);
@@ -92,7 +98,10 @@ async function preflight(service, op, context, entry = {}, { signal, sources = n
   if (op.source_conversation_id) {
     if (!sources.has(op.source_conversation_id)) sources.set(op.source_conversation_id, await snapshot(service, op.source_conversation_id, context, signal));
     const current = sources.get(op.source_conversation_id);
-    if (!same(op.expected_source, { hash: current.hash, current_node: current.current_node })) fail("CONCURRENT_UPDATE", "The source chat changed after preview; preview a fresh plan.");
+    const unchanged = op.expected_source.comparison_hash
+      ? op.expected_source.comparison_hash === current.comparison_hash
+      : op.expected_source.hash === current.hash;
+    if (!unchanged || op.expected_source.current_node !== current.current_node) fail("CONCURRENT_UPDATE", "The source chat changed after preview; preview a fresh plan.", { conversation_id: op.source_conversation_id });
   }
 }
 async function verify(service, op, entry, context) {
@@ -204,4 +213,4 @@ async function run(service, job, op, entry, signal) {
     if (!terminal) await service.backend.call("experiment_cancel", { task_id: op.task_id }, context).catch(() => {});
   }
 }
-module.exports = { TYPES, ensure, importPayload, testFile, snapshot, preview, preflight, run, publicJob };
+module.exports = { TYPES, ensure, importPayload, testFile, snapshot, preview, preflight, run, publicJob, comparisonDigest };

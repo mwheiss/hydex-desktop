@@ -1362,3 +1362,37 @@ test("existing imports require explicit reuse approval and exact text-role readb
     else assert.equal(job.entries[0].error.code,mode==="denied"?"IMPORT_NOT_CREATED":"IMPORT_FIDELITY_MISMATCH");
   });
 });
+
+test("URL allow-list order cannot invalidate a frozen message context and raw provenance stays intact",async t=>{
+  const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true}});
+  backend.records.get("c1").safe_urls=["https://example.test/b","https://example.test/a"];
+  const raw=clone(backend.records.get("c1")),rawHash=require("./runtime/common.js").digest([raw]);
+  const plan=await preview(service,[{type:"send_message",conversation_id:"c1",model:"native-model",text:"Recall",reason:"Test URL order"}]);
+  assert.equal(plan.operations[0].expected_source.hash,rawHash);
+  backend.records.get("c1").safe_urls.reverse();
+  await service.preflight(service.journal.plan(plan.plan_id));
+  assert.notEqual(require("./runtime/common.js").digest([backend.records.get("c1")]),rawHash);
+  assert.deepEqual(raw.safe_urls,["https://example.test/b","https://example.test/a"]);
+  assert.deepEqual(backend.records.get("c1").safe_urls,["https://example.test/a","https://example.test/b"]);
+  assert.equal(service.journal.plan(plan.plan_id).operations[0].expected_source.hash,rawHash);
+});
+test("URL membership, message data, opaque fields and parent changes still invalidate approval",async t=>{
+  for(const change of ["url","message","opaque","parent"])await t.test(change,async sub=>{
+    const {service,backend}=fixture(sub,{settings:{experimentalChatWrites:true}});backend.records.get("c1").safe_urls=["https://example.test/a","https://example.test/b"];
+    const plan=await preview(service,[{type:"send_message",conversation_id:"c1",model:"native-model",text:"Recall",reason:"Test context race"}]);
+    const raw=backend.records.get("c1");
+    if(change==="url")raw.safe_urls[0]="https://example.test/changed";
+    else if(change==="message")raw.mapping.user.message.content.parts=["Changed"];
+    else if(change==="opaque")raw.mapping.reply.message.metadata.encrypted_reasoning="different-opaque-state";
+    else raw.current_node="alternate";
+    await assert.rejects(service.preflight(service.journal.plan(plan.plan_id)),code("CONCURRENT_UPDATE"));
+    assert.equal(backend.mutations.length,0);
+  });
+});
+test("snapshot comparison normalizes only validated top-level URL strings and preserves every other ordering",()=>{
+  const {comparisonDigest}=reconstruction,raw=tree();raw.safe_urls=["b","a"];const copy=clone(raw);copy.safe_urls.reverse();
+  assert.equal(comparisonDigest([raw]),comparisonDigest([copy]));assert.deepEqual(raw.safe_urls,["b","a"]);
+  copy.mapping.user.children.reverse();assert.notEqual(comparisonDigest([raw]),comparisonDigest([copy]));
+  const malformed={...raw,safe_urls:[{url:"b"},{url:"a"}]},reversed={...raw,safe_urls:[{url:"a"},{url:"b"}]};
+  assert.notEqual(comparisonDigest([malformed]),comparisonDigest([reversed]));
+});

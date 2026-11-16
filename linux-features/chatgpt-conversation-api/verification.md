@@ -1,3 +1,27 @@
+# 2026-11-16 stable URL allow-list concurrency comparison
+
+Two historical-recall preflights rejected a newly created quoted-history chat
+without issuing a native job or message. Targeted retained response comparison
+proved that its two `safe_urls` entries changed order while the same URL
+multiset, parent and every other page field remained identical. Full raw hashes
+therefore made an unchanged context look concurrent.
+
+New previews retain their original raw snapshot hash and add a comparison hash
+that sorts only validated top-level string `safe_urls` lists. Raw pages, cache
+versions, messages, unknown/opaque fields and their ordering are untouched.
+Preflight compares that hash plus the parent; old plans retain strict raw-hash
+behavior. URL membership, message/opaque data, scope, parent and all other
+ordering changes remain protected. Changed-source errors now identify the chat.
+No prior failed plan is silently reused, and native exact-batch approval remains
+required after a fresh preview.
+
+All 110 adjacent native tests pass. Coverage includes raw hash/data preservation,
+unchanged URL multisets, rejected URL membership/message/opaque/parent changes,
+and preserving other array and malformed-field ordering. The feature-only build
+passed against freshly verified signed stable `26.1111.21308`. Full-package and
+installed recall preflight verification remain separate gates. Existing chats,
+initialization audits, B publication and both undispatched attempts are retained.
+
 # 2026-11-16 native import account guard and recovery evidence
 
 The durable branch passed live initialization and canonical readback. The next
