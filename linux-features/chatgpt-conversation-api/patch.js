@@ -128,7 +128,7 @@ function patchRenderer(source, settings = {}, experimentalContracts = source) {
     const exported = unique(transports[0].source, new RegExp(String.raw`(?<key>${ID}):\(\)=>${escapeRegExp(atom.groups.atom)}(?=[,}])`, "g"), "native transport atom export");
     experiments = `const hydexConversationApiExperimentsV1=scope=>({transport:scope.get(${auth.require}(${JSON.stringify(transports[0].id)})[${JSON.stringify(exported.groups.key)}]),upload:(file,options)=>${auth.require}(${JSON.stringify(uploads[0].id)}).uploadChatGptConversationFile(scope,file,options)});`;
     if (!experimentalContracts.includes('Request.safePost("/data-import/conversation"') || !experimentalContracts.includes('requestBody:{source:')) throw Error("Conversation API drift: native text-history importer is missing.");
-    for (const contract of ['"/conversation/new_branch"', 'is_do_not_remember:', 'parent_message_id:', 'mime_type:e.mimeType']) {
+    for (const contract of ['"/conversation/new_branch"', 'branching_from_conversation_id:', 'branching_from_message_id:', 'is_do_not_remember:', 'parent_message_id:', 'mime_type:e.mimeType']) {
       if (!source.includes(contract)) throw Error(`Conversation API drift: missing experimental native contract ${contract}.`);
     }
   }

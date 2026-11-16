@@ -4,7 +4,7 @@
 // journal. They never use a read tool as a disguised mutation or replay an
 // interrupted HTTP request. History imports are new chats, not checkpoints.
 const crypto = require("node:crypto");
-const { fail, identifier, textValue, digest, same, publicError } = require("./common.js");
+const { fail, identifier, textValue, digest, same, publicError, redact } = require("./common.js");
 const { normalize } = require("./normalize.js");
 
 const TYPES = new Set(["create_chat", "send_message", "branch_chat", "import_chat"]);
@@ -52,9 +52,9 @@ async function preview(service, input, context, { signal, sources = new Map() } 
   keys(input, allowed);
   const op = { type: input.type, reason: textValue(input.reason, 2000), task_id: crypto.randomUUID() };
   const fields = { create_chat: ["model", "text", "test_file"], send_message: ["conversation_id", "model", "text"],
-    branch_chat: ["conversation_id", "message_id"], import_chat: ["history", "loss_report", "source_conversation_id", "source_snapshot_sha256"] }[input.type];
+    branch_chat: ["conversation_id", "message_id", "model", "text"], import_chat: ["history", "loss_report", "source_conversation_id", "source_snapshot_sha256"] }[input.type];
   if (Object.keys(input).some(k => !["type", "reason", ...fields].includes(k))) fail("INVALID_ARGUMENT", "Field is not supported by this experimental operation.");
-  if (["create_chat", "send_message"].includes(op.type)) {
+  if (["create_chat", "send_message", "branch_chat"].includes(op.type)) {
     op.model = textValue(input.model, 100);
     if (!/^[A-Za-z0-9._:-]+$/.test(op.model)) fail("INVALID_ARGUMENT", "Choose an explicit native model slug.");
     op.text = textValue(input.text, 100000); op.user_message_id = crypto.randomUUID();
@@ -100,14 +100,14 @@ async function verify(service, op, entry, context) {
 }
 async function verifyScheduled(service, op, entry, context, signal) {
   if (entry.result?.already_imported) fail("IMPORT_NOT_CREATED", "The importer returned a pre-existing chat; no new reconstruction was confirmed.");
-  const id = entry.result?.conversation_id ?? op.conversation_id;
+  const id = entry.result?.conversation_id ?? (op.type === "send_message" ? op.conversation_id : null);
   if (!id) fail("UNCERTAIN_MUTATION", "No created chat ID was confirmed. Reconcile manually; this request will not be repeated.");
   identifier(id);
   if (op.type !== "send_message" && id === op.source_conversation_id) fail("VERIFY_FAILED", "Reconstruction must create a different chat identity.");
   const result = await service.getConversation({ context, id, mode: "raw", branch: "all", signal });
   if (!result.complete) fail("VERIFY_FAILED", "The resulting chat snapshot is incomplete.");
   const normalized = normalize(result.pages, { branch: "active", header: result.pages.at(-1) });
-  if (["create_chat", "send_message"].includes(op.type)) {
+  if (["create_chat", "send_message", "branch_chat"].includes(op.type)) {
     const message = normalized.messages.find(m => m.id === op.user_message_id);
     if (!message || message.role !== "user" || !message.content?.parts?.includes(op.text)) fail("VERIFY_FAILED", "The frozen outgoing message has not been confirmed in history.");
     if (entry.result?.stream_complete !== true) fail("UNCERTAIN_MUTATION", "The outgoing message exists, but stream completion was not confirmed. It will not be resent.");
@@ -117,9 +117,36 @@ async function verifyScheduled(service, op, entry, context, signal) {
     const actual = normalized.messages.filter(m => m.visible && ["user", "assistant"].includes(m.role));
     const expected = op.history.chat_messages;
     if (actual.length !== expected.length || expected.some((m, i) => actual[i].role !== (m.sender === "human" ? "user" : "assistant") || actual[i].content?.parts?.join("") !== m.text)) fail("IMPORT_FIDELITY_MISMATCH", "The created chat exists, but imported text/role readback differs from the approved history.", { conversation_id: id });
-  } else if (!normalized.messages.some(m => m.node_id === op.message_id || m.id === op.message_id)) fail("VERIFY_FAILED", "The branch point was not found in the new chat.");
+  }
+  if (op.type === "branch_chat" && !normalized.messages.some(m => m.node_id === op.message_id || m.id === op.message_id)) fail("VERIFY_FAILED", "The branch point was not found in the new chat.");
   entry.after = { conversation_id: id, snapshot_sha256: digest(result.pages), fidelity: op.fidelity ?? "native_operation; context fidelity not measured" };
   service.recordChange(context, { kind: "chat_changed", id });
+}
+function publicJob(job) {
+  return { ...job, entries: (job.entries ?? []).map(entry => !entry.result?.branch_response ? entry : {
+    ...entry, result: { ...entry.result, branch_response: {
+      retained_in_private_journal: true, sha256: entry.branch_response_sha256 ?? digest(entry.result.branch_response),
+    } },
+  }) };
+}
+function storeResult(service, job, entry, result) {
+  if (!result) return;
+  const clean = redact(result).value;
+  entry.result ??= {}; let changed = false;
+  for (const [key, value] of Object.entries(clean)) {
+    if (!same(entry.result[key], value)) {
+      entry.result[key] = value; changed = true;
+      if (key === "branch_response") entry.branch_response_sha256 = digest(value);
+    }
+  }
+  if (changed) service.journal.saveJob(job);
+}
+function preparedBranch(op, entry) {
+  const raw = entry.result?.branch_response?.conversation;
+  if (!raw?.mapping || !raw.current_node || !raw.mapping[raw.current_node]?.message) fail("VERIFY_FAILED", "The native branch preparation is incomplete; no completion was sent.");
+  const normalized = normalize([raw], { branch: "all", header: raw });
+  if (!normalized.complete || normalized.project_id || raw.gizmo_id || raw.is_archived) fail("VERIFY_FAILED", "The native branch draft has an unsupported scope.");
+  if (!normalized.messages.some(m => m.node_id === op.message_id || m.id === op.message_id)) fail("VERIFY_FAILED", "The prepared graph lacks the approved branch point.");
 }
 async function run(service, job, op, entry, signal) {
   ensure(service);
@@ -142,7 +169,19 @@ async function run(service, job, op, entry, signal) {
     const deadline = service.clock() + 15 * 60 * 1000;
     for (;;) {
       if (task.task_id !== op.task_id) fail("VERIFY_FAILED", "Renderer returned a different operation identity.");
-      if (task.result) { entry.result = task.result; service.journal.saveJob(job); }
+      storeResult(service, job, entry, task.result);
+      if (task.status === "prepared") {
+        if (op.type !== "branch_chat") fail("VERIFY_FAILED", "Unexpected native preparation phase.");
+        preparedBranch(op, entry);
+        // The complete response is fsynced above. Check the source again before
+        // the separate, explicitly approved initialization write.
+        await preflight(service, op, context, {}, { signal });
+        signal.throwIfAborted();
+        if (service.clock() > deadline) fail("PACING_WAIT", "The branch initialization budget ended; its preparation is retained and no completion was sent.");
+        entry.continuation_intent = true; service.journal.saveJob(job);
+        task = await service.call("experiment_continue", { task_id: op.task_id }, context, { read: false, signal });
+        continue;
+      }
       if (task.status === "completed") { terminal = true; break; }
       if (task.status !== "running") fail("UNCERTAIN_MUTATION", "The renderer did not confirm completion; inspect the saved result before retrying.");
       signal.throwIfAborted();
@@ -159,4 +198,4 @@ async function run(service, job, op, entry, signal) {
     if (!terminal) await service.backend.call("experiment_cancel", { task_id: op.task_id }, context).catch(() => {});
   }
 }
-module.exports = { TYPES, ensure, importPayload, testFile, snapshot, preview, preflight, run };
+module.exports = { TYPES, ensure, importPayload, testFile, snapshot, preview, preflight, run, publicJob };

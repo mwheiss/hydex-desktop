@@ -17,9 +17,13 @@ experimental batch:
 - `send_message`: `conversation_id`, explicit `model`, and `text`. Preview freezes
   the current parent and full source snapshot digest. A changed source invalidates
   approval. At most one write per target chat per batch is allowed.
-- `branch_chat`: `conversation_id` and optional message node `message_id` (default
-  current node). Uses the native new-branch route; its returned nested conversation
-  identity must differ from the source.
+- `branch_chat`: `conversation_id`, explicit native `model` and initialization
+  `text`, plus optional message node `message_id` (default current node). The
+  new-branch route prepares a local draft; its returned ID is not a saved chat.
+  Main retains the complete redacted preparation in its private journal before
+  acknowledging one completion with the native `branching_from_*` fields. The
+  stream supplies the saved chat ID, which must differ from the source. The
+  initialization turn is part of the exact approved batch, never implicit.
 - `import_chat`: validated Claude-format plain-text `history`, a mandatory
   `loss_report`, and optional `source_conversation_id` with its canonical
   `source_snapshot_sha256` for provenance/concurrency checks. This creates a
@@ -38,6 +42,12 @@ keeping IPC open for a long generation. The main journal records intent before
 dispatch and preserves discovered chat/file IDs. Unknown outcomes never trigger
 another write on resume. Cancellation requests native transport cancellation; it
 does not prove that a server-side generation stopped or undo its output.
+Branch preparations remain in the private journal, including unknown fields and
+available opaque context fields, after credential/capability redaction. Ordinary
+job status returns a retained-response hash rather than repeatedly sending the
+full graph. Source checks run again before initialization; cancelled or invalid
+preparations cannot trigger it. A lost continuation is reconciled through its
+existing task; losing that renderer without a saved identity stays uncertain.
 
 The organization workspace provides `python -m chat_reconstitution` for private
 plans, provenance/loss reports, exact-batch execution receipts and canary controls.

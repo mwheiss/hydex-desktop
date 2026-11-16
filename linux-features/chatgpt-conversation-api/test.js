@@ -1051,13 +1051,30 @@ function importFixture() {
       created_at: stamp, updated_at: stamp, content: [{ type: "text", text: "Synthetic source" }], attachments: [], files: [] }] };
 }
 function experimentBackend(backend) {
-  const original = backend.call.bind(backend); let issued = 0;
+  const original = backend.call.bind(backend), tasks = new Map(); let issued = 0, continued = 0;
   backend.call = async (operation, args, context) => {
     if (operation === "experiment_cancel") return {task_id: args.task_id, status: "unknown"};
+    if (operation === "experiment_status") {
+      const task=tasks.get(args.task_id);if(!task)throw new ApiError("OPERATION_UNAVAILABLE","No retained renderer task");
+      return clone({task_id:args.task_id,status:task.status,result:task.result});
+    }
+    if (operation === "experiment_continue") {
+      const task=tasks.get(args.task_id); assert.equal(task.status,"prepared"); continued++;
+      const raw=clone(task.result.branch_response.conversation);raw.conversation_id=task.id;
+      for(const m of [message(task.op.user_message_id,"user","text",{parts:[task.op.text]}),message(`reply-${task.id}`,"assistant","text",{parts:["READY"]})]){
+        raw.mapping[raw.current_node].children.push(m.id);raw.mapping[m.id]={id:m.id,parent:raw.current_node,children:[],message:m};raw.current_node=m.id;
+      }
+      backend.records.set(task.id,raw);task.status="completed";task.result={conversation_id:task.id,stream_complete:true,continuation_started:true};
+      return clone({task_id:args.task_id,status:task.status,result:task.result});
+    }
     if (operation !== "experiment_start") return original(operation, args, context);
     issued++; const op = args.operation, id = op.conversation_id && op.type === "send_message" ? op.conversation_id : `new-chat-${issued}`;
     let raw;
-    if (op.type === "branch_chat") { raw = clone(backend.records.get(op.conversation_id)); raw.conversation_id = id; raw.current_node = op.message_id; }
+    if (op.type === "branch_chat") {
+      raw = clone(backend.records.get(op.conversation_id)); raw.conversation_id = `draft-${id}`; raw.current_node = op.message_id;
+      const task={id,op,status:"prepared",result:{branch_response:{conversation:raw,unknown_fixture_field:"retained-raw-branch-field"}}};tasks.set(args.task_id,task);
+      return clone({task_id:args.task_id,status:task.status,result:task.result});
+    }
     else {
       raw = op.type === "send_message" ? clone(backend.records.get(id)) : { conversation_id: id, title: "Synthetic", is_archived: false, gizmo_id: null, current_node: "root", mapping: { root: { id: "root", parent: null, children: [], message: null } } };
       const messages = op.type === "import_chat" ? op.history.chat_messages.map(m => message(m.uuid, m.sender === "human" ? "user" : "assistant", "text", {parts:[m.text]}))
@@ -1065,9 +1082,9 @@ function experimentBackend(backend) {
       for (const m of messages) { raw.mapping[raw.current_node].children.push(m.id); raw.mapping[m.id]={id:m.id,parent:raw.current_node,children:[],message:m};raw.current_node=m.id; }
     }
     backend.records.set(id, raw);
-    return {task_id:args.task_id,status:"completed",result:{conversation_id:id,stream_complete:true}};
+    const result={task_id:args.task_id,status:"completed",result:{conversation_id:id,stream_complete:true}};tasks.set(args.task_id,result);return result;
   };
-  return () => issued;
+  const counter=()=>issued;counter.continuations=()=>continued;return counter;
 }
 test("experimental writes default off, use closed schemas and preview never mutates", async t => {
   const {service,backend} = fixture(t);
@@ -1085,7 +1102,7 @@ test("creating, importing and branching chats require one native exact-batch app
   const {service,backend,approvals}=fixture(t,{settings:{experimentalChatWrites:true}}), issued=experimentBackend(backend);
   const plan=await preview(service,[{type:"create_chat",model:"native-model",text:"Synthetic prompt",reason:"Test"},
     {type:"import_chat",history:importFixture(),loss_report:"Text-only synthetic test",reason:"Test"},
-    {type:"branch_chat",conversation_id:"c1",reason:"Test"}]);
+    {type:"branch_chat",model:"native-model",text:"READY",conversation_id:"c1",reason:"Test"}]);
   assert.equal(issued(),0);assert.equal(approvals.length,0);
   const job=await finish(service,(await execute(service,plan)).job_id);
   assert.equal(job.status,"completed");assert.equal(issued(),3);assert.equal(approvals.length,1);
@@ -1142,13 +1159,14 @@ test("renderer tasks reuse native transport, retain upload IDs, and reject dupli
 test("experimental patch resolution is unique, opt-in, idempotent and fails closed on native drift",()=>{
   const transport='transport(e,t,n){n.d(t,{client:()=>H});class F{async startCompletionStream(o){Request.streamPost("/f/conversation",o)}}let H=(0,s.vP)(c.u,({scope:e})=>new F(e));}';
   const upload='upload(e,t,n){n.d(t,{uploadChatGptConversationFile:()=>b});function b(){}}';
-  const routes='experimentalRoutes(e,t,n){let x=["/conversation/new_branch",{is_do_not_remember:true,parent_message_id:1,mime_type:e.mimeType}];}';
+  const routes='experimentalRoutes(e,t,n){let x=["/conversation/new_branch",{branching_from_conversation_id:1,branching_from_message_id:2,is_do_not_remember:true,parent_message_id:1,mime_type:e.mimeType}];}';
   const chunk=CHUNK.replace('routes(e,t,n){',`${transport},${upload},${routes},routes(e,t,n){`);
   const importer='Request.safePost("/data-import/conversation",{requestBody:{source:q,conversation:a.source}})';
   const patched=patch.patchRenderer(chunk,{experimentalChatWrites:true},importer);
   assert.equal(patch.patchRenderer(patched,{experimentalChatWrites:true},importer),patched);
   assert.throws(()=>patch.patchRenderer(chunk,{experimentalChatWrites:true},""));
   assert.throws(()=>patch.patchRenderer(chunk.replace('"/f/conversation"','"/wrong"'),{experimentalChatWrites:true},importer));
+  assert.throws(()=>patch.patchRenderer(chunk.replace('branching_from_message_id:','changed_branch_field:'),{experimentalChatWrites:true},importer));
   assert.throws(()=>patch.patchRenderer(patched,{}));
 });
 
@@ -1165,19 +1183,30 @@ test("an import source digest must match the actual current snapshot",async t=>{
   const {service}=fixture(t,{settings:{experimentalChatWrites:true}});
   await assert.rejects(preview(service,[{type:"import_chat",source_conversation_id:"c1",source_snapshot_sha256:"0".repeat(64),history:importFixture(),loss_report:"Text-only",reason:"Test"}]),code("CONCURRENT_UPDATE"));
 });
-test("native branch readback uses the documented nested conversation response",async()=>{
-  const requests=[];const run=installExperiments(()=>({}),()=>({safePost:async(route,options)=>{requests.push([route,options.requestBody]);return {conversation:{conversation_id:"new-branch"}};}}),()=>CONTEXT);
+test("native branch preparation waits for a journal acknowledgement and uses official continuation fields exactly once",async()=>{
+  const requests=[],completions=[];let callbacks;
+  const response={conversation:tree("unpersisted-draft"),unknown_field:{keep:true}};
+  const run=installExperiments(()=>({transport:{startCompletionStream:async options=>{completions.push(options.request);callbacks=options;return {streamRequestId:"branch-stream"};}}}),
+    ()=>({safePost:async(route,options)=>{requests.push([route,options.requestBody]);return response;}}),()=>CONTEXT);
   const env={before:CONTEXT,options:x=>x,assertRequestCurrent(){}};
-  await run("experiment_start",{task_id:"branch-task",operation:{type:"branch_chat",conversation_id:"c1",message_id:"reply"}},env);
+  await run("experiment_start",{task_id:"branch-task",operation:{type:"branch_chat",model:"native-model",text:"READY",conversation_id:"c1",message_id:"reply",user_message_id:"initial-message"}},env);
   await new Promise(r=>setImmediate(r));const task=await run("experiment_status",{task_id:"branch-task"},env);
-  assert.equal(task.result.conversation_id,"new-branch");assert.equal(task.status,"completed");assert.equal(requests[0][0],"/conversation/new_branch");
+  assert.equal(task.result.conversation_id,undefined);assert.equal(task.status,"prepared");assert.deepEqual(task.result.branch_response,response);assert.equal(completions.length,0);
+  await run("experiment_continue",{task_id:"branch-task"},env);await run("experiment_continue",{task_id:"branch-task"},env);
+  await new Promise(r=>setImmediate(r));
+  assert.equal(completions.length,1);assert.equal(requests.length,1);assert.equal(requests[0][0],"/conversation/new_branch");
+  assert.equal(completions[0].branching_from_conversation_id,"c1");assert.equal(completions[0].branching_from_message_id,"reply");
+  assert.equal(completions[0].parent_message_id,"reply");assert.equal(Object.hasOwn(completions[0],"conversation_id"),false);
+  callbacks.onDecodedEvent({conversationId:"persisted-branch"});callbacks.onComplete();
+  const done=await run("experiment_status",{task_id:"branch-task"},env);
+  assert.equal(done.result.conversation_id,"persisted-branch");assert.equal(done.status,"completed");assert.equal(done.result.branch_response,undefined);
 });
 
 test("a comparison preview freezes one shared source and honors a long body interval", async t => {
   let now=Date.now();const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true,minDelayMs:500},clock:()=>now,sleep:async ms=>{now+=ms;}});
   const slot=service.pacing.slot(CONTEXT,"conversation",true);slot.bucket.interval_ms=43350;slot.bucket.next_request_ms=now+43350;
   const hash=require("./runtime/common.js").digest([backend.records.get("c1")]);
-  const plan=await preview(service,[{type:"branch_chat",conversation_id:"c1",reason:"Test shared source"},
+  const plan=await preview(service,[{type:"branch_chat",model:"native-model",text:"READY",conversation_id:"c1",reason:"Test shared source"},
     ...[1,2].map(()=>({type:"import_chat",source_conversation_id:"c1",source_snapshot_sha256:hash,history:importFixture(),loss_report:"Text-only",reason:"Test shared source"}))]);
   assert.equal(backend.calls.filter(c=>c.operation==="conversation").length,1);
   assert.equal(plan.operations.every(op=>op.expected_source.hash===hash),true);
@@ -1191,7 +1220,7 @@ test("a comparison preview freezes one shared source and honors a long body inte
 test("preflight refreshes one source per phase and paced job verification completes",async t=>{
   let now=Date.now();const {service,backend,approvals}=fixture(t,{settings:{experimentalChatWrites:true,minDelayMs:500},clock:()=>now,sleep:async ms=>{now+=ms;}});
   experimentBackend(backend);const slot=service.pacing.slot(CONTEXT,"conversation",true);slot.bucket.interval_ms=43350;
-  const plan=await preview(service,[{type:"branch_chat",conversation_id:"c1",reason:"Test paced branch"}]);
+  const plan=await preview(service,[{type:"branch_chat",model:"native-model",text:"READY",conversation_id:"c1",reason:"Test paced branch"}]);
   const job=await finish(service,(await execute(service,plan)).job_id);
   assert.equal(job.status,"completed");assert.equal(job.entries[0].status,"verified");assert.equal(approvals.length,1);
   assert.equal(slot.bucket.interval_ms,43350);
@@ -1202,7 +1231,7 @@ test("five independent source checks respect pacing through preview and both app
   const {service,backend,approvals}=fixture(t,{settings:{experimentalChatWrites:true,minDelayMs:500},clock:()=>now,sleep:async ms=>{now+=ms;}});
   for(let i=2;i<=5;i++){const raw=clone(backend.records.get("c1"));raw.conversation_id=`c${i}`;backend.records.set(`c${i}`,raw);}
   const slot=service.pacing.slot(CONTEXT,"conversation",true);slot.bucket.interval_ms=43350;
-  const plan=await preview(service,Array.from({length:5},(_,i)=>({type:"branch_chat",conversation_id:`c${i+1}`,reason:"Test paced batch"})));
+  const plan=await preview(service,Array.from({length:5},(_,i)=>({type:"branch_chat",model:"native-model",text:"READY",conversation_id:`c${i+1}`,reason:"Test paced batch"})));
   assert.ok(now-started>120000);assert.equal(backend.calls.filter(c=>c.operation==="conversation").length,5);
   // Exercise execute's two fresh preflights without issuing any test writes.
   service.start=()=>({job_id:"test-no-writes"});
@@ -1219,4 +1248,77 @@ test("scheduled reads remain bounded and a rate limit is never replayed interact
   try{
     await assert.rejects(service.scheduledReads(CONTEXT,signal=>new Promise((resolve,reject)=>signal.addEventListener("abort",()=>reject(signal.reason),{once:true})),5),code("PACING_WAIT"));
   }finally{clearTimeout(hold);}
+});
+
+test("a branch requires explicit initialization text and model in its approved preview",async t=>{
+  const {service}=fixture(t,{settings:{experimentalChatWrites:true}});
+  await assert.rejects(preview(service,[{type:"branch_chat",conversation_id:"c1",reason:"Test missing initialization"}]),code("INVALID_ARGUMENT"));
+});
+test("branch preparation is privately journaled before continuation and omitted from public job bodies",async t=>{
+  const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true}}),issued=experimentBackend(backend),original=backend.call.bind(backend);
+  let durable;
+  backend.call=async(name,args,context)=>{
+    if(name==="experiment_continue"){
+      durable=service.journal.jobs()[0];
+      assert.equal(durable.entries[0].continuation_intent,true);
+      assert.equal(durable.entries[0].result.branch_response.unknown_fixture_field,"retained-raw-branch-field");
+      assert.equal(durable.entries[0].result.branch_response.access_token,"[redacted]");
+    }
+    const result=await original(name,args,context);
+    if(name==="experiment_start")result.result.branch_response.access_token="synthetic-credential";
+    return result;
+  };
+  const plan=await preview(service,[{type:"branch_chat",conversation_id:"c1",model:"native-model",text:"READY",reason:"Test initialization"}]);
+  const job=await finish(service,(await execute(service,plan)).job_id);assert.equal(job.status,"completed");
+  assert.equal(issued(),1);assert.equal(issued.continuations(),1);assert.equal(backend.records.get("c1").current_node,"reply");
+  assert.equal(backend.calls.some(call=>call.args.id?.startsWith("draft-")),false);
+  const exposed=await dispatch(service,"chatgpt_get_job_status",{context:CONTEXT,job_id:job.id});
+  assert.equal(exposed.entries[0].result.branch_response.retained_in_private_journal,true);
+  assert.equal(JSON.stringify(exposed).includes("retained-raw-branch-field"),false);
+  assert.equal(JSON.stringify(service.journal.job(job.id)).includes("synthetic-credential"),false);
+});
+test("a source race after preparation prevents the separate branch completion",async t=>{
+  const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true}}),issued=experimentBackend(backend),original=backend.call.bind(backend);
+  backend.call=async(name,args,context)=>{const result=await original(name,args,context);if(name==="experiment_start")backend.records.get("c1").update_time++;return result;};
+  const plan=await preview(service,[{type:"branch_chat",conversation_id:"c1",model:"native-model",text:"READY",reason:"Test source race"}]);
+  const job=await finish(service,(await execute(service,plan)).job_id);
+  assert.equal(job.entries[0].error.code,"CONCURRENT_UPDATE");assert.equal(issued(),1);assert.equal(issued.continuations(),0);
+  assert.ok(job.entries[0].result.branch_response);assert.equal(job.entries[0].result.conversation_id,undefined);
+});
+test("a lost branch continuation reply reconciles the same task without another generation",async t=>{
+  const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true}}),issued=experimentBackend(backend),original=backend.call.bind(backend);let lost=true;
+  backend.call=async(name,args,context)=>{const result=await original(name,args,context);if(name==="experiment_continue"&&lost){lost=false;throw new ApiError("NATIVE_TIMEOUT","Lost continuation reply");}return result;};
+  const plan=await preview(service,[{type:"branch_chat",conversation_id:"c1",model:"native-model",text:"READY",reason:"Test lost reply"}]);
+  const paused=await finish(service,(await execute(service,plan)).job_id);assert.equal(paused.entries[0].status,"uncertain");
+  const done=await finish(service,(await execute(service,plan,{resume_job_id:paused.id})).job_id);
+  assert.equal(done.status,"completed");assert.equal(issued(),1);assert.equal(issued.continuations(),1);
+});
+test("cancelling a prepared renderer draft cannot launch its completion",async()=>{
+  let generations=0;const env={before:CONTEXT,options:x=>x,assertRequestCurrent(){}};
+  const run=installExperiments(()=>({transport:{startCompletionStream:async()=>{generations++;}}}),()=>({safePost:async()=>({conversation:tree("draft")})}),()=>CONTEXT);
+  await run("experiment_start",{task_id:"cancel-branch",operation:{type:"branch_chat",conversation_id:"c1",message_id:"reply",model:"native-model",text:"READY"}},env);
+  await new Promise(resolve=>setImmediate(resolve));await run("experiment_cancel",{task_id:"cancel-branch"},env);
+  const task=await run("experiment_continue",{task_id:"cancel-branch"},env);await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(task.status,"uncertain");assert.equal(generations,0);
+});
+test("invalid native branch preparations never reach the completion transport",async t=>{
+  const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true}}),issued=experimentBackend(backend),original=backend.call.bind(backend);
+  backend.call=async(name,args,context)=>{const result=await original(name,args,context);if(name==="experiment_start")delete result.result.branch_response.conversation.mapping.reply;return result;};
+  const plan=await preview(service,[{type:"branch_chat",conversation_id:"c1",model:"native-model",text:"READY",reason:"Test incomplete preparation"}]);
+  const job=await finish(service,(await execute(service,plan)).job_id);
+  assert.equal(job.entries[0].status,"uncertain");assert.equal(issued.continuations(),0);assert.equal(job.entries[0].continuation_intent,undefined);
+});
+test("renderer loss after an uncertain branch continuation never repeats either write",async t=>{
+  const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true}}),issued=experimentBackend(backend),original=backend.call.bind(backend);let lost=false;
+  backend.call=async(name,args,context)=>{
+    if(name==="experiment_status"&&lost)throw new ApiError("OPERATION_UNAVAILABLE","Renderer was restarted");
+    const result=await original(name,args,context);
+    if(name==="experiment_continue"){lost=true;throw new ApiError("NATIVE_TIMEOUT","Lost reply followed by renderer exit");}
+    return result;
+  };
+  const plan=await preview(service,[{type:"branch_chat",conversation_id:"c1",model:"native-model",text:"READY",reason:"Test renderer loss"}]);
+  const paused=await finish(service,(await execute(service,plan)).job_id);
+  const stopped=await finish(service,(await execute(service,plan,{resume_job_id:paused.id})).job_id);
+  assert.equal(stopped.entries[0].status,"uncertain");assert.equal(stopped.error.code,"UNCERTAIN_MUTATION");
+  assert.equal(issued(),1);assert.equal(issued.continuations(),1);assert.ok(stopped.entries[0].result.branch_response);
 });

@@ -127,7 +127,7 @@ async function dispatch(service, name, args) {
     case "chatgpt_get_inventory_status": return service.inventoryStatus(args);
     case "chatgpt_preview_changes": return service.preview(args);
     case "chatgpt_execute_approved_plan": return service.execute(args);
-    case "chatgpt_get_job_status": return service.jobStatus(args);
+    case "chatgpt_get_job_status": return require("./reconstitution.js").publicJob(await service.jobStatus(args));
     case "chatgpt_cancel_job": return service.cancel(args);
     case "chatgpt_undo_job": return service.undo(args);
     default: {

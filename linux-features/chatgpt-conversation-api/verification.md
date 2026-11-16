@@ -1,3 +1,31 @@
+# 2026-11-16 durable native branch initialization
+
+The first live branch preparation returned an ID that could not be read back:
+the normal route returned 404 and one targeted lookup reported no saved record.
+Inspection of signed stable `26.1111.21308` established that Desktop retains the
+preparation graph locally, then initializes a new conversation with explicit
+`branching_from_conversation_id` and `branching_from_message_id` fields. It does
+not treat the preparation ID as a persisted destination.
+
+`branch_chat` now requires explicit initialization model/text in the approved
+plan. The renderer stops after preparation until main has fsynced the complete
+credential-redacted response, validated its graph and rechecked the source.
+Only then does one memoized continuation use the native completion transport.
+The stream-confirmed saved ID and initialization message receive canonical
+readback. Public job status carries a retained-response hash; full preparations
+stay in the private journal. Unknown outcomes without a saved ID remain
+uncertain after renderer loss. The existing scrollable approval and exact-batch
+authorization remain unchanged.
+
+All 96 adjacent native tests and 134 workspace tests pass. They cover the
+two-phase native protocol, no completion before the journal acknowledgement,
+correct source fields with no draft destination ID, raw retention/redaction,
+bounded public status, source races, invalid graphs, cancellation, lost replies
+and renderer loss without repeated writes. The workspace client also retains
+paused job errors as successful status data. Full-package and installed live
+branch verification remain separate gates; the original failed attempt and its
+unissued operations are preserved, with report A unchanged.
+
 # 2026-11-16 scrollable native approval
 
 Large import plans made the platform message box grow past the screen, hiding

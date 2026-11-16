@@ -60,7 +60,7 @@ function installRenderer(scope, accountAtom, getRequest, getReadHeaders = () => 
       });
       let result;
       switch (request.operation) {
-        case "experiment_start": case "experiment_status": case "experiment_cancel":
+        case "experiment_start": case "experiment_status": case "experiment_cancel": case "experiment_continue":
           if (!state.experiments) throw error("OPERATION_UNAVAILABLE");
           result = await state.experiments(request.operation, a, { before, options, assertRequestCurrent }); break;
         case "identity": result = before; break;
