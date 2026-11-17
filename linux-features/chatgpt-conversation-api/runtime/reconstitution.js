@@ -49,21 +49,27 @@ async function snapshot(service, id, context, signal) {
   if (!result.complete || !result.pages?.length) fail("INCOMPLETE_CONVERSATION", "A complete source snapshot is required.");
   const raw = result.pages.at(-1), normalized = normalize(result.pages, { branch: "all", header: raw });
   if (normalized.project_id || raw.gizmo_id || raw.is_archived || !raw.current_node || !raw.mapping?.[raw.current_node]) fail("OPERATION_UNAVAILABLE", "Experimental continuation currently requires an unarchived ordinary chat outside a Project or GPT.");
+  if (raw.is_temporary_chat === true || raw.conversation_origin != null || raw.business_agent_conversation_mode != null) fail("OPERATION_UNAVAILABLE", "Experimental continuation requires the native persistent ordinary-chat mode.");
+  if (["is_do_not_remember", "is_temporary_chat"].some(key => raw[key] != null && typeof raw[key] !== "boolean")) fail("UNSUPPORTED_FORMAT", "The native conversation settings are not recognized.");
   if (normalized.messages.some(m => ["in_progress", "incomplete"].includes(m.raw_message?.status))) fail("CONCURRENT_UPDATE", "Wait until the source turn has finished.");
   return { hash: digest(result.pages), comparison_hash: comparisonDigest(result.pages), current_node: raw.current_node, normalized, raw };
 }
 async function preview(service, input, context, { signal, sources = new Map() } = {}) {
   ensure(service);
-  const allowed = ["type", "reason", "conversation_id", "model", "text", "test_file", "message_id", "history", "loss_report", "source_conversation_id", "source_snapshot_sha256", "reuse_existing"];
+  const allowed = ["type", "reason", "conversation_id", "model", "text", "test_file", "message_id", "history", "loss_report", "source_conversation_id", "source_snapshot_sha256", "reuse_existing", "is_do_not_remember"];
   keys(input, allowed);
   const op = { type: input.type, reason: textValue(input.reason, 2000), task_id: crypto.randomUUID() };
-  const fields = { create_chat: ["model", "text", "test_file"], send_message: ["conversation_id", "model", "text"],
-    branch_chat: ["conversation_id", "message_id", "model", "text"], import_chat: ["history", "loss_report", "source_conversation_id", "source_snapshot_sha256", "reuse_existing"] }[input.type];
+  const fields = { create_chat: ["model", "text", "test_file", "is_do_not_remember"], send_message: ["conversation_id", "model", "text", "is_do_not_remember"],
+    branch_chat: ["conversation_id", "message_id", "model", "text", "is_do_not_remember"], import_chat: ["history", "loss_report", "source_conversation_id", "source_snapshot_sha256", "reuse_existing"] }[input.type];
   if (Object.keys(input).some(k => !["type", "reason", ...fields].includes(k))) fail("INVALID_ARGUMENT", "Field is not supported by this experimental operation.");
   if (["create_chat", "send_message", "branch_chat"].includes(op.type)) {
     op.model = textValue(input.model, 100);
     if (!/^[A-Za-z0-9._:-]+$/.test(op.model)) fail("INVALID_ARGUMENT", "Choose an explicit native model slug.");
     op.text = textValue(input.text, 100000); op.user_message_id = crypto.randomUUID();
+    if (input.is_do_not_remember !== undefined && typeof input.is_do_not_remember !== "boolean") fail("INVALID_ARGUMENT", "is_do_not_remember must be an explicit boolean.");
+    // Native persistent chats start false; existing chats inherit their saved
+    // setting below. Freeze the effective value into the exact approved plan.
+    op.is_do_not_remember = input.is_do_not_remember ?? false;
     if (input.test_file !== undefined) op.test_file = testFile(input.test_file);
     if (op.type === "create_chat") op.parent_message_id = crypto.randomUUID();
   }
@@ -72,6 +78,7 @@ async function preview(service, input, context, { signal, sources = new Map() } 
     op.source_conversation_id = identifier(sourceId);
     if (!sources.has(sourceId)) sources.set(sourceId, await snapshot(service, sourceId, context, signal));
     const source = sources.get(sourceId);
+    if (["send_message", "branch_chat"].includes(op.type) && input.is_do_not_remember === undefined) op.is_do_not_remember = source.raw.is_do_not_remember ?? false;
     if (op.type === "import_chat" && input.source_snapshot_sha256 !== source.hash) fail("CONCURRENT_UPDATE", "The imported history must come from the current complete source snapshot; prepare it again.");
     op.expected_source = { hash: source.hash, comparison_hash: source.comparison_hash, current_node: source.current_node };
     if (op.type === "send_message") { op.conversation_id = sourceId; op.parent_message_id = source.current_node; }
@@ -95,6 +102,7 @@ async function preflight(service, op, context, entry = {}, { signal, sources = n
   ensure(service);
   // Any issued experimental request requires reconciliation, never resubmission.
   if (["intent", "uncertain"].includes(entry.status)) return;
+  if (["create_chat", "send_message", "branch_chat"].includes(op.type) && typeof op.is_do_not_remember !== "boolean" && entry.status !== "verified") fail("PLAN_INTEGRITY", "This preview has no captured native memory setting; prepare a fresh preview.");
   if (op.source_conversation_id) {
     if (!sources.has(op.source_conversation_id)) sources.set(op.source_conversation_id, await snapshot(service, op.source_conversation_id, context, signal));
     const current = sources.get(op.source_conversation_id);

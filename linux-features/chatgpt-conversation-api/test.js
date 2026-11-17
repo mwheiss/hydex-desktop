@@ -1044,6 +1044,10 @@ test("feature resources stage with traversable directories, exact file modes and
 // Reconstitution is opt-in and always uses the same native approval executor.
 const reconstruction = require("./runtime/reconstitution.js");
 const { installExperiments } = require("./renderer-experiments.js");
+const nativeRequestBase = ({ action, model, parentMessageId, isDoNotRemember }) => ({
+  action, model, parent_message_id: parentMessageId, is_do_not_remember: isDoNotRemember,
+  native_serializer_marker: "retained",
+});
 function importFixture() {
   const stamp = "2026-11-15T12:00:00Z";
   return { uuid: "11111111-1111-4111-8111-111111111111", name: "Synthetic import", created_at: stamp, updated_at: stamp,
@@ -1118,6 +1122,43 @@ test("experimental rejection and parent/source races never issue writes", async 
   await assert.rejects(execute(service,plan),code("CONCURRENT_UPDATE"));assert.equal(issued(),0);
   await assert.rejects(preview(service,[{type:"send_message",conversation_id:"c4",model:"native-model",text:"test",reason:"Test"}]),code("OPERATION_UNAVAILABLE"));
 });
+test("native memory settings are inherited, frozen for approval and changed only by an explicit boolean",async t=>{
+  const {service,backend,approvals}=fixture(t,{settings:{experimentalChatWrites:true}}),issued=experimentBackend(backend);
+  backend.records.get("c1").is_do_not_remember=true;
+  const create=await preview(service,[{type:"create_chat",model:"native-model",text:"READY",reason:"Native persistent default"}]);
+  assert.equal(create.operations[0].is_do_not_remember,false);
+  for(const type of ["send_message","branch_chat"]){
+    const inherited=await preview(service,[{type,conversation_id:"c1",model:"native-model",text:"READY",reason:"Inherit source"}]);
+    assert.equal(inherited.operations[0].is_do_not_remember,true);
+    const overridden=await preview(service,[{type,conversation_id:"c1",model:"native-model",text:"READY",is_do_not_remember:false,reason:"Explicit override"}]);
+    assert.equal(overridden.operations[0].is_do_not_remember,false);
+  }
+  const override=await preview(service,[{type:"create_chat",model:"native-model",text:"READY",is_do_not_remember:true,reason:"Explicit native flag"}]);
+  const job=await finish(service,(await execute(service,override)).job_id);
+  assert.equal(job.status,"completed");assert.equal(approvals[0].plan.operations[0].is_do_not_remember,true);assert.equal(issued(),1);
+  assert.equal((await service.status()).capabilities.native_request_settings_revision,1);
+  for(const value of [null,"false",0,{}])await assert.rejects(preview(service,[{type:"create_chat",model:"native-model",text:"READY",is_do_not_remember:value,reason:"Reject coercion"}]),code("INVALID_ARGUMENT"));
+  await assert.rejects(preview(service,[{type:"import_chat",history:importFixture(),loss_report:"Text only",is_do_not_remember:false,reason:"Reject unrelated field"}]),code("INVALID_ARGUMENT"));
+});
+test("changed source settings and unsupported modes cannot issue a completion",async t=>{
+  const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true}}),issued=experimentBackend(backend);
+  backend.records.get("c1").is_do_not_remember=false;
+  const plan=await preview(service,[{type:"send_message",conversation_id:"c1",model:"native-model",text:"READY",reason:"Race check"}]);
+  service.approve=async()=>{backend.records.get("c1").is_do_not_remember=true;return true;};
+  await assert.rejects(execute(service,plan),code("CONCURRENT_UPDATE"));assert.equal(issued(),0);
+  for(const [key,value,expected] of [["is_temporary_chat",true,"OPERATION_UNAVAILABLE"],["conversation_origin","tpp","RESOURCE_SCOPE_MISMATCH"],["conversation_origin","flora","OPERATION_UNAVAILABLE"],["business_agent_conversation_mode","published","OPERATION_UNAVAILABLE"],["is_do_not_remember","false","UNSUPPORTED_FORMAT"]]){
+    const raw=tree("c1");raw[key]=value;backend.records.set("c1",raw);
+    await assert.rejects(preview(service,[{type:"send_message",conversation_id:"c1",model:"native-model",text:"READY",reason:"Reject unsupported source mode"}]),code(expected));
+  }
+});
+test("legacy unissued plans need a fresh settings preview while issued outcomes remain reconcilable",async t=>{
+  const {service,backend,approvals}=fixture(t,{settings:{experimentalChatWrites:true}}),issued=experimentBackend(backend);
+  const plan=await preview(service,[{type:"create_chat",model:"native-model",text:"READY",reason:"Legacy preview"}]);
+  const stored=service.journal.plan(plan.plan_id);delete stored.operations[0].is_do_not_remember;
+  const {hash,...body}=stored;stored.hash=require("./runtime/common.js").digest(body);atomicJson(service.journal.file("plan",stored.id),stored);
+  await assert.rejects(execute(service,plan),code("PLAN_INTEGRITY"));assert.equal(issued(),0);assert.equal(approvals.length,0);
+  await reconstruction.preflight(service,stored.operations[0],CONTEXT,{status:"uncertain"});assert.equal(issued(),0);
+});
 test("uncertain chat creation is durable and never submitted a second time", async t => {
   const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true}});let issued=0;
   backend.hook=async name=>{if(name==="experiment_start"){issued++;throw new ApiError("NATIVE_TIMEOUT","Synthetic lost response");}};
@@ -1138,16 +1179,18 @@ test("import readback mismatch retains the new identity and reports a fidelity f
 });
 test("renderer tasks reuse native transport, retain upload IDs, and reject duplicate-task changes",async()=>{
   let starts=0,uploads=0,callbacks;const requests=[];
-  const client={transport:{startCompletionStream:async options=>{starts++;callbacks=options;requests.push(options.request);return {streamRequestId:"stream-1"};},cancelStream:()=>{}},
+  const client={requestBase:nativeRequestBase,transport:{startCompletionStream:async options=>{starts++;callbacks=options;requests.push(options.request);return {streamRequestId:"stream-1"};},cancelStream:()=>{}},
     upload:async()=>{uploads++;return {id:"file-synthetic",name:"canary.txt",size:4,mimeType:"text/plain"};}};
   const originalFile=globalThis.File;globalThis.File??=class {constructor(parts,name,options){this.name=name;this.type=options.type;}};
   try{
     const run=installExperiments(()=>client,()=>({}),()=>CONTEXT);
     const env={before:CONTEXT,options:x=>x,assertRequestCurrent:()=>{}};
-    const operation={type:"create_chat",model:"native-model",text:"Read file",user_message_id:"frozen-message",parent_message_id:"root",test_file:{name:"canary.txt",text:"held-out"}};
+    const operation={type:"create_chat",model:"native-model",text:"Read file",is_do_not_remember:false,user_message_id:"frozen-message",parent_message_id:"root",test_file:{name:"canary.txt",text:"held-out"}};
     const args={task_id:"task-1",operation};await run("experiment_start",args,env);
     await new Promise(r=>setImmediate(r));await run("experiment_start",args,env);
     assert.equal(starts,1);assert.equal(uploads,1);assert.equal(requests[0].messages[0].metadata.attachments[0].id,"file-synthetic");
+    assert.equal(requests[0].is_do_not_remember,false);assert.equal(requests[0].native_serializer_marker,"retained");
+    assert.deepEqual(requests[0].supported_encodings,["v1"]);
     assert.equal(JSON.stringify(requests[0]).includes("held-out"),false);
     callbacks.onDecodedEvent({update:{conversationId:"new-native-chat"}});callbacks.onComplete();
     const result=await run("experiment_status",{task_id:"task-1"},env);
@@ -1159,16 +1202,30 @@ test("renderer tasks reuse native transport, retain upload IDs, and reject dupli
 test("experimental patch resolution is unique, opt-in, idempotent and fails closed on native drift",()=>{
   const transport='transport(e,t,n){n.d(t,{client:()=>H});class F{async startCompletionStream(o){Request.streamPost("/f/conversation",o)}}let H=(0,s.vP)(c.u,({scope:e})=>new F(e));}';
   const upload='upload(e,t,n){n.d(t,{uploadChatGptConversationFile:()=>b});function b(){}}';
-  const routes='experimentalRoutes(e,t,n){let x=["/conversation/new_branch",{branching_from_conversation_id:1,branching_from_message_id:2,is_do_not_remember:true,parent_message_id:1,mime_type:e.mimeType}];}';
-  const chunk=CHUNK.replace('routes(e,t,n){',`${transport},${upload},${routes},routes(e,t,n){`);
+  const settings='requestSettings(e,t,n){n.d(t,{base:()=>defaults});function defaults({isDoNotRemember:d}){return{is_do_not_remember:d,history_and_training_disabled:undefined,timezone_offset_min:0,parent_message_id:1}}}';
+  const routes='experimentalRoutes(e,t,n){let x=["/conversation/new_branch",{branching_from_conversation_id:1,branching_from_message_id:2,is_do_not_remember:true,parent_message_id:1,mime_type:e.mimeType,supported_encodings:["v1"]}];}';
+  const chunk=CHUNK.replace('routes(e,t,n){',`${transport},${upload},${settings},${routes},routes(e,t,n){`);
   const importer='const guard="X-OpenAI-Expected-Account-Id";Request.safePost("/data-import/conversation",{requestBody:{source:q,conversation:a.source},additionalHeaders:{[r.zBc]:U.accountId}})';
   const patched=patch.patchRenderer(chunk,{experimentalChatWrites:true},importer);
   assert.equal(patch.patchRenderer(patched,{experimentalChatWrites:true},importer),patched);
   assert.throws(()=>patch.patchRenderer(chunk,{experimentalChatWrites:true},""));
   assert.throws(()=>patch.patchRenderer(chunk.replace('"/f/conversation"','"/wrong"'),{experimentalChatWrites:true},importer));
   assert.throws(()=>patch.patchRenderer(chunk.replace('branching_from_message_id:','changed_branch_field:'),{experimentalChatWrites:true},importer));
+  assert.throws(()=>patch.patchRenderer(chunk.replace('is_do_not_remember:d','wrong_native_setting:d'),{experimentalChatWrites:true},importer));
+  assert.throws(()=>patch.patchRenderer(chunk.replace('supported_encodings:["v1"]','supported_encodings:["v2"]'),{experimentalChatWrites:true},importer));
+  assert.throws(()=>patch.patchRenderer(chunk.replace(settings,settings+','+settings.replace('requestSettings(','otherSettings(')),{experimentalChatWrites:true},importer));
   assert.throws(()=>patch.patchRenderer(chunk,{experimentalChatWrites:true},importer.replace('"X-OpenAI-Expected-Account-Id"','"wrong-header"')));
   assert.throws(()=>patch.patchRenderer(patched,{}));
+});
+test("renderer refuses a missing frozen setting or a native serializer that changes it",async()=>{
+  let issued=0;
+  const run=installExperiments(()=>({requestBase:input=>({...nativeRequestBase(input),is_do_not_remember:true}),transport:{startCompletionStream:async()=>{issued++;}}}),()=>({}),()=>CONTEXT);
+  const env={before:CONTEXT,options:x=>x,assertRequestCurrent(){}};
+  const operation={type:"create_chat",model:"native-model",text:"READY",parent_message_id:"root",user_message_id:"user"};
+  await assert.rejects(run("experiment_start",{task_id:"legacy-no-setting",operation},env),code("OPERATION_UNAVAILABLE"));
+  await run("experiment_start",{task_id:"changed-setting",operation:{...operation,is_do_not_remember:false}},env);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal((await run("experiment_status",{task_id:"changed-setting"},env)).status,"uncertain");assert.equal(issued,0);
 });
 
 
@@ -1187,10 +1244,10 @@ test("an import source digest must match the actual current snapshot",async t=>{
 test("native branch preparation waits for a journal acknowledgement and uses official continuation fields exactly once",async()=>{
   const requests=[],completions=[];let callbacks;
   const response={conversation:tree("unpersisted-draft"),unknown_field:{keep:true}};
-  const run=installExperiments(()=>({transport:{startCompletionStream:async options=>{completions.push(options.request);callbacks=options;return {streamRequestId:"branch-stream"};}}}),
+  const run=installExperiments(()=>({requestBase:nativeRequestBase,transport:{startCompletionStream:async options=>{completions.push(options.request);callbacks=options;return {streamRequestId:"branch-stream"};}}}),
     ()=>({safePost:async(route,options)=>{requests.push([route,options.requestBody]);return response;}}),()=>CONTEXT);
   const env={before:CONTEXT,options:x=>x,assertRequestCurrent(){}};
-  await run("experiment_start",{task_id:"branch-task",operation:{type:"branch_chat",model:"native-model",text:"READY",conversation_id:"c1",message_id:"reply",user_message_id:"initial-message"}},env);
+  await run("experiment_start",{task_id:"branch-task",operation:{type:"branch_chat",model:"native-model",text:"READY",is_do_not_remember:true,conversation_id:"c1",message_id:"reply",user_message_id:"initial-message"}},env);
   await new Promise(r=>setImmediate(r));const task=await run("experiment_status",{task_id:"branch-task"},env);
   assert.equal(task.result.conversation_id,undefined);assert.equal(task.status,"prepared");assert.deepEqual(task.result.branch_response,response);assert.equal(completions.length,0);
   await run("experiment_continue",{task_id:"branch-task"},env);await run("experiment_continue",{task_id:"branch-task"},env);
@@ -1198,6 +1255,7 @@ test("native branch preparation waits for a journal acknowledgement and uses off
   assert.equal(completions.length,1);assert.equal(requests.length,1);assert.equal(requests[0][0],"/conversation/new_branch");
   assert.equal(completions[0].branching_from_conversation_id,"c1");assert.equal(completions[0].branching_from_message_id,"reply");
   assert.equal(completions[0].parent_message_id,"reply");assert.equal(Object.hasOwn(completions[0],"conversation_id"),false);
+  assert.equal(completions[0].is_do_not_remember,true);assert.equal(completions[0].native_serializer_marker,"retained");
   callbacks.onDecodedEvent({conversationId:"persisted-branch"});callbacks.onComplete();
   const done=await run("experiment_status",{task_id:"branch-task"},env);
   assert.equal(done.result.conversation_id,"persisted-branch");assert.equal(done.status,"completed");assert.equal(done.result.branch_response,undefined);
@@ -1296,8 +1354,8 @@ test("a lost branch continuation reply reconciles the same task without another 
 });
 test("cancelling a prepared renderer draft cannot launch its completion",async()=>{
   let generations=0;const env={before:CONTEXT,options:x=>x,assertRequestCurrent(){}};
-  const run=installExperiments(()=>({transport:{startCompletionStream:async()=>{generations++;}}}),()=>({safePost:async()=>({conversation:tree("draft")})}),()=>CONTEXT);
-  await run("experiment_start",{task_id:"cancel-branch",operation:{type:"branch_chat",conversation_id:"c1",message_id:"reply",model:"native-model",text:"READY"}},env);
+  const run=installExperiments(()=>({requestBase:nativeRequestBase,transport:{startCompletionStream:async()=>{generations++;}}}),()=>({safePost:async()=>({conversation:tree("draft")})}),()=>CONTEXT);
+  await run("experiment_start",{task_id:"cancel-branch",operation:{type:"branch_chat",conversation_id:"c1",message_id:"reply",model:"native-model",text:"READY",is_do_not_remember:false}},env);
   await new Promise(resolve=>setImmediate(resolve));await run("experiment_cancel",{task_id:"cancel-branch"},env);
   const task=await run("experiment_continue",{task_id:"cancel-branch"},env);await new Promise(resolve=>setImmediate(resolve));
   assert.equal(task.status,"uncertain");assert.equal(generations,0);

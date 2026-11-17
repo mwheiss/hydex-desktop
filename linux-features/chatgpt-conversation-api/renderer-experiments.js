@@ -46,6 +46,7 @@ function installExperiments(getClients, getRequest, getIdentity) {
     }
     if (tasks.size >= 128) throw { code: "OPERATION_UNAVAILABLE" };
     const op = args.operation, controller = new AbortController();
+    if (["create_chat", "send_message", "branch_chat"].includes(op.type) && typeof op.is_do_not_remember !== "boolean") throw { code: "OPERATION_UNAVAILABLE" };
     const t = { id: args.task_id, fingerprint, operationType: op.type, context: before, controller, status: "running", result: {} };
     tasks.set(t.id, t); // Register before dispatch: duplicate IPC cannot issue twice.
     const assertCurrent = () => { controller.signal.throwIfAborted(); if (!same(before, getIdentity())) throw { code: "CONTEXT_CHANGED" }; assertRequestCurrent(); };
@@ -75,13 +76,16 @@ function installExperiments(getClients, getRequest, getIdentity) {
         attachments.push({ id: uploaded.id, name: uploaded.name, size: uploaded.size, mime_type: uploaded.mimeType ?? "text/plain" });
       }
       const branch = op.type === "branch_chat";
-      const request = { action: "next", ...(op.type === "send_message" ? { conversation_id: op.conversation_id } : {}),
+      if (typeof clients.requestBase !== "function") throw { code: "OPERATION_UNAVAILABLE" };
+      const parent = branch ? t.result.branch_response.conversation.current_node : op.parent_message_id;
+      const base = clients.requestBase({ action: "next", model: op.model, parentMessageId: parent,
+        conversationId: op.type === "send_message" ? op.conversation_id : undefined,
+        isDoNotRemember: op.is_do_not_remember, isTemporaryChat: false, hideFromHistory: false, systemHints: [] });
+      if (base?.is_do_not_remember !== op.is_do_not_remember || base.action !== "next" || base.model !== op.model ||
+          base.parent_message_id !== parent || base.history_and_training_disabled === true) throw { code: "OPERATION_UNAVAILABLE" };
+      const request = { ...base, ...(op.type === "send_message" ? { conversation_id: op.conversation_id } : {}),
         ...(branch ? { branching_from_conversation_id: op.conversation_id, branching_from_message_id: op.message_id } : {}),
-        parent_message_id: branch ? t.result.branch_response.conversation.current_node : op.parent_message_id, model: op.model,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, timezone_offset_min: new Date().getTimezoneOffset(),
-        // Disable personalization for controlled experiments. Existing chats
-        // may still have context predating this flag; the evaluator says so.
-        is_do_not_remember: true,
+        supported_encodings: ["v1"],
         messages: [{ id: op.user_message_id, author: { role: "user" },
           content: { content_type: "text", parts: [op.text] }, metadata: attachments.length ? { attachments } : {} }] };
       if (op.type === "send_message") t.result.conversation_id = op.conversation_id;

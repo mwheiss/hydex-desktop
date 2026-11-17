@@ -126,11 +126,19 @@ function patchRenderer(source, settings = {}, experimentalContracts = source) {
     if (transports.length !== 1 || uploads.length !== 1) throw Error("Conversation API drift: experimental native transport/upload helpers missing or ambiguous.");
     const atom = unique(transports[0].source, new RegExp(String.raw`let (?<atom>${ID})=\(0,${ID}\.${ID}\)\(${ID}\.${ID},\(\{scope:(?<scope>${ID})\}\)=>new ${ID}\(\k<scope>\)\)`, "g"), "native transport atom");
     const exported = unique(transports[0].source, new RegExp(String.raw`(?<key>${ID}):\(\)=>${escapeRegExp(atom.groups.atom)}(?=[,}])`, "g"), "native transport atom export");
-    experiments = `const hydexConversationApiExperimentsV1=scope=>({transport:scope.get(${auth.require}(${JSON.stringify(transports[0].id)})[${JSON.stringify(exported.groups.key)}]),upload:(file,options)=>${auth.require}(${JSON.stringify(uploads[0].id)}).uploadChatGptConversationFile(scope,file,options)});`;
+    const bases = modules.flatMap(module => [...module.source.matchAll(new RegExp(String.raw`function (?<helper>${ID})\(\{[^)]{0,1600}\}\)\{`, "g"))].flatMap(match => {
+      const end = findMatchingBrace(module.source, match.index + match[0].length - 1);
+      const body = module.source.slice(match.index, end + 1);
+      if (!["is_do_not_remember:", "history_and_training_disabled:", "timezone_offset_min:", "parent_message_id:"].every(anchor => body.includes(anchor))) return [];
+      const value = unique(module.source, new RegExp(String.raw`(?<key>${ID}):\(\)=>${escapeRegExp(match.groups.helper)}(?=[,}])`, "g"), "native completion settings serializer export");
+      return [{ module: module.id, key: value.groups.key }];
+    }));
+    if (bases.length !== 1) throw Error("Conversation API drift: native completion settings serializer missing or ambiguous.");
+    experiments = `const hydexConversationApiExperimentsV1=scope=>({transport:scope.get(${auth.require}(${JSON.stringify(transports[0].id)})[${JSON.stringify(exported.groups.key)}]),requestBase:settings=>${auth.require}(${JSON.stringify(bases[0].module)})[${JSON.stringify(bases[0].key)}](settings),upload:(file,options)=>${auth.require}(${JSON.stringify(uploads[0].id)}).uploadChatGptConversationFile(scope,file,options)});`;
     if (!experimentalContracts.includes('Request.safePost("/data-import/conversation"') || !experimentalContracts.includes('requestBody:{source:') ||
         !experimentalContracts.includes('"X-OpenAI-Expected-Account-Id"') ||
         !/Request\.safePost\("\/data-import\/conversation",\{.{0,500}?additionalHeaders:\{\[[^\]]+\]:[A-Za-z_$][\w$]*\.accountId\}\}/.test(experimentalContracts)) throw Error("Conversation API drift: native importer/expected-account guard is missing.");
-    for (const contract of ['"/conversation/new_branch"', 'branching_from_conversation_id:', 'branching_from_message_id:', 'is_do_not_remember:', 'parent_message_id:', 'mime_type:e.mimeType']) {
+    for (const contract of ['"/conversation/new_branch"', 'branching_from_conversation_id:', 'branching_from_message_id:', 'is_do_not_remember:', 'parent_message_id:', 'mime_type:e.mimeType', 'supported_encodings:["v1"]']) {
       if (!source.includes(contract)) throw Error(`Conversation API drift: missing experimental native contract ${contract}.`);
     }
   }

@@ -35,7 +35,19 @@ experimental batch:
 
 All operations require a `reason`. Plans are limited to 1 MiB with no automatic
 truncation. Source continuation currently supports completed, unarchived ordinary
-chats outside Projects/GPTs. Text/role readback verifies imports. A mismatch keeps
+chats outside Projects/GPTs, Work/business-agent modes and temporary chats.
+Generation uses the signed native completion-settings serializer and its v1
+encoding contract. New persistent chats use the native `is_do_not_remember: false`
+default; continuation and branching inherit the source's stored boolean. An
+explicit boolean override is optional for these three operations. Its effective
+value is frozen in the preview and reviewed in the native exact-batch dialog;
+source-setting changes invalidate approval. This native flag is not proof of
+personalization isolation or a full context checkpoint. Old unissued generation
+plans without the captured setting require a fresh preview; already-issued writes
+remain eligible for reconciliation without resubmission. Live status exposes
+`native_request_settings_revision: 1` so controls can refuse an older package.
+
+Text/role readback verifies imports. A mismatch keeps
 the new identity in the journal and reports a fidelity failure. Created chats,
 messages and uploaded files have no automatic undo or deletion.
 

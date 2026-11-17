@@ -17,6 +17,7 @@ const state = { type: "object", additionalProperties: false, required: ["title",
 const operation = { type: "object", additionalProperties: false, required: ["type", "reason"], properties: {
   type: { enum: ["rename", "move", "archive", "create_project", "create_chat", "send_message", "branch_chat", "import_chat"] }, reason,
   reuse_existing: { type: "boolean" },
+  is_do_not_remember: { type: "boolean", description: "Optional native per-turn flag. New persistent chats use the native false default; continuation/branching inherit the source unless explicitly overridden. The effective value is shown in the approval preview." },
   conversation_id: id, title, project_id: projectId, archived: { type: "boolean" }, name: { ...string },
   expected_before: state, memory_scope: { enum: ["project_v2"] },
   model: { type: "string", minLength: 1, maxLength: 100 }, text: { type: "string", minLength: 1, maxLength: 100000 },
