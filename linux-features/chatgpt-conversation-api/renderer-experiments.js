@@ -47,6 +47,9 @@ function installExperiments(getClients, getRequest, getIdentity) {
     if (tasks.size >= 128) throw { code: "OPERATION_UNAVAILABLE" };
     const op = args.operation, controller = new AbortController();
     if (["create_chat", "send_message", "branch_chat"].includes(op.type) && typeof op.is_do_not_remember !== "boolean") throw { code: "OPERATION_UNAVAILABLE" };
+    if (["create_chat", "send_message", "branch_chat"].includes(op.type) &&
+        (!Object.hasOwn(op, "thinking_effort") || op.thinking_effort !== null &&
+         (typeof op.thinking_effort !== "string" || !/^[a-z][a-z0-9_-]{0,31}$/.test(op.thinking_effort)))) throw { code: "OPERATION_UNAVAILABLE" };
     const t = { id: args.task_id, fingerprint, operationType: op.type, context: before, controller, status: "running", result: {} };
     tasks.set(t.id, t); // Register before dispatch: duplicate IPC cannot issue twice.
     const assertCurrent = () => { controller.signal.throwIfAborted(); if (!same(before, getIdentity())) throw { code: "CONTEXT_CHANGED" }; assertRequestCurrent(); };
@@ -80,9 +83,11 @@ function installExperiments(getClients, getRequest, getIdentity) {
       const parent = branch ? t.result.branch_response.conversation.current_node : op.parent_message_id;
       const base = clients.requestBase({ action: "next", model: op.model, parentMessageId: parent,
         conversationId: op.type === "send_message" ? op.conversation_id : undefined,
-        isDoNotRemember: op.is_do_not_remember, isTemporaryChat: false, hideFromHistory: false, systemHints: [] });
+        isDoNotRemember: op.is_do_not_remember, thinkingEffort: op.thinking_effort ?? undefined,
+        isTemporaryChat: false, hideFromHistory: false, systemHints: [] });
       if (base?.is_do_not_remember !== op.is_do_not_remember || base.action !== "next" || base.model !== op.model ||
-          base.parent_message_id !== parent || base.history_and_training_disabled === true) throw { code: "OPERATION_UNAVAILABLE" };
+          base.parent_message_id !== parent || base.thinking_effort !== (op.thinking_effort ?? undefined) ||
+          base.history_and_training_disabled === true) throw { code: "OPERATION_UNAVAILABLE" };
       const request = { ...base, ...(op.type === "send_message" ? { conversation_id: op.conversation_id } : {}),
         ...(branch ? { branching_from_conversation_id: op.conversation_id, branching_from_message_id: op.message_id } : {}),
         supported_encodings: ["v1"],

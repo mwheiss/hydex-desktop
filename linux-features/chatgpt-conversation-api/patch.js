@@ -129,7 +129,7 @@ function patchRenderer(source, settings = {}, experimentalContracts = source) {
     const bases = modules.flatMap(module => [...module.source.matchAll(new RegExp(String.raw`function (?<helper>${ID})\(\{[^)]{0,1600}\}\)\{`, "g"))].flatMap(match => {
       const end = findMatchingBrace(module.source, match.index + match[0].length - 1);
       const body = module.source.slice(match.index, end + 1);
-      if (!["is_do_not_remember:", "history_and_training_disabled:", "timezone_offset_min:", "parent_message_id:"].every(anchor => body.includes(anchor))) return [];
+      if (!["is_do_not_remember:", "history_and_training_disabled:", "timezone_offset_min:", "parent_message_id:", "thinkingEffort:", "thinking_effort:"].every(anchor => body.includes(anchor))) return [];
       const value = unique(module.source, new RegExp(String.raw`(?<key>${ID}):\(\)=>${escapeRegExp(match.groups.helper)}(?=[,}])`, "g"), "native completion settings serializer export");
       return [{ module: module.id, key: value.groups.key }];
     }));

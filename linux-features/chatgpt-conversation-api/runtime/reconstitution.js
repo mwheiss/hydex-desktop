@@ -44,6 +44,24 @@ function comparisonDigest(pages) {
   return digest(pages.map(page => Array.isArray(page.safe_urls) && page.safe_urls.every(url => typeof url === "string")
     ? { ...page, safe_urls: [...page.safe_urls].sort() } : page));
 }
+function thinkingEffort(value, code = "INVALID_ARGUMENT") {
+  if (value === null) return null;
+  if (typeof value !== "string" || !/^[a-z][a-z0-9_-]{0,31}$/.test(value)) fail(code, "thinking_effort must be a native effort code or null for the native default.");
+  return value;
+}
+function sourceThinkingEffort(source, point, model) {
+  const seen = new Set();
+  for (let node = source.raw.mapping[point]; node && !seen.has(node.id); node = source.raw.mapping[node.parent]) {
+    seen.add(node.id);
+    const message = node.message, meta = message?.metadata ?? {};
+    if (message?.author?.role !== "assistant" || ![undefined, null, "all"].includes(message.recipient) ||
+        ![undefined, null, "final"].includes(message.channel)) continue;
+    // A model switch must not inherit an earlier model's effort preference.
+    if ((meta.model_slug ?? meta.model) !== model) return null;
+    return thinkingEffort(meta.thinking_effort ?? null, "UNSUPPORTED_FORMAT");
+  }
+  return null;
+}
 async function snapshot(service, id, context, signal) {
   const result = await service.getConversation({ context, id, mode: "raw", branch: "all", signal });
   if (!result.complete || !result.pages?.length) fail("INCOMPLETE_CONVERSATION", "A complete source snapshot is required.");
@@ -56,11 +74,11 @@ async function snapshot(service, id, context, signal) {
 }
 async function preview(service, input, context, { signal, sources = new Map() } = {}) {
   ensure(service);
-  const allowed = ["type", "reason", "conversation_id", "model", "text", "test_file", "message_id", "history", "loss_report", "source_conversation_id", "source_snapshot_sha256", "reuse_existing", "is_do_not_remember"];
+  const allowed = ["type", "reason", "conversation_id", "model", "text", "test_file", "message_id", "history", "loss_report", "source_conversation_id", "source_snapshot_sha256", "reuse_existing", "is_do_not_remember", "thinking_effort"];
   keys(input, allowed);
   const op = { type: input.type, reason: textValue(input.reason, 2000), task_id: crypto.randomUUID() };
-  const fields = { create_chat: ["model", "text", "test_file", "is_do_not_remember"], send_message: ["conversation_id", "model", "text", "is_do_not_remember"],
-    branch_chat: ["conversation_id", "message_id", "model", "text", "is_do_not_remember"], import_chat: ["history", "loss_report", "source_conversation_id", "source_snapshot_sha256", "reuse_existing"] }[input.type];
+  const fields = { create_chat: ["model", "text", "test_file", "is_do_not_remember", "thinking_effort"], send_message: ["conversation_id", "model", "text", "is_do_not_remember", "thinking_effort"],
+    branch_chat: ["conversation_id", "message_id", "model", "text", "is_do_not_remember", "thinking_effort"], import_chat: ["history", "loss_report", "source_conversation_id", "source_snapshot_sha256", "reuse_existing"] }[input.type];
   if (Object.keys(input).some(k => !["type", "reason", ...fields].includes(k))) fail("INVALID_ARGUMENT", "Field is not supported by this experimental operation.");
   if (["create_chat", "send_message", "branch_chat"].includes(op.type)) {
     op.model = textValue(input.model, 100);
@@ -70,6 +88,7 @@ async function preview(service, input, context, { signal, sources = new Map() } 
     // Native persistent chats start false; existing chats inherit their saved
     // setting below. Freeze the effective value into the exact approved plan.
     op.is_do_not_remember = input.is_do_not_remember ?? false;
+    op.thinking_effort = thinkingEffort(input.thinking_effort ?? null);
     if (input.test_file !== undefined) op.test_file = testFile(input.test_file);
     if (op.type === "create_chat") op.parent_message_id = crypto.randomUUID();
   }
@@ -86,6 +105,8 @@ async function preview(service, input, context, { signal, sources = new Map() } 
       op.conversation_id = sourceId; op.message_id = identifier(input.message_id ?? source.current_node);
       if (!source.raw.mapping[op.message_id]?.message) fail("INVALID_ARGUMENT", "Branch point must be a source message node.");
     }
+    if (["send_message", "branch_chat"].includes(op.type) && input.thinking_effort === undefined)
+      op.thinking_effort = sourceThinkingEffort(source, op.message_id ?? source.current_node, op.model);
   } else if (["send_message", "branch_chat"].includes(op.type)) fail("INVALID_ARGUMENT", "A conversation ID is required.");
   if (op.type === "import_chat") {
     if (input.reuse_existing !== undefined && typeof input.reuse_existing !== "boolean") fail("INVALID_ARGUMENT", "reuse_existing must be an explicit boolean.");
@@ -103,6 +124,10 @@ async function preflight(service, op, context, entry = {}, { signal, sources = n
   // Any issued experimental request requires reconciliation, never resubmission.
   if (["intent", "uncertain"].includes(entry.status)) return;
   if (["create_chat", "send_message", "branch_chat"].includes(op.type) && typeof op.is_do_not_remember !== "boolean" && entry.status !== "verified") fail("PLAN_INTEGRITY", "This preview has no captured native memory setting; prepare a fresh preview.");
+  if (["create_chat", "send_message", "branch_chat"].includes(op.type) && entry.status !== "verified") {
+    if (!Object.hasOwn(op, "thinking_effort")) fail("PLAN_INTEGRITY", "This preview has no captured native thinking effort; prepare a fresh preview.");
+    thinkingEffort(op.thinking_effort, "PLAN_INTEGRITY");
+  }
   if (op.source_conversation_id) {
     if (!sources.has(op.source_conversation_id)) sources.set(op.source_conversation_id, await snapshot(service, op.source_conversation_id, context, signal));
     const current = sources.get(op.source_conversation_id);

@@ -1044,8 +1044,8 @@ test("feature resources stage with traversable directories, exact file modes and
 // Reconstitution is opt-in and always uses the same native approval executor.
 const reconstruction = require("./runtime/reconstitution.js");
 const { installExperiments } = require("./renderer-experiments.js");
-const nativeRequestBase = ({ action, model, parentMessageId, isDoNotRemember }) => ({
-  action, model, parent_message_id: parentMessageId, is_do_not_remember: isDoNotRemember,
+const nativeRequestBase = ({ action, model, parentMessageId, isDoNotRemember, thinkingEffort }) => ({
+  action, model, parent_message_id: parentMessageId, is_do_not_remember: isDoNotRemember, thinking_effort: thinkingEffort,
   native_serializer_marker: "retained",
 });
 function importFixture() {
@@ -1130,15 +1130,15 @@ test("native memory settings are inherited, frozen for approval and changed only
   for(const type of ["send_message","branch_chat"]){
     const inherited=await preview(service,[{type,conversation_id:"c1",model:"native-model",text:"READY",reason:"Inherit source"}]);
     assert.equal(inherited.operations[0].is_do_not_remember,true);
-    const overridden=await preview(service,[{type,conversation_id:"c1",model:"native-model",text:"READY",is_do_not_remember:false,reason:"Explicit override"}]);
+    const overridden=await preview(service,[{type,conversation_id:"c1",model:"native-model",text:"READY",is_do_not_remember:false,thinking_effort:null,reason:"Explicit override"}]);
     assert.equal(overridden.operations[0].is_do_not_remember,false);
   }
-  const override=await preview(service,[{type:"create_chat",model:"native-model",text:"READY",is_do_not_remember:true,reason:"Explicit native flag"}]);
+  const override=await preview(service,[{type:"create_chat",model:"native-model",text:"READY",is_do_not_remember:true,thinking_effort:null,reason:"Explicit native flag"}]);
   const job=await finish(service,(await execute(service,override)).job_id);
   assert.equal(job.status,"completed");assert.equal(approvals[0].plan.operations[0].is_do_not_remember,true);assert.equal(issued(),1);
-  assert.equal((await service.status()).capabilities.native_request_settings_revision,1);
+  assert.equal((await service.status()).capabilities.native_request_settings_revision,2);
   for(const value of [null,"false",0,{}])await assert.rejects(preview(service,[{type:"create_chat",model:"native-model",text:"READY",is_do_not_remember:value,reason:"Reject coercion"}]),code("INVALID_ARGUMENT"));
-  await assert.rejects(preview(service,[{type:"import_chat",history:importFixture(),loss_report:"Text only",is_do_not_remember:false,reason:"Reject unrelated field"}]),code("INVALID_ARGUMENT"));
+  await assert.rejects(preview(service,[{type:"import_chat",history:importFixture(),loss_report:"Text only",is_do_not_remember:false,thinking_effort:null,reason:"Reject unrelated field"}]),code("INVALID_ARGUMENT"));
 });
 test("changed source settings and unsupported modes cannot issue a completion",async t=>{
   const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true}}),issued=experimentBackend(backend);
@@ -1150,6 +1150,42 @@ test("changed source settings and unsupported modes cannot issue a completion",a
     const raw=tree("c1");raw[key]=value;backend.records.set("c1",raw);
     await assert.rejects(preview(service,[{type:"send_message",conversation_id:"c1",model:"native-model",text:"READY",reason:"Reject unsupported source mode"}]),code(expected));
   }
+});
+test("thinking effort is captured from the selected source point and bound to approval",async t=>{
+  const {service,backend}=fixture(t,{settings:{experimentalChatWrites:true}});
+  const raw=backend.records.get("c1");
+  Object.assign(raw.mapping.reply.message.metadata,{model_slug:"native-model",thinking_effort:"max"});
+  const newer=message("newer","assistant","text",{parts:["Later reply"]},{channel:"final",metadata:{model_slug:"native-model",thinking_effort:"high"}});
+  raw.mapping.reply.children.push(newer.id);raw.mapping[newer.id]={id:newer.id,parent:"reply",children:[],message:newer};raw.current_node=newer.id;
+  const branch=await preview(service,[{type:"branch_chat",conversation_id:"c1",message_id:"reply",model:"native-model",text:"READY",reason:"Match branch point"}]);
+  assert.equal(branch.operations[0].thinking_effort,"max");
+  const continuation=await preview(service,[{type:"send_message",conversation_id:"c1",model:"native-model",text:"READY",reason:"Match current point"}]);
+  assert.equal(continuation.operations[0].thinking_effort,"high");
+  for(const value of [null,"max"]){
+    const explicit=await preview(service,[{type:"send_message",conversation_id:"c1",model:"native-model",text:"READY",thinking_effort:value,reason:"Explicit effort"}]);
+    assert.equal(explicit.operations[0].thinking_effort,value);
+  }
+  const switched=await preview(service,[{type:"send_message",conversation_id:"c1",model:"different-model",text:"READY",reason:"Model switch"}]);
+  assert.equal(switched.operations[0].thinking_effort,null);
+  const fresh=await preview(service,[{type:"create_chat",model:"native-model",text:"READY",reason:"Native default"}]);
+  assert.equal(fresh.operations[0].thinking_effort,null);
+});
+test("effort validation and source effort races fail before any generation",async t=>{
+  const {service,backend,approvals}=fixture(t,{settings:{experimentalChatWrites:true}}),issued=experimentBackend(backend);
+  for(const value of [0,true,{},[],"","MAX","max;fetch", "x".repeat(33)])
+    await assert.rejects(preview(service,[{type:"create_chat",model:"native-model",text:"READY",thinking_effort:value,reason:"Reject malformed effort"}]),code("INVALID_ARGUMENT"));
+  await assert.rejects(preview(service,[{type:"import_chat",history:importFixture(),loss_report:"Text only",thinking_effort:"max",reason:"Reject unrelated field"}]),code("INVALID_ARGUMENT"));
+  const raw=backend.records.get("c1");Object.assign(raw.mapping.reply.message.metadata,{model_slug:"native-model",thinking_effort:{untrusted:"max"}});
+  await assert.rejects(preview(service,[{type:"send_message",conversation_id:"c1",model:"native-model",text:"READY",reason:"Malformed source effort"}]),code("UNSUPPORTED_FORMAT"));
+  raw.mapping.reply.message.metadata.thinking_effort="max";
+  const plan=await preview(service,[{type:"send_message",conversation_id:"c1",model:"native-model",text:"READY",reason:"Effort race"}]);
+  service.approve=async()=>{raw.mapping.reply.message.metadata.thinking_effort="high";return true;};
+  await assert.rejects(execute(service,plan),code("CONCURRENT_UPDATE"));assert.equal(issued(),0);
+  const fresh=await preview(service,[{type:"create_chat",model:"native-model",text:"READY",reason:"Legacy effort omission"}]);
+  const stored=service.journal.plan(fresh.plan_id);delete stored.operations[0].thinking_effort;
+  const {hash,...body}=stored;stored.hash=require("./runtime/common.js").digest(body);atomicJson(service.journal.file("plan",stored.id),stored);
+  await assert.rejects(execute(service,fresh),code("PLAN_INTEGRITY"));assert.equal(issued(),0);assert.equal(approvals.length,0);
+  await reconstruction.preflight(service,stored.operations[0],CONTEXT,{status:"uncertain"});assert.equal(issued(),0);
 });
 test("legacy unissued plans need a fresh settings preview while issued outcomes remain reconcilable",async t=>{
   const {service,backend,approvals}=fixture(t,{settings:{experimentalChatWrites:true}}),issued=experimentBackend(backend);
@@ -1185,7 +1221,7 @@ test("renderer tasks reuse native transport, retain upload IDs, and reject dupli
   try{
     const run=installExperiments(()=>client,()=>({}),()=>CONTEXT);
     const env={before:CONTEXT,options:x=>x,assertRequestCurrent:()=>{}};
-    const operation={type:"create_chat",model:"native-model",text:"Read file",is_do_not_remember:false,user_message_id:"frozen-message",parent_message_id:"root",test_file:{name:"canary.txt",text:"held-out"}};
+    const operation={type:"create_chat",model:"native-model",text:"Read file",is_do_not_remember:false,thinking_effort:null,user_message_id:"frozen-message",parent_message_id:"root",test_file:{name:"canary.txt",text:"held-out"}};
     const args={task_id:"task-1",operation};await run("experiment_start",args,env);
     await new Promise(r=>setImmediate(r));await run("experiment_start",args,env);
     assert.equal(starts,1);assert.equal(uploads,1);assert.equal(requests[0].messages[0].metadata.attachments[0].id,"file-synthetic");
@@ -1202,8 +1238,8 @@ test("renderer tasks reuse native transport, retain upload IDs, and reject dupli
 test("experimental patch resolution is unique, opt-in, idempotent and fails closed on native drift",()=>{
   const transport='transport(e,t,n){n.d(t,{client:()=>H});class F{async startCompletionStream(o){Request.streamPost("/f/conversation",o)}}let H=(0,s.vP)(c.u,({scope:e})=>new F(e));}';
   const upload='upload(e,t,n){n.d(t,{uploadChatGptConversationFile:()=>b});function b(){}}';
-  const settings='requestSettings(e,t,n){n.d(t,{base:()=>defaults});function defaults({isDoNotRemember:d}){return{is_do_not_remember:d,history_and_training_disabled:undefined,timezone_offset_min:0,parent_message_id:1}}}';
-  const routes='experimentalRoutes(e,t,n){let x=["/conversation/new_branch",{branching_from_conversation_id:1,branching_from_message_id:2,is_do_not_remember:true,parent_message_id:1,mime_type:e.mimeType,supported_encodings:["v1"]}];}';
+  const settings='requestSettings(e,t,n){n.d(t,{base:()=>defaults});function defaults({isDoNotRemember:d,thinkingEffort:e}){return{is_do_not_remember:d,thinking_effort:e,history_and_training_disabled:undefined,timezone_offset_min:0,parent_message_id:1}}}';
+  const routes='experimentalRoutes(e,t,n){let x=["/conversation/new_branch",{branching_from_conversation_id:1,branching_from_message_id:2,is_do_not_remember:true,thinking_effort:null,parent_message_id:1,mime_type:e.mimeType,supported_encodings:["v1"]}];}';
   const chunk=CHUNK.replace('routes(e,t,n){',`${transport},${upload},${settings},${routes},routes(e,t,n){`);
   const importer='const guard="X-OpenAI-Expected-Account-Id";Request.safePost("/data-import/conversation",{requestBody:{source:q,conversation:a.source},additionalHeaders:{[r.zBc]:U.accountId}})';
   const patched=patch.patchRenderer(chunk,{experimentalChatWrites:true},importer);
@@ -1212,10 +1248,28 @@ test("experimental patch resolution is unique, opt-in, idempotent and fails clos
   assert.throws(()=>patch.patchRenderer(chunk.replace('"/f/conversation"','"/wrong"'),{experimentalChatWrites:true},importer));
   assert.throws(()=>patch.patchRenderer(chunk.replace('branching_from_message_id:','changed_branch_field:'),{experimentalChatWrites:true},importer));
   assert.throws(()=>patch.patchRenderer(chunk.replace('is_do_not_remember:d','wrong_native_setting:d'),{experimentalChatWrites:true},importer));
+  assert.throws(()=>patch.patchRenderer(chunk.replace('thinking_effort:e','wrong_effort:e'),{experimentalChatWrites:true},importer));
+  assert.throws(()=>patch.patchRenderer(chunk.replace('thinkingEffort:e','wrongEffort:e'),{experimentalChatWrites:true},importer));
   assert.throws(()=>patch.patchRenderer(chunk.replace('supported_encodings:["v1"]','supported_encodings:["v2"]'),{experimentalChatWrites:true},importer));
   assert.throws(()=>patch.patchRenderer(chunk.replace(settings,settings+','+settings.replace('requestSettings(','otherSettings(')),{experimentalChatWrites:true},importer));
   assert.throws(()=>patch.patchRenderer(chunk,{experimentalChatWrites:true},importer.replace('"X-OpenAI-Expected-Account-Id"','"wrong-header"')));
   assert.throws(()=>patch.patchRenderer(patched,{}));
+});
+test("renderer carries frozen thinking effort through the native serializer and rejects changes",async()=>{
+  const env={before:CONTEXT,options:x=>x,assertRequestCurrent(){}};
+  const operation={type:"create_chat",model:"native-model",text:"READY",is_do_not_remember:false,thinking_effort:"max",parent_message_id:"root",user_message_id:"user"};
+  const requests=[];
+  const valid=installExperiments(()=>({requestBase:nativeRequestBase,transport:{startCompletionStream:async o=>{requests.push(o.request);return{streamRequestId:"effort-stream"};}}}),()=>({}),()=>CONTEXT);
+  await valid("experiment_start",{task_id:"max-effort",operation},env);await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(requests.length,1);assert.equal(requests[0].thinking_effort,"max");assert.equal(requests[0].native_serializer_marker,"retained");
+  for(const altered of [undefined,"high"]){
+    let issued=0;
+    const invalid=installExperiments(()=>({requestBase:input=>({...nativeRequestBase(input),thinking_effort:altered}),transport:{startCompletionStream:async()=>{issued++;}}}),()=>({}),()=>CONTEXT);
+    await invalid("experiment_start",{task_id:"altered-effort",operation},env);await new Promise(resolve=>setImmediate(resolve));
+    assert.equal((await invalid("experiment_status",{task_id:"altered-effort"},env)).status,"uncertain");assert.equal(issued,0);
+  }
+  const legacy={...operation};delete legacy.thinking_effort;
+  await assert.rejects(valid("experiment_start",{task_id:"legacy-effort",operation:legacy},env),code("OPERATION_UNAVAILABLE"));
 });
 test("renderer refuses a missing frozen setting or a native serializer that changes it",async()=>{
   let issued=0;
@@ -1223,7 +1277,7 @@ test("renderer refuses a missing frozen setting or a native serializer that chan
   const env={before:CONTEXT,options:x=>x,assertRequestCurrent(){}};
   const operation={type:"create_chat",model:"native-model",text:"READY",parent_message_id:"root",user_message_id:"user"};
   await assert.rejects(run("experiment_start",{task_id:"legacy-no-setting",operation},env),code("OPERATION_UNAVAILABLE"));
-  await run("experiment_start",{task_id:"changed-setting",operation:{...operation,is_do_not_remember:false}},env);
+  await run("experiment_start",{task_id:"changed-setting",operation:{...operation,is_do_not_remember:false,thinking_effort:null}},env);
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal((await run("experiment_status",{task_id:"changed-setting"},env)).status,"uncertain");assert.equal(issued,0);
 });
@@ -1247,7 +1301,7 @@ test("native branch preparation waits for a journal acknowledgement and uses off
   const run=installExperiments(()=>({requestBase:nativeRequestBase,transport:{startCompletionStream:async options=>{completions.push(options.request);callbacks=options;return {streamRequestId:"branch-stream"};}}}),
     ()=>({safePost:async(route,options)=>{requests.push([route,options.requestBody]);return response;}}),()=>CONTEXT);
   const env={before:CONTEXT,options:x=>x,assertRequestCurrent(){}};
-  await run("experiment_start",{task_id:"branch-task",operation:{type:"branch_chat",model:"native-model",text:"READY",is_do_not_remember:true,conversation_id:"c1",message_id:"reply",user_message_id:"initial-message"}},env);
+  await run("experiment_start",{task_id:"branch-task",operation:{type:"branch_chat",model:"native-model",text:"READY",is_do_not_remember:true,thinking_effort:null,conversation_id:"c1",message_id:"reply",user_message_id:"initial-message"}},env);
   await new Promise(r=>setImmediate(r));const task=await run("experiment_status",{task_id:"branch-task"},env);
   assert.equal(task.result.conversation_id,undefined);assert.equal(task.status,"prepared");assert.deepEqual(task.result.branch_response,response);assert.equal(completions.length,0);
   await run("experiment_continue",{task_id:"branch-task"},env);await run("experiment_continue",{task_id:"branch-task"},env);
@@ -1355,7 +1409,7 @@ test("a lost branch continuation reply reconciles the same task without another 
 test("cancelling a prepared renderer draft cannot launch its completion",async()=>{
   let generations=0;const env={before:CONTEXT,options:x=>x,assertRequestCurrent(){}};
   const run=installExperiments(()=>({requestBase:nativeRequestBase,transport:{startCompletionStream:async()=>{generations++;}}}),()=>({safePost:async()=>({conversation:tree("draft")})}),()=>CONTEXT);
-  await run("experiment_start",{task_id:"cancel-branch",operation:{type:"branch_chat",conversation_id:"c1",message_id:"reply",model:"native-model",text:"READY",is_do_not_remember:false}},env);
+  await run("experiment_start",{task_id:"cancel-branch",operation:{type:"branch_chat",conversation_id:"c1",message_id:"reply",model:"native-model",text:"READY",is_do_not_remember:false,thinking_effort:null}},env);
   await new Promise(resolve=>setImmediate(resolve));await run("experiment_cancel",{task_id:"cancel-branch"},env);
   const task=await run("experiment_continue",{task_id:"cancel-branch"},env);await new Promise(resolve=>setImmediate(resolve));
   assert.equal(task.status,"uncertain");assert.equal(generations,0);

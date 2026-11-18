@@ -18,6 +18,7 @@ const operation = { type: "object", additionalProperties: false, required: ["typ
   type: { enum: ["rename", "move", "archive", "create_project", "create_chat", "send_message", "branch_chat", "import_chat"] }, reason,
   reuse_existing: { type: "boolean" },
   is_do_not_remember: { type: "boolean", description: "Optional native per-turn flag. New persistent chats use the native false default; continuation/branching inherit the source unless explicitly overridden. The effective value is shown in the approval preview." },
+  thinking_effort: { anyOf: [{ type: "string", minLength: 1, maxLength: 32, pattern: "^[a-z][a-z0-9_-]{0,31}$" }, { type: "null" }], description: "Native thinking-effort code (for example max for Extra High), or null for the native default. Continuations and branches inherit the selected source point's effort for the same model unless explicitly overridden. The effective value is frozen for native approval." },
   conversation_id: id, title, project_id: projectId, archived: { type: "boolean" }, name: { ...string },
   expected_before: state, memory_scope: { enum: ["project_v2"] },
   model: { type: "string", minLength: 1, maxLength: 100 }, text: { type: "string", minLength: 1, maxLength: 100000 },

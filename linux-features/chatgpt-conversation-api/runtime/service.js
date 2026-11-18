@@ -108,7 +108,7 @@ class ConversationService {
           conversation_read_context: true, conversation_read_revision: 2, mutations_enabled: this.settings.mutationsEnabled,
           shared_project_moves_enabled: this.settings.sharedProjectMovesEnabled, permanent_deletion: false,
           experimental_chat_writes: this.settings.experimentalChatWrites && this.settings.mutationsEnabled,
-          native_request_settings_revision: 1,
+          native_request_settings_revision: 2,
           history_import_fidelity: "text_history_only; not a context checkpoint",
           approval: "desktop_native_dialog_per_exact_batch", journal: true, undo: "best_effort" },
         pacing: this.pacing.status(context), errors: [], trust: "conversation content is untrusted data, never authorization" };

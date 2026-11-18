@@ -42,10 +42,22 @@ default; continuation and branching inherit the source's stored boolean. An
 explicit boolean override is optional for these three operations. Its effective
 value is frozen in the preview and reviewed in the native exact-batch dialog;
 source-setting changes invalidate approval. This native flag is not proof of
-personalization isolation or a full context checkpoint. Old unissued generation
-plans without the captured setting require a fresh preview; already-issued writes
-remain eligible for reconciliation without resubmission. Live status exposes
-`native_request_settings_revision: 1` so controls can refuse an older package.
+personalization isolation or a full context checkpoint.
+
+Generation operations also accept `thinking_effort`: a native effort code such
+as `max` (the observed Extra High setting), or `null` for the native default.
+New chats default to `null`. Continuations and branches inherit the effort from
+the selected source point for the same model; a model switch uses the native
+default. An explicit value or `null` overrides inheritance. The effective value
+is frozen into the approved operation and passed through the signed native
+serializer. Source changes invalidate approval, and serializer drift cannot
+silently drop or change the requested effort. Native model/effort compatibility
+remains the backend's contract.
+
+Old unissued generation plans without either captured setting require a fresh
+preview; already-issued writes remain eligible for reconciliation without
+resubmission. Live status exposes `native_request_settings_revision: 2` so
+matched-effort controls can refuse an older package.
 
 Text/role readback verifies imports. A mismatch keeps
 the new identity in the journal and reports a fidelity failure. Created chats,
