@@ -198,15 +198,34 @@ class Adapter:
             job_id = data.get("job_id", data.get("id"))
             if job_id:
                 targets = self.cache.targets(context, job_id, job=True)
+                plan_targets = self.cache.targets(context, data.get("plan_id")) if isinstance(data.get("plan_id"), str) else None
+                if targets is None:
+                    targets = plan_targets
+                elif plan_targets is not None:
+                    targets = sorted(set(targets) | set(plan_targets))
                 # A reconstruction creates IDs that did not exist at preview.
                 # Discover them from native job readback, then refresh only those
                 # bodies. The job is evidence, never approval for another write.
-                created = {e.get("after", {}).get("conversation_id") or e.get("result", {}).get("conversation_id")
-                           for e in data.get("entries", []) if isinstance(e, dict)}
-                created = {identifier for identifier in created if isinstance(identifier, str)
-                           and re.fullmatch(r"[A-Za-z0-9_-]{1,200}", identifier)}
+                def entry_targets(entry):
+                    if not isinstance(entry, dict):
+                        return set()
+                    return {value["conversation_id"] for field in ("after", "result")
+                            if isinstance(value := entry.get(field), dict)
+                            and isinstance(value.get("conversation_id"), str)
+                            and re.fullmatch(r"[A-Za-z0-9_-]{1,200}", value["conversation_id"])}
+
+                entries = data.get("entries")
+                entries = entries if isinstance(entries, list) else []
+                created = set().union(*(entry_targets(entry) for entry in entries))
                 if targets is not None:
                     targets = sorted(set(targets) | created)
+                elif entries and all(isinstance(entry, dict) and
+                                     (entry.get("status") == "pending" or entry_targets(entry)) for entry in entries):
+                    # A late native approval can finish after the execute proxy
+                    # timed out, so no job-target link was recorded. Stopped
+                    # jobs with every issued target identified still have an
+                    # exact scope; pending entries have made no writes yet.
+                    targets = sorted(created)
                 self.cache.mutation_job(context, job_id, "finished", targets)
                 self.cache.invalidate(context, ["job_finished", job_id, data.get("finished_at"), data.get("status")], targets)
                 for identifier in sorted(created):

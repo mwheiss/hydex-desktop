@@ -312,6 +312,12 @@ Revision 6 advances a shared recovery generation after explicit resumption.
 Persistent MCP adapters may replace a closed connection only after that change;
 an old poisoned stream cannot reopen the circuit immediately after a good probe.
 
+Revision 10 recovers mutation targets from the saved plan or complete native job
+readback when approval finishes after a client timeout. It invalidates only the
+identified chats and includes IDs created by the job. Pending operations have
+made no writes; unidentified issued operations retain conservative account-wide
+reconciliation. Target recovery changes no native approval or execution rules.
+
 Disabling the feature takes effect after rebuild/restart and removes its staged
 resources. The journal is intentionally retained for audit/recovery. After all
 jobs are resolved and the application has exited, the user may remove that

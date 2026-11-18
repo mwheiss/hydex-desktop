@@ -351,6 +351,50 @@ def test_write_arguments_and_native_approval_contract_pass_through_exactly(setup
     assert adapter.cache.status(CTX)["current_chats"] == 0
 
 
+@pytest.mark.parametrize("known_plan", [True, False])
+def test_late_job_readback_recovers_exact_targets_without_invalidating_other_chats(setup, known_plan):
+    adapter, upstream, _ = setup
+    cache = adapter.cache
+    for identifier in ("chat-one", "unrelated"):
+        cache.record(CTX, identifier, packed(upstream.raw), started_at=time.time())
+    if known_plan:
+        cache.remember_plan(CTX, "plan-late", [{"conversation_id": "chat-one"}])
+    assert cache.targets(CTX, "job-late", job=True) is None
+    adapter.observe_job(CTX, {"kind": "execute", "id": "job-late", "plan_id": "plan-late",
+                             "status": "paused", "finished_at": "2026-11-18T10:00:00Z",
+                             "entries": [{"status": "verified", "after": None,
+                                          "result": None if known_plan else {"conversation_id": "chat-one"}},
+                                         {"status": "pending"}]})
+    assert cache.lookup(CTX, "chat-one")["invalidated"]
+    assert not cache.lookup(CTX, "unrelated")["invalidated"]
+    assert cache.targets(CTX, "job-late", job=True) == ["chat-one"]
+    assert upstream.calls == []
+
+
+@pytest.mark.parametrize("entries", [[], [None], [{"status": "uncertain", "after": None}],
+                                     [{"status": "failed", "result": {"conversation_id": "bad/id"}}]])
+def test_unidentified_job_targets_keep_conservative_invalidation(setup, entries):
+    adapter, upstream, _ = setup
+    adapter.cache.record(CTX, "unrelated", packed(upstream.raw), started_at=time.time())
+    adapter.observe_job(CTX, {"kind": "execute", "id": "job-unknown", "status": "paused",
+                             "entries": entries})
+    assert adapter.cache.lookup(CTX, "unrelated")["invalidated"]
+    assert adapter.cache.targets(CTX, "job-unknown", job=True) is None
+
+
+def test_completed_create_job_combines_preview_and_both_native_target_fields(setup):
+    adapter, upstream, _ = setup
+    cache = adapter.cache
+    cache.record(CTX, "unrelated", packed(upstream.raw), started_at=time.time())
+    cache.remember_plan(CTX, "plan-create", [{"type": "create_chat"}])
+    adapter.observe_job(CTX, {"kind": "execute", "id": "job-create", "plan_id": "plan-create",
+                             "status": "completed", "entries": [{"status": "verified",
+                              "after": {"conversation_id": "created-one"},
+                              "result": {"conversation_id": "created-two"}}]})
+    assert cache.targets(CTX, "job-create", job=True) == ["created-one", "created-two"]
+    assert not cache.lookup(CTX, "unrelated")["invalidated"]
+
+
 def test_two_clients_share_one_upstream_read(setup):
     adapter, upstream, config = setup
     upstream.delay = 0.25
